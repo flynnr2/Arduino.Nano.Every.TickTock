@@ -11,7 +11,7 @@ constexpr uint32_t METRICS_PERIOD_MS = 5000u;
 
 
 #ifndef DATA_SERIAL
-#define DATA_SERIAL Serial1
+#define DATA_SERIAL Serial
 #endif
 
 #ifndef DEBUG_SERIAL
@@ -19,7 +19,7 @@ constexpr uint32_t METRICS_PERIOD_MS = 5000u;
 #endif
 
 #ifndef CMD_SERIAL
-#define CMD_SERIAL Serial1
+#define CMD_SERIAL Serial
 #endif
 
 #if defined(DEBUG_SERIAL)
