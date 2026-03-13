@@ -130,11 +130,11 @@ namespace {
 
     CMD_SERIAL.print(F("  ")); CMD_SERIAL.print(PARAM_CORR_JUMP);
     CMD_SERIAL.print(F(": ")); CMD_SERIAL.print(Tunables::correctionJumpThresh, 6);
-    CMD_SERIAL.println(F("    e.g. `set correctionJumpThresh 0.50`"));
+    CMD_SERIAL.println(F("    e.g. `set correctionJumpThresh 0.50` (compatibility-only no-op)"));
 
     CMD_SERIAL.print(F("  ")); CMD_SERIAL.print(PARAM_PPS_EMA_SHIFT);
     CMD_SERIAL.print(F(": ")); CMD_SERIAL.print((unsigned)Tunables::ppsEmaShift);
-    CMD_SERIAL.println(F("    e.g. `set ppsEmaShift 6` (higher=smoother, slower)"));
+    CMD_SERIAL.println(F("    e.g. `set ppsEmaShift 8` (legacy alias of ppsSlowShift)"));
 
     CMD_SERIAL.print(F("  ")); CMD_SERIAL.print(PARAM_PPS_FAST_SHIFT);
     CMD_SERIAL.print(F(": ")); CMD_SERIAL.print((unsigned)Tunables::ppsFastShift);
@@ -146,15 +146,15 @@ namespace {
 
     CMD_SERIAL.print(F("  ")); CMD_SERIAL.print(PARAM_PPS_HAMPEL_WIN);
     CMD_SERIAL.print(F(": ")); CMD_SERIAL.print((unsigned)Tunables::ppsHampelWin);
-    CMD_SERIAL.println(F("    e.g. `set ppsHampelWin 7` (odd 5..9)"));
+    CMD_SERIAL.println(F("    e.g. `set ppsHampelWin 7` (odd 5..9, compatibility-only no-op)"));
 
     CMD_SERIAL.print(F("  ")); CMD_SERIAL.print(PARAM_PPS_HAMPEL_KX100);
     CMD_SERIAL.print(F(": ")); CMD_SERIAL.print((unsigned)Tunables::ppsHampelKx100);
-    CMD_SERIAL.println(F("    e.g. `set ppsHampelKx100 300` (k=3.00)"));
+    CMD_SERIAL.println(F("    e.g. `set ppsHampelKx100 300` (k=3.00, compatibility-only no-op)"));
 
     CMD_SERIAL.print(F("  ")); CMD_SERIAL.print(PARAM_PPS_MEDIAN3);
     CMD_SERIAL.print(F(": ")); CMD_SERIAL.print(Tunables::ppsMedian3 ? 1 : 0);
-    CMD_SERIAL.println(F("    e.g. `set ppsMedian3 1` (0/1)"));
+    CMD_SERIAL.println(F("    e.g. `set ppsMedian3 1` (0/1, compatibility-only no-op)"));
 
     CMD_SERIAL.print(F("  ")); CMD_SERIAL.print(PARAM_PPS_BLEND_LO_PPM);
     CMD_SERIAL.print(F(": ")); CMD_SERIAL.print((unsigned)Tunables::ppsBlendLoPpm);
@@ -171,6 +171,10 @@ namespace {
     CMD_SERIAL.print(F("  ")); CMD_SERIAL.print(PARAM_PPS_LOCK_J_PPM);
     CMD_SERIAL.print(F(": ")); CMD_SERIAL.print((unsigned)Tunables::ppsLockJppm);
     CMD_SERIAL.println(F("    e.g. `set ppsLockJppm 20`"));
+
+    CMD_SERIAL.print(F("  ")); CMD_SERIAL.print(PARAM_PPS_LOCK_COUNT);
+    CMD_SERIAL.print(F(": ")); CMD_SERIAL.print((unsigned)Tunables::ppsLockCount);
+    CMD_SERIAL.println(F("    e.g. `set ppsLockCount 10` (range 1..60)"));
 
     CMD_SERIAL.print(F("  ")); CMD_SERIAL.print(PARAM_PPS_UNLOCK_R_PPM);
     CMD_SERIAL.print(F(": ")); CMD_SERIAL.print((unsigned)Tunables::ppsUnlockRppm);
@@ -227,6 +231,7 @@ static bool headerPending = false;
 
 #if ENABLE_METRICS
 volatile uint8_t  maxFill = 0;
+volatile uint32_t stsPayloadTrunc = 0;
 volatile uint32_t csvLineTrunc = 0;
 volatile uint32_t serialTrunc = 0;
 #endif
@@ -267,6 +272,7 @@ void processSerialCommands() {
             else if (strcasecmp(name, PARAM_PPS_LOCK_J_PPM)   == 0) v  = Tunables::ppsLockJppm;
             else if (strcasecmp(name, PARAM_PPS_UNLOCK_R_PPM) == 0) v  = Tunables::ppsUnlockRppm;
             else if (strcasecmp(name, PARAM_PPS_UNLOCK_J_PPM) == 0) v  = Tunables::ppsUnlockJppm;
+            else if (strcasecmp(name, PARAM_PPS_LOCK_COUNT)   == 0) v  = Tunables::ppsLockCount;
             else if (strcasecmp(name, PARAM_PPS_UNLOCK_COUNT) == 0) v  = Tunables::ppsUnlockCount;
             else if (strcasecmp(name, PARAM_PPS_HOLDOVER_MS)  == 0) v  = Tunables::ppsHoldoverMs;
             else if (strcasecmp(name, PARAM_DATA_UNITS) == 0) {
@@ -300,10 +306,11 @@ void processSerialCommands() {
             bool ok = true;
             bool isFloat = false;
             bool isString = false;
+            bool tuningChanged = false;
             unsigned long v = strtoul(val, NULL, 10);
             float fv = static_cast<float>(strtod(val, NULL));  // strof() not implemented & atof(val) less "safe"
             if      (strcasecmp(name, PARAM_CORR_JUMP) == 0)     { Tunables::correctionJumpThresh = fv; isFloat = true; }
-            else if (strcasecmp(name, PARAM_PPS_EMA_SHIFT) == 0)  Tunables::ppsEmaShift = v;
+            else if (strcasecmp(name, PARAM_PPS_EMA_SHIFT) == 0) { Tunables::ppsEmaShift = (uint8_t)v; Tunables::ppsSlowShift = Tunables::ppsEmaShift; }
             else if (strcasecmp(name, PARAM_PPS_FAST_SHIFT)   == 0)  Tunables::ppsFastShift   = (uint8_t) v;
             else if (strcasecmp(name, PARAM_PPS_SLOW_SHIFT)   == 0) { Tunables::ppsSlowShift   = (uint8_t) v; Tunables::ppsEmaShift = Tunables::ppsSlowShift; }
             else if (strcasecmp(name, PARAM_PPS_HAMPEL_WIN)   == 0)  Tunables::ppsHampelWin   = (uint8_t) v;
@@ -311,11 +318,24 @@ void processSerialCommands() {
             else if (strcasecmp(name, PARAM_PPS_MEDIAN3)      == 0)  Tunables::ppsMedian3     = (v != 0);
             else if (strcasecmp(name, PARAM_PPS_BLEND_LO_PPM) == 0)  Tunables::ppsBlendLoPpm  = (uint16_t) v;
             else if (strcasecmp(name, PARAM_PPS_BLEND_HI_PPM) == 0)  Tunables::ppsBlendHiPpm  = (uint16_t) v;
-            else if (strcasecmp(name, PARAM_PPS_LOCK_R_PPM)   == 0)  Tunables::ppsLockRppm    = (uint16_t) v;
-            else if (strcasecmp(name, PARAM_PPS_LOCK_J_PPM)   == 0)  Tunables::ppsLockJppm    = (uint16_t) v;
-            else if (strcasecmp(name, PARAM_PPS_UNLOCK_R_PPM) == 0)  Tunables::ppsUnlockRppm  = (uint16_t) v;
-            else if (strcasecmp(name, PARAM_PPS_UNLOCK_J_PPM) == 0)  Tunables::ppsUnlockJppm  = (uint16_t) v;
-            else if (strcasecmp(name, PARAM_PPS_UNLOCK_COUNT) == 0)  Tunables::ppsUnlockCount = (uint8_t)  v;
+            else if (strcasecmp(name, PARAM_PPS_LOCK_R_PPM)   == 0) { Tunables::ppsLockRppm    = (uint16_t) v; tuningChanged = true; }
+            else if (strcasecmp(name, PARAM_PPS_LOCK_J_PPM)   == 0) { Tunables::ppsLockJppm    = (uint16_t) v; tuningChanged = true; }
+            else if (strcasecmp(name, PARAM_PPS_UNLOCK_R_PPM) == 0) { Tunables::ppsUnlockRppm  = (uint16_t) v; tuningChanged = true; }
+            else if (strcasecmp(name, PARAM_PPS_UNLOCK_J_PPM) == 0) { Tunables::ppsUnlockJppm  = (uint16_t) v; tuningChanged = true; }
+            else if (strcasecmp(name, PARAM_PPS_LOCK_COUNT)   == 0) {
+              if (v < PPS_LOCK_COUNT_MIN || v > PPS_LOCK_COUNT_MAX) {
+                ok = false;
+                CMD_SERIAL.print(F("ERROR: ppsLockCount must be in range "));
+                CMD_SERIAL.print((unsigned)PPS_LOCK_COUNT_MIN);
+                CMD_SERIAL.print(F(".."));
+                CMD_SERIAL.println((unsigned)PPS_LOCK_COUNT_MAX);
+                sendStatus(StatusCode::InvalidParam, "ppsLockCount out of range");
+              } else {
+                Tunables::ppsLockCount = (uint8_t)v;
+                tuningChanged = true;
+              }
+            }
+            else if (strcasecmp(name, PARAM_PPS_UNLOCK_COUNT) == 0) { Tunables::ppsUnlockCount = (uint8_t)  v; tuningChanged = true; }
             else if (strcasecmp(name, PARAM_PPS_HOLDOVER_MS)  == 0)  Tunables::ppsHoldoverMs  = (uint16_t) v;
             else if (strcasecmp(name, PARAM_DATA_UNITS) == 0) {
               DataUnits du;
@@ -327,6 +347,10 @@ void processSerialCommands() {
               if (ok) { Tunables::dataUnits = du; isString = true; }
             } else ok = false;
             if (ok) {
+              Tunables::normalizePpsTunables();
+#if PPS_TUNING_TELEMETRY
+              if (tuningChanged) emitPpsTuningConfigSnapshot();
+#endif
               CMD_SERIAL.print("set: ");
               CMD_SERIAL.print(name);
               CMD_SERIAL.print(F(" = "));
@@ -336,8 +360,10 @@ void processSerialCommands() {
               saveConfig(getCurrentConfig());
               if (strcasecmp(name, PARAM_DATA_UNITS) == 0) headerPending = true;
             } else {
-              CMD_SERIAL.println(F("ERROR: unknown parameter"));
-              sendStatus(StatusCode::InvalidParam, "unknown parameter");
+              if (strcasecmp(name, PARAM_PPS_LOCK_COUNT) != 0) {
+                CMD_SERIAL.println(F("ERROR: unknown parameter"));
+                sendStatus(StatusCode::InvalidParam, "unknown parameter");
+              }
             }
           } else {
             CMD_SERIAL.println(F("ERROR: set requires <param> and <value>"));
@@ -355,30 +381,92 @@ void processSerialCommands() {
   }
 }
 
+namespace {
+
+#if LED_ACTIVITY_ENABLE
+  volatile uint8_t* s_ledOut = nullptr;
+  uint8_t s_ledMask = 0;
+
+  void initActivityLed() {
+    if (s_ledOut) return;
+    pinMode(LED_BUILTIN, OUTPUT);
+    const uint8_t port = digitalPinToPort(LED_BUILTIN);
+    s_ledMask = digitalPinToBitMask(LED_BUILTIN);
+    s_ledOut = portOutputRegister(port);
+  }
+
+  inline void toggleActivityLed() {
+    if (!s_ledOut) initActivityLed();
+    if (s_ledOut) {
+      *s_ledOut ^= s_ledMask;
+    }
+  }
+#endif
+
+} // namespace
+
 void queueCSVLine(const char* buf, int len) {
-  if (len <= 0) return;
-  if (len >= (int)CSV_LINE_MAX) {
-    len = (int)CSV_LINE_MAX - 1;
-    char* mutableBuf = const_cast<char*>(buf);
-    mutableBuf[len - 1] = '\n';
-    mutableBuf[len] = '\0';
+  if (len <= 0 || !buf) return;
+
+  static bool txInProgress = false;
+  if (txInProgress) return;
+  txInProgress = true;
+
+  int payloadLen = len;
+  if (payloadLen >= (int)CSV_LINE_MAX) {
+    payloadLen = (int)CSV_LINE_MAX - 1;
 #if ENABLE_METRICS
     csvLineTrunc++;
 #endif
   }
-  size_t written = DATA_SERIAL.write((const uint8_t*)buf, len);
-  digitalWrite(ledPin, HIGH);
-  delay(5);
-  digitalWrite(ledPin, LOW);
-#if ENABLE_METRICS
-  if (written != (size_t)len) serialTrunc++;
-#endif
-}
 
+  if (payloadLen < len) {
+    const size_t payloadLenBounded = strnlen(buf, (size_t)payloadLen);
+    payloadLen = (int)payloadLenBounded;
+  }
+
+  size_t writeLen = (size_t)payloadLen;
+  size_t written = DATA_SERIAL.write((const uint8_t*)buf, writeLen);
+
+  bool needsNewline = true;
+  if (payloadLen > 0 && buf[payloadLen - 1] == '\n') {
+    needsNewline = false;
+  }
+  if (needsNewline) {
+    const uint8_t nl = '\n';
+    written += DATA_SERIAL.write(&nl, 1);
+    writeLen += 1;
+  }
+
+#if LED_ACTIVITY_ENABLE
+  static_assert(LED_ACTIVITY_DIV > 0, "LED_ACTIVITY_DIV must be greater than 0");
+  static_assert((LED_ACTIVITY_DIV & (LED_ACTIVITY_DIV - 1)) == 0,
+                "LED_ACTIVITY_DIV must be a power of two");
+
+  if (written == writeLen) {
+    static uint8_t ledActivityCounter = 0;
+    if (((++ledActivityCounter) & (LED_ACTIVITY_DIV - 1U)) == 0U) {
+      toggleActivityLed();
+    }
+  }
+#endif
+
+#if ENABLE_METRICS
+  if (written != writeLen) serialTrunc++;
+#endif
+  txInProgress = false;
+}
 void sendStatus(StatusCode code, const char* text) {
   const char* codeStr = statusCodeToStr(code);
   if (!text) text = "";
-  int len = snprintf(lineBuf, CSV_LINE_MAX, "%s,%s,%s\n", TAG_STS, codeStr, text);
+
+  char payloadBuf[CSV_PAYLOAD_MAX];
+  int payloadLen = snprintf(payloadBuf, sizeof(payloadBuf), "%s", text);
+#if ENABLE_METRICS
+  if (payloadLen >= (int)sizeof(payloadBuf)) stsPayloadTrunc++;
+#endif
+
+  int len = snprintf(lineBuf, CSV_LINE_MAX, "%s,%s,%s\n", TAG_STS, codeStr, payloadBuf);
   queueCSVLine(lineBuf, len);
 }
 
@@ -441,13 +529,15 @@ void reportMetrics() {
     lastMetricsMs = nowMs;
     uint32_t dropped = atomicRead32(droppedEvents);
     char msg[96];
-    snprintf(msg, sizeof(msg), "fill=%u,drop=%lu,serTrunc=%lu,csvTrunc=%lu",
+    snprintf(msg, sizeof(msg), "fill=%u,drop=%lu,serTrunc=%lu,payTrunc=%lu,csvTrunc=%lu",
              maxFill,
              (unsigned long)dropped,
              (unsigned long)serialTrunc,
+             (unsigned long)stsPayloadTrunc,
              (unsigned long)csvLineTrunc);
     sendStatus(StatusCode::ProgressUpdate, msg);
     serialTrunc = 0;
+    stsPayloadTrunc = 0;
     csvLineTrunc = 0;
     maxFill = 0;
   }

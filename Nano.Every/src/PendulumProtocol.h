@@ -24,7 +24,7 @@ enum class StatusCode : uint8_t {
   InvalidParam,      // parameter name is not valid
   InvalidValue,      // value provided is out of range/invalid
   InternalError,     // catch‑all for unexpected failures
-  ProgressUpdate,    // catch‑all for unexpected failures
+  ProgressUpdate,    // periodic/streaming diagnostics and telemetry
 };
 
 // Optional helper to stringify StatusCode
@@ -40,9 +40,9 @@ inline const char* statusCodeToStr(StatusCode code) {
   }
 }
 
-// 1) Field indicesa
+// 1) Field indices
 //    Use these to index into split() or sscanf() results
-//    NB: all scaled to use integer math (correctionFator gets split)
+//    NB: correction fields use integer scaling (ppm × 1e6)
 enum CsvField {
   CF_TICK = 0,
   CF_TOCK,
@@ -87,6 +87,7 @@ static constexpr char PARAM_PPS_LOCK_R_PPM[]   = "ppsLockRppm";
 static constexpr char PARAM_PPS_LOCK_J_PPM[]   = "ppsLockJppm";
 static constexpr char PARAM_PPS_UNLOCK_R_PPM[] = "ppsUnlockRppm";
 static constexpr char PARAM_PPS_UNLOCK_J_PPM[] = "ppsUnlockJppm";
+static constexpr char PARAM_PPS_LOCK_COUNT[]   = "ppsLockCount";
 static constexpr char PARAM_PPS_UNLOCK_COUNT[] = "ppsUnlockCount";
 static constexpr char PARAM_PPS_HOLDOVER_MS[]  = "ppsHoldoverMs";
 

@@ -86,7 +86,7 @@ Unit suffix `*` depends on mode:
 Notes:
 - `corr_inst_ppm` = instantaneous PPS correction (ppm, int; scaled by 1,000,000)
 - `corr_blend_ppm` = blended PPS correction after fast/slow smoothing
-- `gps_status`: 0 = no PPS, 1 = acquiring, 2 = locked, 3 = holdover, 4 = bad jitter
+- `gps_status`: 0 = no PPS, 1 = acquiring, 2 = locked, 3 = holdover
 - `dropped_events`: PPS/IR samples dropped
 
 Example (AdjustedUs):
@@ -112,12 +112,21 @@ All can be set via serial and saved to EEPROM. Defaults in `Config.h`.
 | Param                  | Type   | Default    | Notes
 |------------------------|--------|------------|-------------------------------------------------------------------------
 | `dataUnits`            | enum   | raw_cycles | Output units: `raw_cycles`, `adjusted_ms`, `adjusted_us`, `adjusted_ns`
-| `correctionJumpThresh` | float  | 0.002      | Lock threshold (fractional, e.g. 0.002 = 2000 ppm)
+| `correctionJumpThresh` | float  | 0.002      | **Compatibility-only / no-op** (retained for CLI+EEPROM+status round-trip)
 | `ppsFastShift`         | uint8  | 3          | Short‑term EWMA shift (lower = faster)
 | `ppsSlowShift`         | uint8  | 8          | Long‑term EWMA shift (higher = smoother)
-| `ppsHampelWin`         | uint8  | 7          | Hampel window size (odd, 5–9 recommended)
-| `ppsHampelKx100`       | uint16 | 300        | Hampel outlier threshold (k × 100)
-| `ppsMedian3`           | bool   | 1          | Apply median‑of‑3 after Hampel (0/1)
+| `ppsHampelWin`         | uint8  | 7          | **Compatibility-only / no-op** (retained for CLI+EEPROM+status round-trip)
+| `ppsHampelKx100`       | uint16 | 300        | **Compatibility-only / no-op** (retained for CLI+EEPROM+status round-trip)
+| `ppsMedian3`           | bool   | 1          | **Compatibility-only / no-op** (retained for CLI+EEPROM+status round-trip)
+| `ppsBlendLoPpm`        | uint16 | 50         | Below this drift, prefer slow smoother
+| `ppsBlendHiPpm`        | uint16 | 200        | Above this drift, fully fast smoother
+| `ppsLockRppm`          | uint16 | 200        | Max drift to declare lock
+| `ppsLockJppm`          | uint16 | 2000       | Legacy-named MAD threshold (ticks) to declare lock
+| `ppsUnlockRppm`        | uint16 | 500        | Drift to unlock
+| `ppsUnlockJppm`        | uint16 | 160        | Jitter to unlock
+| `ppsLockCount`         | uint8  | 30         | Consecutive good PPS required to lock
+| `ppsUnlockCount`       | uint8  | 3          | Consecutive bad PPS before unlock
+| `ppsHoldoverMs`        | uint16 | 60000      | PPS gap to enter holdover
 
 Example:
 ```
@@ -127,95 +136,215 @@ set ppsHampelWin 7
 set ppsHampelKx100 300
 set ppsMedian3 1
 set correctionJumpThresh 0.002
-saveConfig
 ```
 
 ---
 
-## Dual‑Track PPS Smoothing
 
-The GPS PPS is good, but not *perfect*. To avoid chasing every twitch while still tracking real drift, we smooth it two ways at once:
+## GPS PPS Processing (Live Behavior)
 
-1. **Short‑term track** — responds in seconds, cleans up jitter, drives immediate time scaling.  
-2. **Long‑term track** — averages over minutes, immune to brief noise, used for holdover and slow retuning.
+Implementation note: the source code is authoritative for runtime behavior; this section summarizes the currently compiled path for operators.
 
-### How It Works
+### Intuition: Two Questions the Firmware Must Answer
 
-1. ISR timestamps each PPS edge (ticks since last PPS).  
-2. Clamp interval to a sane range.  
-3. **Hampel filter**: rolling median + MAD, replace outliers beyond *k × MAD*.  
-4. Optional **median‑of‑3**.  
-5. **Fast EWMA** on clean data → `pps_delta_fast` (τ ≈ 8s).  
-6. **Slow EWMA** on fast output → `pps_delta_slow` (τ ≈ 256s).  
-7. Compute:
-   - `corr_inst_ppm` from raw delta
-   - `corr_blend_ppm` from blended fast/slow smoothing
-8. Lock declared when inst vs slow is within `correctionJumpThresh` for N PPS ticks.
+Each GPS PPS pulse should arrive exactly **1 second apart**, which corresponds to:
 
-Why?  
-- Fast track: reacts quickly to real drift.  
-- Slow track: holds rock‑steady during GPS burps.  
-- Together: smooth ride, no over‑steer.
+    16,000,000 timer ticks at 16 MHz
 
-## PPS Fast/Slow Blending & GPS Lock Tracking
+But real measurements vary slightly due to GPS noise and MCU timing effects.  
+The firmware therefore evaluates two different properties of the PPS signal:
 
-This firmware now uses **two parallel PPS smoothers** and a **state machine** to improve stability and responsiveness of timing calculations.
+| Metric | Question Answered                              |
+|--------|------------------------------------------------|
+| **J**  | *Is the PPS signal stable enough to trust?*    |
+| **R**  | *How far off is the MCU clock from true time?* |
 
-### Overview
-The GPS PPS signal is filtered and smoothed in two ways:
-- **Fast EWMA** (`pps_delta_fast`) — responds quickly to real frequency changes (e.g., temperature drift, trim adjustments).
-- **Slow EWMA** (`pps_delta_slow`) — low-noise, long-term average for stable scaling.
-
-Each PPS tick, the firmware:
-1. Measures the difference between **fast** and **slow** smoothers (**R**, in ppm).
-2. Estimates PPS jitter using a Hampel filter MAD value (**J**, in ppm).
-3. Runs a **state machine** to decide if GPS is:
-   - `NO_PPS` — no pulse detected.
-   - `ACQUIRING` — PPS present but not yet stable.
-   - `LOCKED` — PPS is stable and low-jitter.
-   - `BAD_JITTER` — PPS present but jitter exceeds threshold.
-   - `HOLDOVER` — PPS lost, using last known rate.
-
-4. Computes a **blend weight** between the fast and slow smoothers:
-   - Near 0 → fully slow.
-   - Near 1 → fully fast.
-   - The weight increases as drift (R) grows.
-   - When `LOCKED`, weight is forced to slow.
-   - When `ACQUIRING`, weight is forced to fast.
-
-5. Caches a blended PPS denominator (`pps_delta_active`) that is used in **all time conversions** (`ticks_to_us_pps`, `ticks_to_ns_pps`).
-
-### Benefits
-- **Fast reaction** to genuine frequency shifts.
-- **Low jitter** during stable operation.
-- Smooth transitions — no abrupt jumps in output timing.
-- Clearer `gpsStatus` reporting for downstream logging.
-
-### Key Tunables
-These are adjustable via config or EEPROM:
-
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| `ppsBlendLoPpm` | 5 ppm | Below this drift, prefer slow smoother. |
-| `ppsBlendHiPpm` | 200 ppm | Above this drift, fully fast smoother. |
-| `ppsLockRppm` | 50 ppm | Max drift to declare lock. |
-| `ppsLockJppm` | 20 ppm | Max jitter to declare lock. |
-| `ppsUnlockRppm` | 200 ppm | Drift to unlock. |
-| `ppsUnlockJppm` | 100 ppm | Jitter to unlock. |
-| `ppsUnlockCount` | 3 | Consecutive bad PPS before unlock. |
-| `ppsHoldoverMs` | 1500 ms | PPS gap to enter holdover. |
-
-### State Machine Diagram
-
-```
-NO_PPS → ACQUIRING → LOCKED → BAD_JITTER ↘
-   ↑         ↑          ↓         ↑      HOLDOVER
-   └─────────┴──────────┴─────────┘
-```
-
-*(Transitions depend on R/J thresholds and PPS presence.)*
+These two metrics allow the system to distinguish **PPS quality problems** from **normal oscillator drift**.
 
 ---
+
+### J — Short‑Term PPS Jitter
+
+`J` measures how much the PPS interval changes **from second to second**.  
+It is computed using a **median absolute deviation (MAD)** style statistic over recent intervals.
+
+Example of a **good PPS signal**:
+
+```
+16000002
+15999999
+16000001
+16000000
+```
+
+Intervals barely change → **J is small**.
+
+Example of a **bad PPS signal**:
+
+```
+15998900
+16001200
+15999400
+16000900
+```
+
+Large variation → **J is large**.
+
+If J exceeds configured thresholds the PPS signal is considered unreliable.
+
+Typical logic:
+
+```
+if J > lockJ:
+    PPS not trustworthy → remain in ACQUIRING
+```
+
+MAD is used instead of standard deviation so that **occasional glitches do not destabilize the system**.
+
+---
+
+### R — Long‑Term Frequency Error
+
+`R` measures the **average frequency error of the MCU clock** relative to GPS.
+
+If the measured PPS interval is:
+
+```
+n_k = 16,000,240 ticks
+```
+
+then the MCU clock is running **+240 ticks/sec fast**, or:
+
+```
++15 ppm frequency error
+```
+
+That error is reported as **R**.
+
+Example of a **stable but offset PPS sequence**:
+
+```
+16000240
+16000239
+16000241
+16000240
+```
+
+Intervals are consistent → **J small**  
+But the clock is fast → **R ≈ +15 ppm**
+
+This is **perfectly valid PPS** and the discipliner can correct for it.
+
+---
+
+### Why Both Metrics Are Needed
+
+Consider two PPS streams:
+
+Stable but offset (good):
+
+```
+16000240
+16000239
+16000241
+16000240
+```
+
+Noisy PPS (bad):
+
+```
+15998900
+16001200
+15999400
+16000900
+```
+
+Both might average near 16 000 000 ticks, meaning **R ≈ 0**, but the second stream has huge **J** and must be rejected.
+
+Thus:
+
+| Metric | Purpose                                 |
+|--------|-----------------------------------------|
+| **J**  | determines whether PPS can be trusted   |
+| **R**  | determines the MCU frequency correction |
+
+---
+
+### PPS Validation and Classification
+
+Each PPS interval is classified by `PpsValidator`:
+
+- `OK`
+- `GAP`
+- `DUP`
+- `HARD_GLITCH`
+
+Startup seeding establishes the reference interval and allows the validator to tolerate small errors while rejecting pathological ones.
+
+---
+
+### Dual‑Track PPS Discipliner
+
+Once PPS samples are accepted, the discipliner estimates MCU frequency using two EWMAs:
+
+| Track               | Purpose                           |
+|---------------------|-----------------------------------|
+| **Fast (`f_fast`)** | reacts quickly during acquisition |
+| **Slow (`f_slow`)** | low‑noise long‑term estimate      |
+
+The active correction (`f_hat`) blends these using R‑based thresholds:
+
+| Condition             | Behaviour            |
+|-----------------------|----------------------|
+| |R| < `ppsBlendLoPpm` | prefer slow smoother |
+| |R| > `ppsBlendHiPpm` | prefer fast smoother |
+| between thresholds    | weighted blend       |
+
+This allows the system to **lock quickly but remain stable once disciplined**.
+
+---
+
+### State Machine
+
+The discipliner exposes four states:
+
+```
+NO_PPS → ACQUIRING → LOCKED
+   ↑         ↑          ↓
+   └─────────┴──────────┴──→ HOLDOVER
+```
+
+Transitions depend on:
+
+- `R` and `J` thresholds
+- consecutive good/bad PPS counts
+- PPS presence/absence
+
+---
+
+### Frequency Correction Applied to Pendulum Measurements
+
+Once locked, the discipliner produces a calibrated timer frequency estimate:
+
+```
+f_hat ≈ F_CPU * (1 + R / 1e6)
+```
+
+Pendulum measurements are scaled using this estimate so that:
+
+- MCU oscillator drift is removed
+- measurements track **true SI seconds derived from GPS**
+
+The output fields reflect this:
+
+| Field            | Meaning                             |
+|------------------|-------------------------------------|
+| `corr_inst_ppm`  | instantaneous PPS correction        |
+| `corr_blend_ppm` | blended correction used for scaling |
+
+---
+
+Compatibility note: `ppsHampelWin`, `ppsHampelKx100`, `ppsMedian3`, and `correctionJumpThresh` remain in CLI/EEPROM/status for backward compatibility but are currently **no‑op in the live discipliner path**.
 
 ## Accuracy & Units
 
@@ -262,9 +391,9 @@ With continuous GPS lock and the provided smoothing, the pendulum timer should m
 ## Build Notes
 
 - EVSYS mapping on ATmega4809 is weird — see `CaptureInit.cpp` comments.
-- Rings: IR=64, PPS=16 (power‑of‑two for mask magic).
-- ISRs avoid `Serial.print` like the plague.
-- CSV lines capped at 128 bytes.
+- Rings: IR=64, PPS=16 (power-of-two ring sizes).
+- (naked) ISRs avoid anything uncessary (i.e. `Serial.print`) like the plague.
+- CSV lines capped at 256 bytes.
 
 ---
 

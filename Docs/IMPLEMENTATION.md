@@ -1,7 +1,7 @@
 # Implementation Guide
 
 ## Scope & Terminology
-This document complements the architecture summary in the README by explaining how the firmware turns EVSYS-routed captures into pendulum statistics and PPS-disciplined timing corrections.  It assumes familiarity with the hardware wiring and CSV output described there and focuses on how the source implements those behaviors.
+This document complements the architecture summary in the README by explaining how the firmware turns EVSYS-routed captures into pendulum statistics and PPS-disciplined timing corrections.  It assumes familiarity with the hardware wiring and CSV output described there and focuses on how the source implements those behaviors.  If this text and code ever diverge, treat the implementation as authoritative.
 
 Within the swing reconstruction pipeline
 - **tick** is the beam-unblocked interval between the rising and next falling IR edges
@@ -38,7 +38,7 @@ The command parser maintains a registry of help text, supports `get`/`set` for t
 Raw PPS deltas are clamped to a plausible window before entering the Hampel filter, preventing runaway corrections when the GPS hiccups.  The optional median-of-three smooths any surviving spikes, then dual EWMAs track fast vs. slow behavior. A quality metric (`R` in ppm) and jitter metric (`J` in ppm) drive a Q16 blend weight that mixes the two denominators, letting the firmware emphasize the fast path when drift is high and fall back to the slow path when the PPS is quiet.  Instantaneous and blended correction factors are reported each loop for visibility into both tracks.
 
 ### GPS State Machine & Holdover
-`process_pps()` also maintains a GPS state with hysteresis: it detects long gaps (holdover), counts stable pulses before declaring lock, and requires multiple consecutive out-of-range R/J readings before demoting a locked state, with BAD_JITTER distinguishing noisy lock loss.  The exported `gps_status` now reflects the richer set (`NO_PPS`, `ACQUIRING`, `LOCKED`, `HOLDOVER`, `BAD_JITTER`) so downstream logs can distinguish true loss of PPS from a holdover interval.  These transitions back-feed the blend logic by forcing weights toward the slow path when locked and the fast path when still acquiring, stabilizing downstream timing while PPS quality changes.
+`process_pps()` also maintains a GPS state with hysteresis: it detects long gaps (holdover), counts stable pulses before declaring lock, and uses drift/jitter quality metrics during acquisition and lock tracking.  The exported `gps_status` currently reflects (`NO_PPS`, `ACQUIRING`, `LOCKED`, `HOLDOVER`) so downstream logs can distinguish true loss of PPS from a holdover interval.  These transitions back-feed the blend logic by forcing weights toward the slow path when locked and the fast path when still acquiring, stabilizing downstream timing while PPS quality changes.
 
 ### Unit Conversion & Reporting
 When swings are popped from the ring, the firmware converts each duration into the active units by dividing by the blended PPS denominator (nanoseconds, microseconds, milliseconds, or raw ticks) and packages them with correction ppm values, GPS status, and drop counters before transmission.  The conversion helpers reuse `pps_delta_active`, ensuring that pendulum metrics stay consistent with the filtered PPS timeline.  The emitted CSV matches the header and tag scheme documented in the README so downstream logs can mix instantaneous and blended corrections safely.
@@ -48,7 +48,7 @@ Key tunables live in `Config.h` with serial accessors in `SerialParser.cpp`, tyi
 
 - **`correctionJumpThresh`**  
   **Default:** `0.002` (fractional)  
-  **Influences:** Sets the lock tolerance when comparing instantaneous vs. slow PPS to maintain `gpsStatus` stability.
+  **Influences:** Exported in STS tunables telemetry as `jump_ppm`; retained as a configurable fractional threshold.
 
 - **`ppsFastShift` / `ppsSlowShift`**  
   **Default:** `3` / `8`  
@@ -59,11 +59,11 @@ Key tunables live in `Config.h` with serial accessors in `SerialParser.cpp`, tyi
   **Influences:** Configure the outlier filter window, MAD threshold, and optional median-of-three smoothing ahead of the EWMAs.
 
 - **`ppsBlendLoPpm` / `ppsBlendHiPpm`**  
-  **Default:** `5` / `200` ppm  
+  **Default:** `50` / `200` ppm  
   **Influences:** Define the hysteresis band for mixing fast vs. slow PPS denominators; lower drift sticks to slow, higher drift shifts toward fast.
 
-- **`ppsLockRppm`, `ppsLockJppm`, `ppsUnlockRppm`, `ppsUnlockJppm`, `ppsUnlockCount`**  
-  **Default:** `50`, `20`, `200`, `100`, `3`  
+- **`ppsLockRppm`, `ppsLockJppm`, `ppsUnlockRppm`, `ppsUnlockJppm`, `ppsLockCount`, `ppsUnlockCount`**  
+  **Default:** `250`, `80`, `500`, `160`, `5`, `3`  
   **Influences:** Gate the GPS state machine’s lock/unlock decisions using drift and jitter thresholds plus consecutive-count hysteresis.
 
 - **`ppsHoldoverMs`**  

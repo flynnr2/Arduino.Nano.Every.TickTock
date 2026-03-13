@@ -1,12 +1,25 @@
 #pragma once
 
 #include <Arduino.h>
+#include "Config.h"
 #include "PendulumProtocol.h"
 
-constexpr size_t   CSV_LINE_MAX       = 128;     // max CSV line length
+#ifndef ENABLE_STS_GPS_DEBUG_VERBOSE
+#define ENABLE_STS_GPS_DEBUG_VERBOSE 0
+#endif
+
+// STS/log sizing strategy:
+// - Keep CSV_LINE_MAX modest for RAM and serial throughput.
+// - Build STS payloads against CSV_PAYLOAD_MAX (not CSV_LINE_MAX), and split
+//   rich diagnostics into multiple self-contained records when needed.
+constexpr size_t   CSV_LINE_MAX       = 256;     // hard cap for a fully emitted CSV line (including STS wrapper)
+constexpr size_t   CSV_STS_WRAP_MAX   = 32;      // reserved room for "STS,<code>," + terminator/newline
+constexpr size_t   CSV_PAYLOAD_MAX    = CSV_LINE_MAX - CSV_STS_WRAP_MAX;
 
 // ENABLE_METRICS — serial stats output on USB Serial every METRICS_PERIOD_MS.
+#ifndef ENABLE_METRICS
 #define ENABLE_METRICS    1
+#endif
 constexpr uint32_t METRICS_PERIOD_MS = 5000u;
 
 
@@ -72,6 +85,7 @@ inline void debugPrintln(const T& v, const U& u) {
 
 #if ENABLE_METRICS
 extern volatile uint8_t  maxFill;
+extern volatile uint32_t stsPayloadTrunc;
 extern volatile uint32_t csvLineTrunc;
 extern volatile uint32_t serialTrunc;
 #endif
@@ -83,4 +97,3 @@ void sendStatus(StatusCode code, const char* text);
 void reportMetrics();
 void printCsvHeader();
 void handleHelp(const char* arg1);          // arg1 may be nullptr
-bool isHelpCommand(const char* cmd);        // "?" or "help" (case-insensitive)
