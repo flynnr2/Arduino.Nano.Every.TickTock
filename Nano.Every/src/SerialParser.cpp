@@ -8,11 +8,15 @@
 #endif
 #include <string.h>
 #include <stdlib.h>
+
+#include "StringCase.h"
 #include "PendulumProtocol.h"
-#include "EEPROMConfig.h"
-#include "PendulumCore.h"
 #include "SerialParser.h"
 #include "AtomicUtils.h"
+#include "PlatformTime.h"
+#include "PendulumCapture.h"
+#include "TunableCommands.h"
+#include "TunableRegistry.h"
 
 // === HELP REGISTRY & HANDLERS ==============================================
 namespace {
@@ -127,88 +131,37 @@ namespace {
 
   void show_tunables() {
     CMD_SERIAL.println(F("Tunables (current / example usage)"));
-
-    CMD_SERIAL.print(F("  ")); CMD_SERIAL.print(PARAM_CORR_JUMP);
-    CMD_SERIAL.print(F(": ")); CMD_SERIAL.print(Tunables::correctionJumpThresh, 6);
-    CMD_SERIAL.println(F("    e.g. `set correctionJumpThresh 0.50` (compatibility-only no-op)"));
-
-    CMD_SERIAL.print(F("  ")); CMD_SERIAL.print(PARAM_PPS_EMA_SHIFT);
-    CMD_SERIAL.print(F(": ")); CMD_SERIAL.print((unsigned)Tunables::ppsEmaShift);
-    CMD_SERIAL.println(F("    e.g. `set ppsEmaShift 8` (legacy alias of ppsSlowShift)"));
-
-    CMD_SERIAL.print(F("  ")); CMD_SERIAL.print(PARAM_PPS_FAST_SHIFT);
-    CMD_SERIAL.print(F(": ")); CMD_SERIAL.print((unsigned)Tunables::ppsFastShift);
-    CMD_SERIAL.println(F("    e.g. `set ppsFastShift 3` (lower=faster)"));
-
-    CMD_SERIAL.print(F("  ")); CMD_SERIAL.print(PARAM_PPS_SLOW_SHIFT);
-    CMD_SERIAL.print(F(": ")); CMD_SERIAL.print((unsigned)Tunables::ppsSlowShift);
-    CMD_SERIAL.println(F("    e.g. `set ppsSlowShift 8` (higher=smoother)"));
-
-    CMD_SERIAL.print(F("  ")); CMD_SERIAL.print(PARAM_PPS_HAMPEL_WIN);
-    CMD_SERIAL.print(F(": ")); CMD_SERIAL.print((unsigned)Tunables::ppsHampelWin);
-    CMD_SERIAL.println(F("    e.g. `set ppsHampelWin 7` (odd 5..9, compatibility-only no-op)"));
-
-    CMD_SERIAL.print(F("  ")); CMD_SERIAL.print(PARAM_PPS_HAMPEL_KX100);
-    CMD_SERIAL.print(F(": ")); CMD_SERIAL.print((unsigned)Tunables::ppsHampelKx100);
-    CMD_SERIAL.println(F("    e.g. `set ppsHampelKx100 300` (k=3.00, compatibility-only no-op)"));
-
-    CMD_SERIAL.print(F("  ")); CMD_SERIAL.print(PARAM_PPS_MEDIAN3);
-    CMD_SERIAL.print(F(": ")); CMD_SERIAL.print(Tunables::ppsMedian3 ? 1 : 0);
-    CMD_SERIAL.println(F("    e.g. `set ppsMedian3 1` (0/1, compatibility-only no-op)"));
-
-    CMD_SERIAL.print(F("  ")); CMD_SERIAL.print(PARAM_PPS_BLEND_LO_PPM);
-    CMD_SERIAL.print(F(": ")); CMD_SERIAL.print((unsigned)Tunables::ppsBlendLoPpm);
-    CMD_SERIAL.println(F("    e.g. `set ppsBlendLoPpm 5`"));
-
-    CMD_SERIAL.print(F("  ")); CMD_SERIAL.print(PARAM_PPS_BLEND_HI_PPM);
-    CMD_SERIAL.print(F(": ")); CMD_SERIAL.print((unsigned)Tunables::ppsBlendHiPpm);
-    CMD_SERIAL.println(F("    e.g. `set ppsBlendHiPpm 200`"));
-
-    CMD_SERIAL.print(F("  ")); CMD_SERIAL.print(PARAM_PPS_LOCK_R_PPM);
-    CMD_SERIAL.print(F(": ")); CMD_SERIAL.print((unsigned)Tunables::ppsLockRppm);
-    CMD_SERIAL.println(F("    e.g. `set ppsLockRppm 50`"));
-
-    CMD_SERIAL.print(F("  ")); CMD_SERIAL.print(PARAM_PPS_LOCK_J_PPM);
-    CMD_SERIAL.print(F(": ")); CMD_SERIAL.print((unsigned)Tunables::ppsLockJppm);
-    CMD_SERIAL.println(F("    e.g. `set ppsLockJppm 20`"));
-
-    CMD_SERIAL.print(F("  ")); CMD_SERIAL.print(PARAM_PPS_LOCK_COUNT);
-    CMD_SERIAL.print(F(": ")); CMD_SERIAL.print((unsigned)Tunables::ppsLockCount);
-    CMD_SERIAL.println(F("    e.g. `set ppsLockCount 10` (range 1..60)"));
-
-    CMD_SERIAL.print(F("  ")); CMD_SERIAL.print(PARAM_PPS_UNLOCK_R_PPM);
-    CMD_SERIAL.print(F(": ")); CMD_SERIAL.print((unsigned)Tunables::ppsUnlockRppm);
-    CMD_SERIAL.println(F("    e.g. `set ppsUnlockRppm 200`"));
-
-    CMD_SERIAL.print(F("  ")); CMD_SERIAL.print(PARAM_PPS_UNLOCK_J_PPM);
-    CMD_SERIAL.print(F(": ")); CMD_SERIAL.print((unsigned)Tunables::ppsUnlockJppm);
-    CMD_SERIAL.println(F("    e.g. `set ppsUnlockJppm 100`"));
-
-    CMD_SERIAL.print(F("  ")); CMD_SERIAL.print(PARAM_PPS_UNLOCK_COUNT);
-    CMD_SERIAL.print(F(": ")); CMD_SERIAL.print((unsigned)Tunables::ppsUnlockCount);
-    CMD_SERIAL.println(F("    e.g. `set ppsUnlockCount 3`"));
-
-    CMD_SERIAL.print(F("  ")); CMD_SERIAL.print(PARAM_PPS_HOLDOVER_MS);
-    CMD_SERIAL.print(F(": ")); CMD_SERIAL.print((unsigned)Tunables::ppsHoldoverMs);
-    CMD_SERIAL.println(F("    e.g. `set ppsHoldoverMs 1500`"));
-
-
-    CMD_SERIAL.print(F("  ")); CMD_SERIAL.print(PARAM_DATA_UNITS);
-    CMD_SERIAL.print(F(": "));
-    switch (Tunables::dataUnits) {
-      case DataUnits::RawCycles:  CMD_SERIAL.print(F("raw_cycles"));  break;
-      case DataUnits::AdjustedMs: CMD_SERIAL.print(F("adjusted_ms")); break;
-      case DataUnits::AdjustedUs: CMD_SERIAL.print(F("adjusted_us")); break;
-      case DataUnits::AdjustedNs: CMD_SERIAL.print(F("adjusted_ns")); break;
-      default: CMD_SERIAL.print(F("?")); break;
+    for (const TunableDescriptor* it = tunableRegistryBegin(); it != tunableRegistryEnd(); ++it) {
+      CMD_SERIAL.print(F("  "));
+      CMD_SERIAL.print(it->cliName);
+      CMD_SERIAL.print(F(" ["));
+      CMD_SERIAL.print(tunableTypeName(it->type));
+      CMD_SERIAL.print(F("]: "));
+      it->printCurrent(CMD_SERIAL);
+      CMD_SERIAL.print(F("    e.g. `"));
+      CMD_SERIAL.print(it->exampleText);
+      CMD_SERIAL.print(F("`"));
+      if (it->helpText && *it->helpText) {
+        CMD_SERIAL.print(F(" ("));
+        CMD_SERIAL.print(it->helpText);
+        if (it->validationText && *it->validationText) {
+          CMD_SERIAL.print(F("; "));
+          CMD_SERIAL.print(it->validationText);
+        }
+        CMD_SERIAL.print(F(")"));
+      } else if (it->validationText && *it->validationText) {
+        CMD_SERIAL.print(F(" ("));
+        CMD_SERIAL.print(it->validationText);
+        CMD_SERIAL.print(F(")"));
+      }
+      CMD_SERIAL.println();
     }
-    CMD_SERIAL.println(F("    e.g. `set dataUnits adjusted_us`"));
   }
 
   // was: void handleHelp(const char* arg1) { ... }
   void helpImpl(const char* arg1) {
     if (!arg1 || *arg1 == '\0') { list_commands(); return; }
-    if (strcasecmp(arg1, "tunables") == 0) { show_tunables(); return; }
+    if (equalsIgnoreCaseAscii(arg1, "tunables")) { show_tunables(); return; }
     if (!detail_for(arg1)) {
       CMD_SERIAL.print(F("No such command: ")); CMD_SERIAL.println(arg1);
       suggest_similar(arg1);
@@ -245,130 +198,18 @@ void processSerialCommands() {
       char *save;
       char *token = strtok_r(cmdBuf, " ", &save);
       if (token) {
-        if (strcasecmp(token, CMD_HELP) == 0 || strcmp(token, "?") == 0) {
+        if (equalsIgnoreCaseAscii(token, CMD_HELP) || strcmp(token, "?") == 0) {
           char* arg1 = strtok_r(NULL, " ", &save);
           handleHelp(arg1);
-        } else if (strcasecmp(token, CMD_STATS) == 0) {
+        } else if (equalsIgnoreCaseAscii(token, CMD_STATS)) {
           reportMetrics();
-        } else if (strcasecmp(token, CMD_GET) == 0) {
+        } else if (equalsIgnoreCaseAscii(token, CMD_GET)) {
           char *name = strtok_r(NULL, " ", &save);
-          if (name) {
-            bool ok = true;
-            bool isFloat = false;
-            bool isString = false;
-            const char* sv = nullptr;
-            unsigned long v = 0;
-            float fv = 0.0f;
-            if      (strcasecmp(name, PARAM_CORR_JUMP) == 0)     { fv = Tunables::correctionJumpThresh; isFloat = true; }
-            else if (strcasecmp(name, PARAM_PPS_EMA_SHIFT) == 0)  v = Tunables::ppsEmaShift;
-            else if (strcasecmp(name, PARAM_PPS_FAST_SHIFT)   == 0) v  = Tunables::ppsFastShift;
-            else if (strcasecmp(name, PARAM_PPS_SLOW_SHIFT)   == 0) v  = Tunables::ppsSlowShift;
-            else if (strcasecmp(name, PARAM_PPS_HAMPEL_WIN)   == 0) v  = Tunables::ppsHampelWin;
-            else if (strcasecmp(name, PARAM_PPS_HAMPEL_KX100) == 0) v  = Tunables::ppsHampelKx100;
-            else if (strcasecmp(name, PARAM_PPS_MEDIAN3)      == 0) v  = (Tunables::ppsMedian3 ? 1 : 0);
-            else if (strcasecmp(name, PARAM_PPS_BLEND_LO_PPM) == 0) v  = Tunables::ppsBlendLoPpm;
-            else if (strcasecmp(name, PARAM_PPS_BLEND_HI_PPM) == 0) v  = Tunables::ppsBlendHiPpm;
-            else if (strcasecmp(name, PARAM_PPS_LOCK_R_PPM)   == 0) v  = Tunables::ppsLockRppm;
-            else if (strcasecmp(name, PARAM_PPS_LOCK_J_PPM)   == 0) v  = Tunables::ppsLockJppm;
-            else if (strcasecmp(name, PARAM_PPS_UNLOCK_R_PPM) == 0) v  = Tunables::ppsUnlockRppm;
-            else if (strcasecmp(name, PARAM_PPS_UNLOCK_J_PPM) == 0) v  = Tunables::ppsUnlockJppm;
-            else if (strcasecmp(name, PARAM_PPS_LOCK_COUNT)   == 0) v  = Tunables::ppsLockCount;
-            else if (strcasecmp(name, PARAM_PPS_UNLOCK_COUNT) == 0) v  = Tunables::ppsUnlockCount;
-            else if (strcasecmp(name, PARAM_PPS_HOLDOVER_MS)  == 0) v  = Tunables::ppsHoldoverMs;
-            else if (strcasecmp(name, PARAM_DATA_UNITS) == 0) {
-              isString = true;
-              switch (Tunables::dataUnits) {
-                case DataUnits::RawCycles:   sv = "raw_cycles"; break;
-                case DataUnits::AdjustedMs:  sv = "adjusted_ms"; break;
-                case DataUnits::AdjustedUs:  sv = "adjusted_us"; break;
-                case DataUnits::AdjustedNs:  sv = "adjusted_ns"; break;
-              }
-            } else ok = false;
-            if (ok) {
-              CMD_SERIAL.print("get: ");
-              CMD_SERIAL.print(name);
-              CMD_SERIAL.print(F(" = "));
-              if (isFloat) CMD_SERIAL.println(fv, 6);
-              else if (isString) CMD_SERIAL.println(sv);
-              else CMD_SERIAL.println(v);
-            } else {
-              CMD_SERIAL.println(F("ERROR: unknown parameter"));
-              sendStatus(StatusCode::InvalidParam, "unknown parameter");
-            }
-          } else {
-            CMD_SERIAL.println(F("ERROR: get requires <param>"));
-            sendStatus(StatusCode::InvalidParam, "get requires <param>");
-          }
-        } else if (strcasecmp(token, CMD_SET) == 0) {
+          handleGetCommand(name);
+        } else if (equalsIgnoreCaseAscii(token, CMD_SET)) {
           char *name = strtok_r(NULL, " ", &save);
           char *val  = strtok_r(NULL, " ", &save);
-          if (name && val) {
-            bool ok = true;
-            bool isFloat = false;
-            bool isString = false;
-            bool tuningChanged = false;
-            unsigned long v = strtoul(val, NULL, 10);
-            float fv = static_cast<float>(strtod(val, NULL));  // strof() not implemented & atof(val) less "safe"
-            if      (strcasecmp(name, PARAM_CORR_JUMP) == 0)     { Tunables::correctionJumpThresh = fv; isFloat = true; }
-            else if (strcasecmp(name, PARAM_PPS_EMA_SHIFT) == 0) { Tunables::ppsEmaShift = (uint8_t)v; Tunables::ppsSlowShift = Tunables::ppsEmaShift; }
-            else if (strcasecmp(name, PARAM_PPS_FAST_SHIFT)   == 0)  Tunables::ppsFastShift   = (uint8_t) v;
-            else if (strcasecmp(name, PARAM_PPS_SLOW_SHIFT)   == 0) { Tunables::ppsSlowShift   = (uint8_t) v; Tunables::ppsEmaShift = Tunables::ppsSlowShift; }
-            else if (strcasecmp(name, PARAM_PPS_HAMPEL_WIN)   == 0)  Tunables::ppsHampelWin   = (uint8_t) v;
-            else if (strcasecmp(name, PARAM_PPS_HAMPEL_KX100) == 0)  Tunables::ppsHampelKx100 = (uint16_t) v;
-            else if (strcasecmp(name, PARAM_PPS_MEDIAN3)      == 0)  Tunables::ppsMedian3     = (v != 0);
-            else if (strcasecmp(name, PARAM_PPS_BLEND_LO_PPM) == 0)  Tunables::ppsBlendLoPpm  = (uint16_t) v;
-            else if (strcasecmp(name, PARAM_PPS_BLEND_HI_PPM) == 0)  Tunables::ppsBlendHiPpm  = (uint16_t) v;
-            else if (strcasecmp(name, PARAM_PPS_LOCK_R_PPM)   == 0) { Tunables::ppsLockRppm    = (uint16_t) v; tuningChanged = true; }
-            else if (strcasecmp(name, PARAM_PPS_LOCK_J_PPM)   == 0) { Tunables::ppsLockJppm    = (uint16_t) v; tuningChanged = true; }
-            else if (strcasecmp(name, PARAM_PPS_UNLOCK_R_PPM) == 0) { Tunables::ppsUnlockRppm  = (uint16_t) v; tuningChanged = true; }
-            else if (strcasecmp(name, PARAM_PPS_UNLOCK_J_PPM) == 0) { Tunables::ppsUnlockJppm  = (uint16_t) v; tuningChanged = true; }
-            else if (strcasecmp(name, PARAM_PPS_LOCK_COUNT)   == 0) {
-              if (v < PPS_LOCK_COUNT_MIN || v > PPS_LOCK_COUNT_MAX) {
-                ok = false;
-                CMD_SERIAL.print(F("ERROR: ppsLockCount must be in range "));
-                CMD_SERIAL.print((unsigned)PPS_LOCK_COUNT_MIN);
-                CMD_SERIAL.print(F(".."));
-                CMD_SERIAL.println((unsigned)PPS_LOCK_COUNT_MAX);
-                sendStatus(StatusCode::InvalidParam, "ppsLockCount out of range");
-              } else {
-                Tunables::ppsLockCount = (uint8_t)v;
-                tuningChanged = true;
-              }
-            }
-            else if (strcasecmp(name, PARAM_PPS_UNLOCK_COUNT) == 0) { Tunables::ppsUnlockCount = (uint8_t)  v; tuningChanged = true; }
-            else if (strcasecmp(name, PARAM_PPS_HOLDOVER_MS)  == 0)  Tunables::ppsHoldoverMs  = (uint16_t) v;
-            else if (strcasecmp(name, PARAM_DATA_UNITS) == 0) {
-              DataUnits du;
-              if      (strcasecmp(val, "raw_cycles") == 0)    du = DataUnits::RawCycles;
-              else if (strcasecmp(val, "adjusted_ms") == 0)   du = DataUnits::AdjustedMs;
-              else if (strcasecmp(val, "adjusted_us") == 0)   du = DataUnits::AdjustedUs;
-              else if (strcasecmp(val, "adjusted_ns") == 0)   du = DataUnits::AdjustedNs;
-              else ok = false;
-              if (ok) { Tunables::dataUnits = du; isString = true; }
-            } else ok = false;
-            if (ok) {
-              Tunables::normalizePpsTunables();
-#if PPS_TUNING_TELEMETRY
-              if (tuningChanged) emitPpsTuningConfigSnapshot();
-#endif
-              CMD_SERIAL.print("set: ");
-              CMD_SERIAL.print(name);
-              CMD_SERIAL.print(F(" = "));
-              if (isFloat) CMD_SERIAL.println(fv, 6);
-              else if (isString) CMD_SERIAL.println(val);
-              else CMD_SERIAL.println(v);
-              saveConfig(getCurrentConfig());
-              if (strcasecmp(name, PARAM_DATA_UNITS) == 0) headerPending = true;
-            } else {
-              if (strcasecmp(name, PARAM_PPS_LOCK_COUNT) != 0) {
-                CMD_SERIAL.println(F("ERROR: unknown parameter"));
-                sendStatus(StatusCode::InvalidParam, "unknown parameter");
-              }
-            }
-          } else {
-            CMD_SERIAL.println(F("ERROR: set requires <param> and <value>"));
-            sendStatus(StatusCode::InvalidParam, "set requires <param> and <value>");
-          }
+          handleSetCommand(name, val, headerPending);
         } else {
           CMD_SERIAL.println(F("ERROR: unknown command"));
           sendStatus(StatusCode::UnknownCommand, token);
@@ -524,10 +365,10 @@ void sendSample(const PendulumSample &s) {
 void reportMetrics() {
 #if ENABLE_METRICS
   static uint32_t lastMetricsMs = 0;
-  uint32_t nowMs = millis();
+  uint32_t nowMs = platformMillis();
   if (nowMs - lastMetricsMs >= METRICS_PERIOD_MS) {
     lastMetricsMs = nowMs;
-    uint32_t dropped = atomicRead32(droppedEvents);
+    uint32_t dropped = captureDroppedEvents();
     char msg[96];
     snprintf(msg, sizeof(msg), "fill=%u,drop=%lu,serTrunc=%lu,payTrunc=%lu,csvTrunc=%lu",
              maxFill,

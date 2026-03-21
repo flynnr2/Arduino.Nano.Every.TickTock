@@ -16,7 +16,8 @@ constexpr uint16_t EEPROM_SLOT_SIZE        = (uint16_t)(EEPROM_SLOT_NANO_B_ADDR 
 
 constexpr uint8_t  EEPROM_CONFIG_VERSION_LEGACY                = 0; // seq did not encode schema version
 constexpr uint8_t  EEPROM_CONFIG_VERSION_PPS_SLOWSHIFT_PRIMARY = 1; // ppsSlowShift is canonical
-constexpr uint8_t  EEPROM_CONFIG_VERSION_CURRENT                = EEPROM_CONFIG_VERSION_PPS_SLOWSHIFT_PRIMARY;
+constexpr uint8_t  EEPROM_CONFIG_VERSION_PPS_TIMEBASE_TUNABLES = 2; // adds PPS freshness/acquire timing tunables
+constexpr uint8_t  EEPROM_CONFIG_VERSION_CURRENT                = EEPROM_CONFIG_VERSION_PPS_TIMEBASE_TUNABLES;
 
 static_assert(sizeof(TunableConfig) <= EEPROM_SLOT_SIZE,
               "TunableConfig must fit within one EEPROM slot");

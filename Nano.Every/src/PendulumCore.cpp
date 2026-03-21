@@ -7,51 +7,27 @@
 #include "SerialParser.h"
 #include "EEPROMConfig.h"
 #include "PendulumCore.h"
+#include "PendulumCapture.h"
+#include "SwingAssembler.h"
+#include "StatusTelemetry.h"
 #include "CaptureInit.h"
-#include "StsHeader.h"
 #include <stdlib.h>
 #include <string.h>
 #include "AtomicUtils.h"
 #include "PpsValidator.h"
 #include "FreqDiscipliner.h"
 #include "DisciplinedTime.h"
+#include "PlatformTime.h"
 
 static_assert(sizeof(uint16_t) == 2, "Expected 16-bit capture modulo domain");
 static_assert(sizeof(uint32_t) == 4, "Expected 32-bit PPS tick domain");
-
-static inline uint32_t ppm_from_frac(float f){ if (f<0) f=-f; return (uint32_t)lroundf(f*1.0e6f);}
 
 static inline uint32_t elapsed32(uint32_t now, uint32_t then) {
   return (uint32_t)(now - then);
 }
 
-
-volatile uint32_t pps_seen                   = 0;        // count of PPS edges seen in ISR
-
-volatile uint32_t droppedEvents              = 0;
-
 volatile uint32_t lastPpsCapture             = 0;        // last PPS capture tick count
-volatile uint32_t lastPpsEdgeCapture         = 0;        // most recent PPS edge tick from ISR
-
-volatile uint16_t pps_latency_last           = 0;        // latest PPS ISR latency (ticks)
-volatile uint16_t pps_latency_min            = 0xFFFF;   // min PPS ISR latency since last report
-volatile uint16_t pps_latency_max            = 0;        // max PPS ISR latency since last report
-volatile uint32_t pps_latency_sum            = 0;        // sum PPS ISR latency since last report
-volatile uint16_t pps_latency_count          = 0;        // number of PPS latency samples since last report
-volatile uint16_t g_pps_latency16_max        = 0;        // max observed raw PPS latency16 (ticks)
-volatile uint32_t g_pps_latency16_wrapRisk   = 0;        // count of latency16 values near 16-bit wrap-risk zone
-volatile uint16_t isr_last_tcb0_ticks         = 0;        // latest observed TCB0 ISR execution time (ticks)
-volatile uint16_t isr_last_tcb1_ticks         = 0;        // latest observed TCB1 ISR execution time (ticks)
-volatile uint16_t isr_last_tcb2_ticks         = 0;        // latest observed TCB2 ISR execution time (ticks)
-volatile uint16_t max_isr_tcb0_ticks          = 0;        // max observed TCB0 ISR execution time (ticks)
-volatile uint16_t max_isr_tcb1_ticks          = 0;        // max observed TCB1 ISR execution time (ticks)
-volatile uint16_t max_isr_tcb2_ticks          = 0;        // max observed TCB2 ISR execution time (ticks)
-
-volatile uint16_t tcb0Ovf                    = 0;        // overflow counter for TCB0 capture
-volatile uint32_t tcb0WrapDetected           = 0;        // number of observed TCB0 overflows
 volatile uint32_t nowBackstepUnexpectedCount = 0;        // coherent-read unexpected regressions
-volatile uint32_t coherentOvfFlagSeenCount   = 0;        // coherent-read snapshots with pending OVF flag set
-volatile uint32_t coherentOvfAppliedCount    = 0;        // coherent-read snapshots where pending OVF compensation was applied
 volatile uint32_t coherentReadRetryCount     = 0;        // coherent-read retries due to unstable OVF/CNT sampling
 
 
@@ -81,7 +57,6 @@ static volatile uint32_t tcb0_gap_bin_gt_196608 = 0;
 static volatile uint32_t tcb0_gap_ref_now32 = 0;
 static volatile uint8_t tcb0_gap_ref_valid = 0;
 
-static volatile uint32_t pps_isr_count = 0;
 static volatile uint32_t pps_proc_count = 0;
 static volatile uint32_t pps_backlog_max = 0;
 static volatile uint32_t pps_dup_isr_suspect_count = 0;
@@ -125,7 +100,7 @@ static inline void diag_cli_exit(uint8_t tag, uint32_t now32) {
 #define DIAG_CLI(tag, now32) diag_cli_enter((uint8_t)(tag), (uint32_t)(now32))
 #define DIAG_SEI(tag, now32) diag_cli_exit((uint8_t)(tag), (uint32_t)(now32))
 
-static inline void diag_tcb0_gap_record(uint32_t now32) {
+void diag_tcb0_gap_record(uint32_t now32) {
   if (tcb0_gap_ref_valid) {
     const uint32_t gap = elapsed32(now32, tcb0_gap_ref_now32);
     tcb0_gap_last_ticks = gap;
@@ -145,65 +120,9 @@ static inline void diag_tcb0_gap_record(uint32_t now32) {
 #define DIAG_SEI(tag, now32) do { (void)(tag); (void)(now32); } while (0)
 #endif
 
-#if ENABLE_STS_GPS_DEBUG
-static uint32_t pend_edge_count = 0;
-static uint32_t pend_backstep_count = 0;
-static uint32_t pend_big_jump_count = 0;
-static uint32_t pend_small_jump_count = 0;
-static uint32_t pend_wrapish_count = 0;
-static uint32_t pend_last_bad_seq = 0;
-static uint32_t pend_last_bad_delta = 0;
-static uint32_t pend_prev_edge32 = 0;
-static bool pend_prev_edge32_valid = false;
-static uint32_t pend_seq = 0;
-
-static constexpr uint32_t MIN_EDGE_DELTA_TICKS = (uint32_t)(F_CPU / 5UL);   // 0.2 s
-static constexpr uint32_t MAX_EDGE_DELTA_TICKS = (uint32_t)(F_CPU * 3UL);   // 3.0 s
-static constexpr uint32_t WRAP_TICKS = 65536UL;
-static constexpr uint32_t WRAP_TOL_TICKS = 2048UL;
-#endif
 float correctionFactor                        = 1.0;      // Used to adjust TCB0 timing drift;
 float corrInst                                = 1.0;      // Instantaneous correction factor
-bool isTick                                   = true;     // Alternates each swing
 GpsStatus gpsStatus = GpsStatus::NO_PPS;
-
-
-// ==== New event and data buffers ====
-struct EdgeEvent {
-  uint32_t ticks;
-  uint8_t  type;
-};
-
-constexpr uint8_t  EVBUF_SIZE = 64;
-static_assert((EVBUF_SIZE & (EVBUF_SIZE - 1U)) == 0U, "EVBUF_SIZE must be power-of-two for mask arithmetic");
-EdgeEvent          evbuf[EVBUF_SIZE];
-volatile uint8_t   ev_head = 0;
-volatile uint8_t   ev_tail = 0;
-
-struct FullSwing {
-  uint32_t tick_block;
-  uint32_t tick;
-  uint32_t tock_block;
-  uint32_t tock;
-};
-
-constexpr uint8_t  SWING_RING_SIZE = RING_SIZE_IR_SENSOR;
-static_assert((SWING_RING_SIZE & (SWING_RING_SIZE - 1U)) == 0U, "SWING_RING_SIZE must be power-of-two for mask arithmetic");
-FullSwing          swing_buf[SWING_RING_SIZE];
-volatile uint8_t   swing_head = 0, swing_tail = 0;
-
-constexpr uint8_t PPS_RING_SIZE = RING_SIZE_PPS;
-static_assert((PPS_RING_SIZE & (PPS_RING_SIZE - 1U)) == 0U, "PPS_RING_SIZE must be power-of-two for mask arithmetic");
-struct PpsCapture {
-  uint32_t edge32;
-  uint32_t now32;
-  uint16_t ovf;
-  uint16_t cap16;
-  uint16_t cnt;
-  uint16_t latency16;
-};
-PpsCapture ppsBuffer[PPS_RING_SIZE];
-volatile uint8_t  ppsHead = 0, ppsTail = 0;
 
 static PpsValidator gPpsValidator;
 static FreqDiscipliner gFreqDiscipliner;
@@ -330,6 +249,77 @@ static inline const char* sample_class_name(PpsValidator::SampleClass c) {
   }
 }
 
+#if ENABLE_PPS_BASELINE_TELEMETRY
+static void emit_pps_baseline_telemetry(uint32_t seq,
+                                        uint32_t now_ms,
+                                        uint32_t dt32_ticks,
+                                        PpsValidator::SampleClass cls,
+                                        bool pps_valid,
+                                        const FreqDiscipliner& discipliner,
+                                        uint16_t latency16,
+                                        uint16_t cap16);
+#endif
+
+
+#if ENABLE_PPS_BASELINE_TELEMETRY
+static inline uint8_t pps_class_compact_code(PpsValidator::SampleClass cls) {
+  switch (cls) {
+    case PpsValidator::SampleClass::OK: return 0;
+    case PpsValidator::SampleClass::GAP: return 1;
+    case PpsValidator::SampleClass::DUP: return 2;
+    case PpsValidator::SampleClass::HARD_GLITCH: return 3;
+    default: return 2;
+  }
+}
+
+static void emit_pps_baseline_telemetry(uint32_t seq,
+                                        uint32_t now_ms,
+                                        uint32_t dt32_ticks,
+                                        PpsValidator::SampleClass cls,
+                                        bool pps_valid,
+                                        const FreqDiscipliner& discipliner,
+                                        uint16_t latency16,
+                                        uint16_t cap16) {
+  // Compact baseline PPS schema for long PPS-only runs (telemetry-only, disabled by default):
+  // PPS_BASE,q,m,d,en,ef,es,eh,c,v,s,ff,fs,fh,r,j,l,cp (all integer key=value fields).
+  // Keep comfortably below STS payload limits; skip send if the formatted payload exceeds this guard.
+  static constexpr uint16_t PPS_BASELINE_SAFE_PAYLOAD_MAX = 210;
+
+  const uint32_t ff = discipliner.fast();
+  const uint32_t fs = discipliner.slow();
+  const uint32_t fh = discipliner.applied();
+  const int32_t en = (int32_t)dt32_ticks - (int32_t)F_CPU;
+  const int32_t ef = (int32_t)dt32_ticks - (int32_t)ff;
+  const int32_t es = (int32_t)dt32_ticks - (int32_t)fs;
+  const int32_t eh = (int32_t)dt32_ticks - (int32_t)fh;
+
+  char line[CSV_PAYLOAD_MAX];
+  const int n = snprintf(line,
+                         sizeof(line),
+                         "PPS_BASE,q=%lu,m=%lu,d=%lu,en=%ld,ef=%ld,es=%ld,eh=%ld,c=%u,v=%u,s=%u,ff=%lu,fs=%lu,fh=%lu,r=%lu,j=%lu,l=%u,cp=%u",
+                         (unsigned long)seq,
+                         (unsigned long)now_ms,
+                         (unsigned long)dt32_ticks,
+                         (long)en,
+                         (long)ef,
+                         (long)es,
+                         (long)eh,
+                         (unsigned int)pps_class_compact_code(cls),
+                         (unsigned int)(pps_valid ? 1U : 0U),
+                         (unsigned int)discipliner.state(),
+                         (unsigned long)ff,
+                         (unsigned long)fs,
+                         (unsigned long)fh,
+                         (unsigned long)discipliner.rPpm(),
+                         (unsigned long)discipliner.madTicks(),
+                         (unsigned int)latency16,
+                         (unsigned int)cap16);
+  if (n > 0 && n <= (int)PPS_BASELINE_SAFE_PAYLOAD_MAX) {
+    sendStatus(StatusCode::ProgressUpdate, line);
+  }
+}
+#endif
+
 static inline const char* snap_reason_name(SnapReason reason) {
   switch (reason) {
     case SnapReason::HARD: return "HG";
@@ -427,6 +417,7 @@ static void emit_gps_line(const GpsSnap &snap,
     (unsigned long)snap.soft_ticks);
   if (n > 0) sendStatus(StatusCode::ProgressUpdate, dbg);
 
+  const CaptureDiagnosticsSnapshot capture_diag = captureDiagnosticsSnapshot();
   n = snprintf(dbg, CSV_PAYLOAD_MAX,
     "gps2,edge_seq=%lu,log_seq=%lu,hg=%u,bs=%u,so=%u,wrap=%lu,coh=%lu|%lu,lat=%u,cap=%u,cnt=%u",
     (unsigned long)snap.edge_seq,
@@ -434,9 +425,9 @@ static void emit_gps_line(const GpsSnap &snap,
     (unsigned int)(hard_glitch ? 1 : 0),
     (unsigned int)(backstep ? 1 : 0),
     (unsigned int)(soft_outlier ? 1 : 0),
-    (unsigned long)atomicRead32(tcb0WrapDetected),
-    (unsigned long)atomicRead32(coherentOvfFlagSeenCount),
-    (unsigned long)atomicRead32(coherentOvfAppliedCount),
+    (unsigned long)capture_diag.tcb0_wrap_detected,
+    (unsigned long)capture_diag.coherent_ovf_flag_seen_count,
+    (unsigned long)capture_diag.coherent_ovf_applied_count,
     (unsigned int)snap.lat16,
     (unsigned int)snap.cap16,
     (unsigned int)snap.cnt);
@@ -445,18 +436,12 @@ static void emit_gps_line(const GpsSnap &snap,
 
 static void emit_gps_health(GpsState state, uint32_t ppsRppm, uint32_t ppsJppm) {
   char* dbg = prepare_gps_debug_line_buf();
-  uint16_t max_tcb0;
-  uint16_t max_tcb1;
-  uint16_t max_tcb2;
-  uint16_t lat16_max;
-  uint32_t lat16_wrap_risk;
-  ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
-    max_tcb0 = max_isr_tcb0_ticks;
-    max_tcb1 = max_isr_tcb1_ticks;
-    max_tcb2 = max_isr_tcb2_ticks;
-    lat16_max = g_pps_latency16_max;
-    lat16_wrap_risk = g_pps_latency16_wrapRisk;
-  }
+  const CaptureDiagnosticsSnapshot capture_diag = captureDiagnosticsSnapshot();
+  const uint16_t max_tcb0 = capture_diag.max_isr_tcb0_ticks;
+  const uint16_t max_tcb1 = capture_diag.max_isr_tcb1_ticks;
+  const uint16_t max_tcb2 = capture_diag.max_isr_tcb2_ticks;
+  const uint16_t lat16_max = capture_diag.pps_latency16_max;
+  const uint32_t lat16_wrap_risk = capture_diag.pps_latency16_wrap_risk;
   uint32_t trunc_cnt = 0;
   uint8_t w_ok = 0;
   uint8_t lr_ok = 0;
@@ -480,7 +465,7 @@ static void emit_gps_health(GpsState state, uint32_t ppsRppm, uint32_t ppsJppm) 
 #endif
   int n = snprintf(dbg, CSV_PAYLOAD_MAX,
     "gps_health1,t=%lu,st=%c,R=%u,J=%u,br_mad=%lu,br_max=%lu,w10=%u,lr10=%u,so10=%u,hg10=%u,gap10=%u,bs10=%u",
-    (unsigned long)millis(),
+    (unsigned long)platformMillis(),
     gps_state_char(state),
     (unsigned int)ppsRppm,
     (unsigned int)ppsJppm,
@@ -575,60 +560,64 @@ static void emit_gps_snap_dump() {
 }
 #endif
 
-// Small helpers
-static inline uint8_t swing_mask(uint8_t v) { return v & (SWING_RING_SIZE - 1); }
-static inline bool swing_available() { return swing_tail != swing_head; }
-static inline void swing_push(const FullSwing &s) {
-  uint8_t n = swing_mask(swing_head + 1);
-  if (n != swing_tail) {
-    swing_buf[swing_head] = s;
-    swing_head            = n;
-  } else {
-    ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
-      droppedEvents++;
-    }
-  }
-}
-static inline FullSwing swing_pop() {
-  FullSwing s;
-  ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
-    s = swing_buf[swing_tail];
-    swing_tail = swing_mask(swing_tail + 1);
-  }
-  return s;
-}
-
-static inline uint8_t pps_mask(uint8_t v) { return v & (PPS_RING_SIZE - 1); }
-static inline bool ppsData_available() { return ppsTail != ppsHead; }
-static inline void droppedEvents_inc_isr() { droppedEvents++; }
-static inline void ppsData_push_isr(uint32_t edge32,
-                                    uint32_t now32,
-                                    uint16_t ovf,
-                                    uint16_t cap16,
-                                    uint16_t cnt,
-                                    uint16_t latency16) {
-  uint8_t n = pps_mask(ppsHead + 1);
-  if (n != ppsTail) {
-    PpsCapture &slot = ppsBuffer[ppsHead];
-    slot.edge32 = edge32;
-    slot.now32 = now32;
-    slot.ovf = ovf;
-    slot.cap16 = cap16;
-    slot.cnt = cnt;
-    slot.latency16 = latency16;
-    ppsHead = n;
-  } else {
-    droppedEvents_inc_isr();
+#if ENABLE_PPS_BASELINE_TELEMETRY && !ENABLE_STS_GPS_DEBUG
+static inline uint8_t pps_class_compact_code(PpsValidator::SampleClass cls) {
+  switch (cls) {
+    case PpsValidator::SampleClass::OK: return 0;
+    case PpsValidator::SampleClass::GAP: return 1;
+    case PpsValidator::SampleClass::DUP: return 2;
+    case PpsValidator::SampleClass::HARD_GLITCH: return 3;
+    default: return 2;
   }
 }
 
-static inline PpsCapture ppsData_pop() {
-  const uint8_t tail = ppsTail;
-  ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
-    ppsTail = pps_mask(tail + 1);
+static void emit_pps_baseline_telemetry(uint32_t seq,
+                                        uint32_t now_ms,
+                                        uint32_t dt32_ticks,
+                                        PpsValidator::SampleClass cls,
+                                        bool pps_valid,
+                                        const FreqDiscipliner& discipliner,
+                                        uint16_t latency16,
+                                        uint16_t cap16) {
+  // Compact baseline PPS schema for long PPS-only runs (telemetry-only, disabled by default):
+  // PPS_BASE,q,m,d,en,ef,es,eh,c,v,s,ff,fs,fh,r,j,l,cp (all integer key=value fields).
+  // Keep comfortably below STS payload limits; skip send if the formatted payload exceeds this guard.
+  static constexpr uint16_t PPS_BASELINE_SAFE_PAYLOAD_MAX = 210;
+
+  const uint32_t ff = discipliner.fast();
+  const uint32_t fs = discipliner.slow();
+  const uint32_t fh = discipliner.applied();
+  const int32_t en = (int32_t)dt32_ticks - (int32_t)F_CPU;
+  const int32_t ef = (int32_t)dt32_ticks - (int32_t)ff;
+  const int32_t es = (int32_t)dt32_ticks - (int32_t)fs;
+  const int32_t eh = (int32_t)dt32_ticks - (int32_t)fh;
+
+  char line[CSV_PAYLOAD_MAX];
+  const int n = snprintf(line,
+                         sizeof(line),
+                         "PPS_BASE,q=%lu,m=%lu,d=%lu,en=%ld,ef=%ld,es=%ld,eh=%ld,c=%u,v=%u,s=%u,ff=%lu,fs=%lu,fh=%lu,r=%lu,j=%lu,l=%u,cp=%u",
+                         (unsigned long)seq,
+                         (unsigned long)now_ms,
+                         (unsigned long)dt32_ticks,
+                         (long)en,
+                         (long)ef,
+                         (long)es,
+                         (long)eh,
+                         (unsigned int)pps_class_compact_code(cls),
+                         (unsigned int)(pps_valid ? 1U : 0U),
+                         (unsigned int)discipliner.state(),
+                         (unsigned long)ff,
+                         (unsigned long)fs,
+                         (unsigned long)fh,
+                         (unsigned long)discipliner.rPpm(),
+                         (unsigned long)discipliner.madTicks(),
+                         (unsigned int)latency16,
+                         (unsigned int)cap16);
+  if (n > 0 && n <= (int)PPS_BASELINE_SAFE_PAYLOAD_MAX) {
+    sendStatus(StatusCode::ProgressUpdate, line);
   }
-  return ppsBuffer[tail];
 }
+#endif
 
 static inline uint32_t ticks_to_us_pps_with_denom(uint32_t ticks, uint32_t denom) {
   return (uint32_t)(((uint64_t)ticks * 1000000ULL) / denom);
@@ -636,125 +625,6 @@ static inline uint32_t ticks_to_us_pps_with_denom(uint32_t ticks, uint32_t denom
 
 static inline uint32_t ticks_to_ns_pps_with_denom(uint32_t ticks, uint32_t denom) {
   return (uint32_t)(((uint64_t)ticks * 1000000000ULL) / denom);
-}
-
-
-// IR beam timing (tick/tock transitions)
-
-static inline uint16_t read_TCB0_CNT() { return TCB0.CNT; }
-
-static inline bool evbuf_available() { return ev_tail != ev_head; }
-
-static inline void push_event(uint32_t ticks, uint8_t type) {
-  uint8_t next = (uint8_t)(ev_head + 1) & (EVBUF_SIZE - 1);
-  if (next != ev_tail) {
-    evbuf[ev_head].ticks = ticks;
-    evbuf[ev_head].type  = type;
-    ev_head = next;
-  } else {
-    droppedEvents_inc_isr();
-  }
-}
-
-static inline EdgeEvent pop_event() {
-  const uint8_t tail = ev_tail;
-  ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
-    ev_tail = (uint8_t)(tail + 1) & (EVBUF_SIZE - 1);
-  }
-  return evbuf[tail];
-}
-
-static void process_edge_events() {
-  static uint8_t  swing_state = 0;
-  static uint32_t last_ts     = 0;
-  static FullSwing curr;
-
-  while (evbuf_available()) {
-    EdgeEvent e = pop_event();
-
-#if ENABLE_STS_GPS_DEBUG
-    pend_edge_count++;
-    pend_seq++;
-    if (pend_prev_edge32_valid) {
-      uint32_t d = elapsed32(e.ticks, pend_prev_edge32);
-      if (e.ticks < pend_prev_edge32) {
-        pend_backstep_count++;
-        pend_last_bad_seq = pend_seq;
-        pend_last_bad_delta = d;
-      }
-      if (d < MIN_EDGE_DELTA_TICKS) {
-        pend_small_jump_count++;
-        pend_last_bad_seq = pend_seq;
-        pend_last_bad_delta = d;
-      }
-      if (d > MAX_EDGE_DELTA_TICKS) {
-        pend_big_jump_count++;
-        pend_last_bad_seq = pend_seq;
-        pend_last_bad_delta = d;
-      }
-      uint32_t wrap_diff = (d > WRAP_TICKS) ? (d - WRAP_TICKS) : (WRAP_TICKS - d);
-      if (wrap_diff <= WRAP_TOL_TICKS) {
-        pend_wrapish_count++;
-      }
-    }
-    pend_prev_edge32 = e.ticks;
-    pend_prev_edge32_valid = true;
-#endif
-
-    switch (swing_state) {
-      case 0: // wait for first rising edge to start swing exit in inverted sensor
-        if (e.type == 0) {
-          last_ts     = e.ticks;
-          swing_state = 1;
-        }
-        break;
-      case 1: // end tick block
-        if (e.type == 1) {
-          curr.tick_block = elapsed32(e.ticks, last_ts);
-          last_ts         = e.ticks;
-          swing_state     = 2;
-        }
-        break;
-      case 2: // end tick
-        if (e.type == 0) {
-          curr.tick  = elapsed32(e.ticks, last_ts);
-          last_ts    = e.ticks;
-          swing_state = 3;
-        }
-        break;
-      case 3: // end tock block
-        if (e.type == 1) {
-          curr.tock_block = elapsed32(e.ticks, last_ts);
-          last_ts         = e.ticks;
-          swing_state     = 4;
-        }
-        break;
-      case 4: // end tock
-        if (e.type == 0) {
-          curr.tock = elapsed32(e.ticks, last_ts);
-          swing_push(curr);
-          last_ts     = e.ticks;
-          swing_state = 1; // start next swing with this rising edge
-        }
-        break;
-    }
-  }
-}
-
-// Coherent 32-bit timestamp from TCB0 {ovf_count, CNT}
-static inline uint32_t tcb0_now_coherent_isr() {
-  uint16_t ovf = tcb0Ovf;
-  uint16_t cnt2 = read_TCB0_CNT();
-  uint8_t intflags2 = TCB0.INTFLAGS;
-
-  if (intflags2 & TCB_CAPT_bm) {
-    coherentOvfFlagSeenCount++;
-    ovf++;
-    coherentOvfAppliedCount++;
-    cnt2 = read_TCB0_CNT();
-  }
-
-  return ((uint32_t)ovf << 16) | (uint32_t)cnt2;
 }
 
 // 16-bit wrap-safe subtract
@@ -768,30 +638,6 @@ static inline int32_t round_to_65536(int32_t v) {
   return ((v - H) / Q) * Q;
 }
 
-namespace Tunables {
-  float     correctionJumpThresh = CORRECTION_JUMP_THRESHOLD; // compatibility-only (no-op in live discipliner path)
-
-  // Back-compat alias to slow
-  uint8_t   ppsEmaShift          = PPS_SLOW_SHIFT_DEFAULT;
-
-  // New:
-  uint8_t   ppsFastShift         = PPS_FAST_SHIFT_DEFAULT;
-  uint8_t   ppsSlowShift         = PPS_SLOW_SHIFT_DEFAULT;
-  uint8_t   ppsHampelWin         = PPS_HAMPEL_WIN_DEFAULT;   // compatibility-only (no-op); retained for CLI/EEPROM/status round-trip
-  uint16_t  ppsHampelKx100       = PPS_HAMPEL_KX100_DEFAULT; // compatibility-only (no-op); retained for CLI/EEPROM/status round-trip
-  bool      ppsMedian3           = PPS_MEDIAN3_DEFAULT;      // compatibility-only (no-op); retained for CLI/EEPROM/status round-trip
-  uint16_t  ppsBlendLoPpm        = PPS_BLEND_LO_PPM_DEFAULT;
-  uint16_t  ppsBlendHiPpm        = PPS_BLEND_HI_PPM_DEFAULT;
-  uint16_t  ppsLockRppm          = PPS_LOCK_R_PPM_DEFAULT;
-  uint16_t  ppsLockJppm          = PPS_LOCK_J_PPM_DEFAULT;
-  uint16_t  ppsUnlockRppm        = PPS_UNLOCK_R_PPM_DEFAULT;
-  uint16_t  ppsUnlockJppm        = PPS_UNLOCK_J_PPM_DEFAULT;
-  uint8_t   ppsLockCount         = PPS_LOCK_COUNT_DEFAULT;
-  uint8_t   ppsUnlockCount       = PPS_UNLOCK_COUNT_DEFAULT;
-  uint16_t  ppsHoldoverMs        = PPS_HOLDOVER_MS_DEFAULT;
-
-  DataUnits dataUnits            = DATA_UNITS_DEFAULT;
-}
 #if ENABLE_STS_GPS_DEBUG
 static void emit_pending_gps_line() {
   if (!gps_have_pending_log) return;
@@ -810,7 +656,7 @@ static void emit_pending_gps_line() {
 #if STS_DIAG > 0
 static void emit_court_summary(uint32_t now_ms) {
   char* dbg = prepare_gps_debug_line_buf();
-  uint32_t isr_cnt;
+  const CaptureDiagnosticsSnapshot capture_diag = captureDiagnosticsSnapshot();
   uint32_t proc_cnt;
   uint32_t backlog_max;
   uint32_t gap65536;
@@ -820,16 +666,10 @@ static void emit_court_summary(uint32_t now_ms) {
   uint32_t cli_max;
   uint32_t cli65536;
   uint32_t cli131072;
-  uint32_t coh_seen;
-  uint32_t coh_applied;
   uint32_t backstep;
   uint32_t hard_total;
   uint32_t gap_total_local;
-  uint16_t isr0_max;
-  uint16_t isr1_max;
-  uint16_t isr2_max;
   ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
-    isr_cnt = pps_isr_count;
     proc_cnt = pps_proc_count;
     backlog_max = pps_backlog_max;
     gap65536 = tcb0_gap_gt_65536_count;
@@ -839,20 +679,15 @@ static void emit_court_summary(uint32_t now_ms) {
     cli_max = cli_max_ticks;
     cli65536 = cli_gt_65536_count;
     cli131072 = cli_gt_131072_count;
-    coh_seen = coherentOvfFlagSeenCount;
-    coh_applied = coherentOvfAppliedCount;
     backstep = nowBackstepUnexpectedCount;
     hard_total = hard_glitch_total;
     gap_total_local = gap_total;
-    isr0_max = max_isr_tcb0_ticks;
-    isr1_max = max_isr_tcb1_ticks;
-    isr2_max = max_isr_tcb2_ticks;
   }
 
   int n = snprintf(dbg, CSV_PAYLOAD_MAX,
     "court1,tms=%lu,pps_isr=%lu,pps_proc=%lu,pps_backlog_max=%lu,gap_total=%lu,hard_total=%lu,dup_sus=%lu,miss_sus=%lu",
     (unsigned long)now_ms,
-    (unsigned long)isr_cnt,
+    (unsigned long)capture_diag.pps_isr_count,
     (unsigned long)proc_cnt,
     (unsigned long)backlog_max,
     (unsigned long)gap_total_local,
@@ -869,12 +704,12 @@ static void emit_court_summary(uint32_t now_ms) {
     (unsigned long)cli131072,
     (unsigned long)cli_unbalanced_count,
     (unsigned long)coh_retry,
-    (unsigned long)coh_seen,
-    (unsigned long)coh_applied,
+    (unsigned long)capture_diag.coherent_ovf_flag_seen_count,
+    (unsigned long)capture_diag.coherent_ovf_applied_count,
     (unsigned long)backstep,
-    (unsigned int)isr0_max,
-    (unsigned int)isr1_max,
-    (unsigned int)isr2_max);
+    (unsigned int)capture_diag.max_isr_tcb0_ticks,
+    (unsigned int)capture_diag.max_isr_tcb1_ticks,
+    (unsigned int)capture_diag.max_isr_tcb2_ticks);
   if (n > 0) sendStatus(StatusCode::ProgressUpdate, dbg);
 
   n = snprintf(dbg, CSV_PAYLOAD_MAX,
@@ -949,20 +784,6 @@ static uint32_t percentile_u32(uint32_t* values, uint8_t n, uint8_t percentile) 
   }
   const uint8_t idx = (uint8_t)(((uint16_t)(n - 1U) * percentile + 99U) / 100U);
   return values[idx];
-}
-
-void emitPpsTuningConfigSnapshot() {
-  char line[CSV_PAYLOAD_MAX];
-  const int n = snprintf(line,
-                         sizeof(line),
-                         "TUNE_CFG,lockR=%u,lockJ=%u,lockN=%u,unlockR=%u,unlockJ=%u,unlockN=%u",
-                         (unsigned int)Tunables::ppsLockRppmActive(),
-                         (unsigned int)Tunables::ppsLockJppmActive(),
-                         (unsigned int)Tunables::ppsLockCountActive(),
-                         (unsigned int)Tunables::ppsUnlockRppmActive(),
-                         (unsigned int)Tunables::ppsUnlockJppmActive(),
-                         (unsigned int)Tunables::ppsUnlockCountActive());
-  if (n > 0) sendStatus(StatusCode::ProgressUpdate, line);
 }
 
 static void emit_tune_window(FreqDiscipliner::DiscState state) {
@@ -1049,186 +870,38 @@ static void emit_tune_event(FreqDiscipliner::DiscState from,
                          (unsigned int)streak);
   if (n > 0) sendStatus(StatusCode::ProgressUpdate, line);
 }
-#else
-void emitPpsTuningConfigSnapshot() {}
 #endif
-
-static void emit_sts_build_header() {
-  char* line = prepare_gps_debug_line_buf();
-  int n = snprintf(line,
-                   CSV_PAYLOAD_MAX,
-                   "build,git=%s,dirty=%s,utc=%s,board=NanoEvery,mcu=ATmega4809,f_cpu=%lu,baud=%lu,cfg_ver=%u",
-                   GIT_SHA,
-                   StsHeader::dirtyField(),
-                   BUILD_UTC,
-                   (unsigned long)F_CPU,
-                   (unsigned long)SERIAL_BAUD_NANO,
-                   (unsigned int)StsHeader::CFG_SCHEMA_VER);
-  if (n > 0) sendStatus(StatusCode::ProgressUpdate, line);
-}
-
-static void emit_sts_schema_header() {
-  char* line = prepare_gps_debug_line_buf();
-#if ENABLE_STS_GPS_DEBUG
-  #if ENABLE_STS_GPS_SNAP
-  int n = snprintf(line, CSV_PAYLOAD_MAX, "schema,gps=%u,gps_health=%u,gps_snap=%u,court=%u",
-                   (unsigned int)StsHeader::GPS_SCHEMA_VER,
-                   (unsigned int)StsHeader::GPS_HEALTH_SCHEMA_VER,
-                   (unsigned int)StsHeader::GPS_SNAP_SCHEMA_VER,
-                   (unsigned int)StsHeader::COURT_SCHEMA_VER);
-  #else
-  int n = snprintf(line, CSV_PAYLOAD_MAX, "schema,gps=%u,gps_health=%u,court=%u",
-                   (unsigned int)StsHeader::GPS_SCHEMA_VER,
-                   (unsigned int)StsHeader::GPS_HEALTH_SCHEMA_VER,
-                   (unsigned int)StsHeader::COURT_SCHEMA_VER);
-  #endif
-#else
-  int n = snprintf(line, CSV_PAYLOAD_MAX, "schema");
-#endif
-  if (n > 0) sendStatus(StatusCode::ProgressUpdate, line);
-}
-
-static void emit_sts_flags_header() {
-  char* line = prepare_gps_debug_line_buf();
-  int n = snprintf(line,
-                   CSV_PAYLOAD_MAX,
-                   "flags,sts_verbose=%u,gps_dbg_verbose=%u,crlf=%u,evsys_pps=%u,evsys_ir=%u,median3=%u,sts_diag=%u",
-                   (unsigned int)StsHeader::FLAG_STS_VERBOSE,
-                   (unsigned int)StsHeader::FLAG_GPS_DBG_VERBOSE,
-                   (unsigned int)StsHeader::FLAG_CRLF,
-                   (unsigned int)StsHeader::FLAG_EVSYS_PPS,
-                   (unsigned int)StsHeader::FLAG_EVSYS_IR,
-                   (unsigned int)StsHeader::FLAG_MEDIAN3_DEFAULT,
-                   (unsigned int)StsHeader::FLAG_STS_DIAG);
-  if (n > 0) sendStatus(StatusCode::ProgressUpdate, line);
-}
-
-static void emit_sts_tunables_header() {
-  // All discipliner tunables are emitted from normalized active values.
-  char* line = prepare_gps_debug_line_buf();
-  int n = snprintf(line,
-                   CSV_PAYLOAD_MAX,
-                   "tun1,fastShift=%u,slowShift=%u,blendLo=%u,blendHi=%u,lockRppm=%u,lockMadTicks=%u,lockN=%u,unlockRppm=%u,unlockMadTicks=%u,unlockN=%u,holdoverMs=%u,jump_ppm=%lu,hardTicks=%lu",
-                   (unsigned int)Tunables::ppsFastShiftActive(),
-                   (unsigned int)Tunables::ppsSlowShiftActive(),
-                   (unsigned int)Tunables::ppsBlendLoPpmActive(),
-                   (unsigned int)Tunables::ppsBlendHiPpmActive(),
-                   (unsigned int)FreqDiscipliner::lockFrequencyErrorThresholdPpm(),
-                   (unsigned int)FreqDiscipliner::lockMadThresholdTicks(),
-                   (unsigned int)FreqDiscipliner::lockConsecutiveGoodSamplesRequired(),
-                   (unsigned int)Tunables::ppsUnlockRppmActive(),
-                   (unsigned int)Tunables::ppsUnlockJppmActive(),
-                   (unsigned int)Tunables::ppsUnlockCountActive(),
-                   (unsigned int)Tunables::ppsHoldoverMsActive(),
-                   (unsigned long)ppm_from_frac(Tunables::correctionJumpThresh),
-                   (unsigned long)PpsValidator::kHardTicks());
-  if (n > 0) sendStatus(StatusCode::ProgressUpdate, line);
-
-  n = snprintf(line,
-               CSV_PAYLOAD_MAX,
-               "tun2,k_valid=%u,r_disc_ppm=%u,mad_disc_ticks=%u,br_note=dt16-vs-dt32_lo16",
-               (unsigned int)PpsValidator::kValid(),
-               (unsigned int)FreqDiscipliner::lockFrequencyErrorThresholdPpm(),
-               (unsigned int)FreqDiscipliner::lockMadThresholdTicks());
-  if (n > 0) sendStatus(StatusCode::ProgressUpdate, line);
-}
-
-static void emit_sts_pps_cfg() {
-  char* line = prepare_gps_debug_line_buf();
-  // PPS validator domain is full 32-bit ticks-per-second intervals.
-  const uint32_t ref = (uint32_t)F_CPU;
-  // Always source from PpsValidator helpers to keep reporting drift-proof.
-  const uint32_t min_ticks = PpsValidator::minOkTicks(ref);
-  const uint32_t max_ticks = PpsValidator::maxOkTicks(ref);
-  int n = snprintf(line,
-                   CSV_PAYLOAD_MAX,
-                   "pps_cfg,ref=%lu,min=%lu,max=%lu,seed_n2_max10=%u,seed_cons100=%u,seed_need=%u,reseed_need=%u,hard_ticks=%lu,dup_num10=%u,ok_min_num10=%u,ok_max_num10=%u,gap_num10=%u,ratio_den10=%u",
-                   (unsigned long)ref,
-                   (unsigned long)min_ticks,
-                   (unsigned long)max_ticks,
-                   (unsigned int)PpsValidator::seedNear2xMaxNum10(),
-                   (unsigned int)PpsValidator::seedConsistencyNum100(),
-                   (unsigned int)PpsValidator::startupSeedRequired(),
-                   (unsigned int)PpsValidator::recoverySeedRequired(),
-                   (unsigned long)PpsValidator::kHardTicks(),
-                   (unsigned int)PpsValidator::dupNum10(),
-                   (unsigned int)PpsValidator::okMinNum10(),
-                   (unsigned int)PpsValidator::okMaxNum10(),
-                   (unsigned int)PpsValidator::gapNum10(),
-                   (unsigned int)PpsValidator::ratioDen10());
-  if (n > 0) sendStatus(StatusCode::ProgressUpdate, line);
-}
 
 static bool sts_pps_cfg_reemit_pending = false;
-
-static void emitStsHeader() {
-  emit_sts_build_header();
-  emit_sts_schema_header();
-  emit_sts_flags_header();
-  emit_sts_tunables_header();
-  emit_sts_pps_cfg();
-  sts_pps_cfg_reemit_pending = true;
-}
-
-static void emitResetCause() {
-  const uint8_t rstfr = RSTCTRL.RSTFR;
-  char flags[48];
-  size_t pos = 0;
-
-  auto append_flag = [&](const char* flag) {
-    if (pos >= sizeof(flags) - 1) return;
-    if (pos != 0 && pos < sizeof(flags) - 1) flags[pos++] = '|';
-    for (size_t i = 0; flag[i] != '\0' && pos < sizeof(flags) - 1; ++i) {
-      flags[pos++] = flag[i];
-    }
-    flags[pos] = '\0';
-  };
-
-  flags[0] = '\0';
-  if (rstfr & RSTCTRL_PORF_bm) append_flag("PORF");
-  if (rstfr & RSTCTRL_BORF_bm) append_flag("BORF");
-  if (rstfr & RSTCTRL_EXTRF_bm) append_flag("EXTRF");
-  if (rstfr & RSTCTRL_WDRF_bm) append_flag("WDRF");
-  if (rstfr & RSTCTRL_SWRF_bm) append_flag("SWRF");
-  if (rstfr & RSTCTRL_UPDIRF_bm) append_flag("UPDIRF");
-  if (pos == 0) append_flag("NONE");
-
-  char line[96];
-  const int n = snprintf(line, sizeof(line), "rstfr,raw=0x%02X,flags=%s", (unsigned int)rstfr, flags);
-  if (n > 0) sendStatus(StatusCode::ProgressUpdate, line);
-
-  // Clear only the currently latched reset-cause bits (write-1-to-clear).
-  RSTCTRL.RSTFR = rstfr;
-}
 
 void pendulumSetup() {
   pinMode(ledPin, OUTPUT);
 
   gpsStatus = GpsStatus::NO_PPS;
-  DATA_SERIAL.begin(SERIAL_BAUD_NANO); delay(10);
+  DATA_SERIAL.begin(SERIAL_BAUD_NANO);
   if (&CMD_SERIAL != &DATA_SERIAL) {
-    CMD_SERIAL.begin(SERIAL_BAUD_NANO); delay(10);
+    CMD_SERIAL.begin(SERIAL_BAUD_NANO);
   }
   if (&DEBUG_SERIAL != &DATA_SERIAL && &DEBUG_SERIAL != &CMD_SERIAL) {
-    DEBUG_SERIAL.begin(SERIAL_BAUD_NANO); delay(10);
+    DEBUG_SERIAL.begin(SERIAL_BAUD_NANO);
   }
 
   emitResetCause();
 
   sendStatus(StatusCode::ProgressUpdate, "Begin setup() ...");
 
-  TunableConfig cfg;
-  //XXX Priming for EEPROM
-  //XXX saveConfig(cfg);saveConfig(cfg);
-  if (loadConfig(cfg)) applyConfig(cfg);
+  TunableConfig cfg = {};
+  if (loadConfig(cfg)) {
+    applyConfig(cfg);
+  }
 
+  captureResetState();
   gPpsValidator.reset();
   gFreqDiscipliner.reset((uint32_t)F_CPU);
   gDisciplinedTime.begin((uint32_t)F_CPU);
-  g_pps_latency16_max = 0;
-  g_pps_latency16_wrapRisk = 0;
 
-  emitStsHeader();
+  emitStatusBootHeaders();
+  sts_pps_cfg_reemit_pending = true;
 #if PPS_TUNING_TELEMETRY
   emitPpsTuningConfigSnapshot();
 #endif
@@ -1245,7 +918,7 @@ void pendulumSetup() {
   tcb1_init_IR_capt();
   tcb2_init_PPS_capt();
 #if STS_DIAG > 0
-  const uint32_t sei_now32 = tcb0_now_coherent_isr();
+  const uint32_t sei_now32 = tcb0NowCoherent();
   DIAG_SEI(DIAG_CLI_TAG_SETUP_INIT, sei_now32);
 #endif
   sei();
@@ -1272,19 +945,23 @@ static void process_pps() {
 #endif
   static uint32_t pps_last_edge32 = 0;
   static uint16_t lastPpsCap16 = 0;
+#if ENABLE_PPS_BASELINE_TELEMETRY
+  static uint32_t pps_base_seq = 0;
+#endif
   static uint32_t last_edge_seq = 0;
   static uint32_t edge_seq = 0;
   static constexpr int32_t BR_MAX = 200;
   static bool warned_f_hat_suspicious = false;
 
-  const uint32_t now_ms = millis();
-  uint32_t pps_seen_now = atomicRead32(pps_seen);
+  const uint32_t now_ms = platformMillis();
+  const CaptureDiagnosticsSnapshot capture_diag = captureDiagnosticsSnapshot();
+  uint32_t pps_seen_now = capture_diag.pps_seen;
 #if STS_DIAG > 0
-  uint32_t pps_isr_now = atomicRead32(pps_isr_count);
+  uint32_t pps_isr_now = capture_diag.pps_isr_count;
   if (pps_isr_now != last_pps_isr_count) {
     last_pps_isr_count = pps_isr_now;
     last_pps_isr_change_ms = now_ms;
-  } else if ((uint32_t)(now_ms - last_pps_isr_change_ms) > 1500UL) {
+  } else if ((uint32_t)(now_ms - last_pps_isr_change_ms) > (uint32_t)Tunables::ppsIsrStaleMsActive()) {
     pps_missed_isr_suspect_count++;
     last_pps_isr_change_ms = now_ms;
   }
@@ -1294,7 +971,7 @@ static void process_pps() {
     last_pps_seen_change_ms = now_ms;
   }
 
-  if ((uint32_t)(now_ms - last_pps_seen_change_ms) > 1500UL) {
+  if ((uint32_t)(now_ms - last_pps_seen_change_ms) > (uint32_t)Tunables::ppsStaleMsActive()) {
     gPpsValidator.reset();
     gFreqDiscipliner.observe(PpsValidator::SampleClass::GAP, false, (uint32_t)F_CPU, now_ms, true);
     gDisciplinedTime.sync(gFreqDiscipliner, false);
@@ -1302,8 +979,8 @@ static void process_pps() {
 
   // Re-emit pps_cfg exactly once from the runtime path after startup settles,
   // so the configuration survives cases where the boot burst is missed.
-  if (sts_pps_cfg_reemit_pending && now_ms >= 2000UL) {
-    emit_sts_pps_cfg();
+  if (sts_pps_cfg_reemit_pending && now_ms >= (uint32_t)Tunables::ppsConfigReemitDelayMsActive()) {
+    emitStatusPpsConfig();
     sts_pps_cfg_reemit_pending = false;
   }
 
@@ -1314,11 +991,11 @@ static void process_pps() {
   }
 #endif
 
-  while (ppsData_available()) {
-    PpsCapture cap = ppsData_pop();
+  while (capturePpsAvailable()) {
+    PpsCapture cap = capturePopPps();
 #if STS_DIAG > 0
     pps_proc_count++;
-    const uint32_t isr_cnt = atomicRead32(pps_isr_count);
+    const uint32_t isr_cnt = captureDiagnosticsSnapshot().pps_isr_count;
     const uint32_t backlog = (isr_cnt >= pps_proc_count) ? (isr_cnt - pps_proc_count) : 0;
     if (backlog > pps_backlog_max) pps_backlog_max = backlog;
     diag_tcb0_gap_record(cap.now32);
@@ -1389,6 +1066,17 @@ static void process_pps() {
     const FreqDiscipliner::DiscState prev_disc_state = gFreqDiscipliner.state();
     gFreqDiscipliner.observe(cls, pps_valid, pps_dt32_ticks, now_ms, anomaly);
     gDisciplinedTime.sync(gFreqDiscipliner, pps_valid);
+
+#if ENABLE_PPS_BASELINE_TELEMETRY
+    emit_pps_baseline_telemetry(++pps_base_seq,
+                                now_ms,
+                                pps_dt32_ticks,
+                                cls,
+                                pps_valid,
+                                gFreqDiscipliner,
+                                cap.latency16,
+                                cap.cap16);
+#endif
 
     pps_edge_seq = edge_seq;
     pps_delta_inst = pps_dt32_ticks;
@@ -1526,18 +1214,12 @@ static void process_pps() {
     if ((uint32_t)(now_ms - last_health_ms) >= GPS_HEALTH_PERIOD_MS) {
       last_health_ms = now_ms;
       PpsValidator::Health h = gPpsValidator.health();
-      uint16_t tcb0_ovf_now;
-      uint32_t tcb0_wraps_now;
-      uint32_t coh_seen_now;
-      uint32_t coh_bump_now;
-      uint8_t capt_pending;
-      ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
-        tcb0_ovf_now = tcb0Ovf;
-        tcb0_wraps_now = tcb0WrapDetected;
-        coh_seen_now = coherentOvfFlagSeenCount;
-        coh_bump_now = coherentOvfAppliedCount;
-        capt_pending = (TCB0.INTFLAGS & TCB_CAPT_bm) ? 1 : 0;
-      }
+      const CaptureDiagnosticsSnapshot capture_diag = captureDiagnosticsSnapshot();
+      const uint16_t tcb0_ovf_now = capture_diag.tcb0_ovf;
+      const uint32_t tcb0_wraps_now = capture_diag.tcb0_wrap_detected;
+      const uint32_t coh_seen_now = capture_diag.coherent_ovf_flag_seen_count;
+      const uint32_t coh_bump_now = capture_diag.coherent_ovf_applied_count;
+      const uint8_t capt_pending = capture_diag.capt_pending;
       PpsValidator::SeedDiagnostics seed_diag = gPpsValidator.seedDiagnostics();
       char* dbg = prepare_gps_debug_line_buf();
       int n = snprintf(dbg, CSV_PAYLOAD_MAX,
@@ -1563,8 +1245,8 @@ static void process_pps() {
                    (unsigned int)pps_dt16_mod,
                    (unsigned long)pps_dt32_ticks,
                    (long)br,
-                       (unsigned int)g_pps_latency16_max,
-                       (unsigned long)g_pps_latency16_wrapRisk,
+                       (unsigned int)capture_diag.pps_latency16_max,
+                       (unsigned long)capture_diag.pps_latency16_wrap_risk,
                        (unsigned int)seed_diag.startup_phase,
                        (unsigned int)seed_diag.seed_count,
                        (unsigned long)seed_diag.seed_candidate_ticks,
@@ -1584,25 +1266,34 @@ static void process_pps() {
                    (unsigned long)coh_seen_now,
                    (unsigned long)coh_bump_now,
                    (unsigned long)coherentReadRetryCount,
-                   (unsigned int)isr_last_tcb0_ticks,
-                   (unsigned int)isr_last_tcb1_ticks,
-                   (unsigned int)isr_last_tcb2_ticks,
-                   (unsigned int)max_isr_tcb0_ticks,
-                   (unsigned int)max_isr_tcb1_ticks,
-                   (unsigned int)max_isr_tcb2_ticks);
+                   (unsigned int)capture_diag.isr_last_tcb0_ticks,
+                   (unsigned int)capture_diag.isr_last_tcb1_ticks,
+                   (unsigned int)capture_diag.isr_last_tcb2_ticks,
+                   (unsigned int)capture_diag.max_isr_tcb0_ticks,
+                   (unsigned int)capture_diag.max_isr_tcb1_ticks,
+                   (unsigned int)capture_diag.max_isr_tcb2_ticks);
       if (n > 0) sendStatus(StatusCode::ProgressUpdate, dbg);
+
+      n = snprintf(dbg, CSV_PAYLOAD_MAX,
+                   "plat_time,ms=%lu,src=%u,backstep=%lu",
+                   (unsigned long)now_ms,
+                   (unsigned int)(USE_ARDUINO_TIMEBASE ? 1U : 0U),
+                   (unsigned long)platformMillisBackstepCount());
+      if (n > 0) sendStatus(StatusCode::ProgressUpdate, dbg);
+
+      const SwingDiagnostics swing_diag = swingAssemblerDiagnostics();
 
       n = snprintf(dbg, CSV_PAYLOAD_MAX,
                    "pend_health,ms=%lu,edges=%lu,dropped=%lu,back=%lu,big=%lu,small=%lu,wrapish=%lu,last_bad_seq=%lu,last_bad_d=%lu",
                    (unsigned long)now_ms,
-                   (unsigned long)pend_edge_count,
-                   (unsigned long)atomicRead32(droppedEvents),
-                   (unsigned long)pend_backstep_count,
-                   (unsigned long)pend_big_jump_count,
-                   (unsigned long)pend_small_jump_count,
-                   (unsigned long)pend_wrapish_count,
-                   (unsigned long)pend_last_bad_seq,
-                   (unsigned long)pend_last_bad_delta);
+                   (unsigned long)swing_diag.edge_count,
+                   (unsigned long)captureDroppedEvents(),
+                   (unsigned long)swing_diag.backstep_count,
+                   (unsigned long)swing_diag.big_jump_count,
+                   (unsigned long)swing_diag.small_jump_count,
+                   (unsigned long)swing_diag.wrapish_count,
+                   (unsigned long)swing_diag.last_bad_seq,
+                   (unsigned long)swing_diag.last_bad_delta);
       if (n > 0) sendStatus(StatusCode::ProgressUpdate, dbg);
 
       int n_int = snprintf(dbg, CSV_PAYLOAD_MAX,
@@ -1624,10 +1315,10 @@ void pendulumLoop() {
   emit_pending_gps_line();
   emit_gps_snap_dump();
 #endif
-  process_edge_events();
+  swingAssemblerProcessEdges();
 
-  while (swing_available()) {
-    FullSwing fs = swing_pop();
+  while (swingAssemblerAvailable()) {
+    FullSwing fs = swingAssemblerPop();
     const uint32_t ticks_per_second = gDisciplinedTime.ticksPerSecond();
 
     PendulumSample sample{};
@@ -1665,13 +1356,13 @@ void pendulumLoop() {
     sample.corr_inst_ppm  = (int32_t)lround((corr_inst - 1.0) * (double)CORR_PPM_SCALE);
     sample.corr_blend_ppm = (int32_t)lround((corr_blend - 1.0) * (double)CORR_PPM_SCALE);
     sample.gps_status     = gpsStatus;
-    sample.dropped_events = atomicRead32(droppedEvents);
+    sample.dropped_events = captureDroppedEvents();
 
     sendSample(sample);
   }
 #if ENABLE_PERIODIC_FLUSH
   static uint32_t s_last_flush_ms = 0;
-  const uint32_t now_ms = millis();
+  const uint32_t now_ms = platformMillis();
   if ((uint32_t)(now_ms - s_last_flush_ms) >= FLUSH_PERIOD_MS) {
     s_last_flush_ms = now_ms;
     DATA_SERIAL.flush();
@@ -1679,188 +1370,98 @@ void pendulumLoop() {
 #endif
 }
 
-// |----------------------------------------------------------------------------------------------|
-// | ISR: TCB0_INT_vect (free-running timer overflow)                                             |
-// | Estimated cycle cost (ATmega4809 @ 16MHz)                                                    |
-// | Component                          | Cycles | Explanation                                    |
-// |------------------------------------|--------|------------------------------------------------|
-// | ISR prologue + epilogue            | ~22    | gcc pushes/pops regs + `reti`                  |
-// | Write `TCB0.INTFLAGS`              | 2      | clear CAPT/OVF flags                           |
-// | Increment `tcb0Ovf`                | ~10    | 32-bit increment                               |
-// | Increment `tcb0WrapDetected`       | ~10    | 32-bit increment                               |
-// | Optional diag timing updates       | ~18-30 | read CNT twice + sub16 + compare/store max     |
-// | **Total (diag OFF / ON)**          | **~44 / ~62-74** | **~2.8µs / ~3.9-4.6µs @ 16MHz**      |
-// -----------------------------------------------------------------------------------------------|
-ISR(TCB0_INT_vect) {
-#if ENABLE_ISR_DIAGNOSTICS
-  uint16_t isr_start = read_TCB0_CNT();
-#endif
-  TCB0.INTFLAGS = TCB_CAPT_bm;
-  tcb0Ovf++;
-  tcb0WrapDetected++;
-#if STS_DIAG > 0
-  diag_tcb0_gap_record((((uint32_t)tcb0Ovf) << 16) | (uint32_t)read_TCB0_CNT());
-#endif
-#if ENABLE_ISR_DIAGNOSTICS
-  uint16_t dur = sub16(read_TCB0_CNT(), isr_start);
-  isr_last_tcb0_ticks = dur;
-  if (dur > max_isr_tcb0_ticks) max_isr_tcb0_ticks = dur;
-#endif
-}
-
 /*
-ISR timestamp capture rationale — why ISR(TCBn_INT_vect) beats reading TCBn.CCMP directly
+About PPS_BASE field `l` (raw `latency16`) and why it sometimes shows structure
+-------------------------------------------------------------------------------
 
-- Single 32-bit timeline: TCBn.CCMP is only 16-bit in TCn2’s domain (wraps every ~4.096 ms @ 16 MHz).
-  The ISR maps each PPS edge onto the TCB0+overflow 32-bit clock so PPS and IR events share one timebase.
+In the PPS capture ISR (`ISR(TCB2_INT_vect)`), we compute:
 
-- Removes ISR latency/jitter: measure how late we are (d = TCBn.CNT - TCBn.CCMP) and backdate the
-  timestamp into the TCB0 domain, making the result independent of interrupt latency or main-loop load.
+    const uint16_t ccmp      = TCB2.CCMP;
+    const uint16_t now_cnt   = TCB2.CNT;
+    const uint32_t now32     = tcb0_now_coherent_isr();
+    const uint16_t latency16 = (uint16_t)(now_cnt - ccmp);
+    const uint32_t edge32    = now32 - (uint32_t)latency16;
 
-- Coherency & overflow safe: use tcb0_now_coherent_isr() to read TCB0’s 32-bit time without wrap glitches;
-  clear CAPT promptly to avoid the one-deep capture buffer being overwritten by the next PPS.
+and `latency16` is later reported in `PPS_BASE` as field `l`.
 
-- Avoids cross-domain drift: no need to track TCBn overflows or calibrate a fixed phase offset to TCB0.
+Meaning of `latency16` / `l`
+----------------------------
 
-- Centralizes bookkeeping: ISR is the right place to push ring buffers, set flags, and apply sanity guards.
+`latency16` is the elapsed time, in TCB2 ticks, between:
+  1) the hardware-captured PPS edge time latched in `TCB2.CCMP`, and
+  2) the later point in the ISR when `TCB2.CNT` is sampled.
 
-Minimal math (inside ISR):
-    uint16_t ccmp = TCBn.CCMP;
-    uint16_t cnt  = TCB .CNT;
-    TCBn.INTFLAGS = TCB_CAPT_bm;           // clear early to prevent overwrite
-    uint16_t d16  = cnt - ccmp;            // ticks since the edge (same tick rate as TCB0)
-    uint32_t now  = tcb0_now_coherent_isr();   // race-free 32-bit read of TCB0 time
-    uint32_t ts32 = now - (uint32_t)d16;   // PPS timestamp in TCB0’s 32-bit timeline
+So `l` is primarily an ISR service-latency diagnostic.
+It is NOT, by itself, a direct timestamp-error metric.
+
+Why `l` can show a quantized main mode plus a rare secondary bump
+-----------------------------------------------------------------
+
+In analysis, `l` usually has:
+  - a dominant mode at the normal PPS ISR service latency,
+  - 1-tick quantization (expected from timer granularity), and
+  - a rare higher-latency secondary mode.
+
+A likely explanation for the rare higher-latency mode is coincidence with
+`TCB0` wrap / overflow bookkeeping:
+
+  - `ISR(TCB2_INT_vect)` timestamps PPS edges onto the shared TCB0+overflow
+    32-bit timebase via `tcb0_now_coherent_isr()`.
+  - If the PPS edge arrives very close to a 16-bit wrap of TCB0, then
+    `ISR(TCB2_INT_vect)` can coincide with `ISR(TCB0_INT_vect)` or with the
+    coherent-read logic handling an overflow-adjacent sample.
+  - That can increase observed `latency16` without implying that `edge32`
+    reconstruction is wrong.
+
+Intuition:
+    latency16 ~= normal PPS ISR latency
+or, more rarely,
+    latency16 ~= normal PPS ISR latency + wrap/overflow coincidence overhead
+
+Why this is usually harmless
+----------------------------
+
+The PPS edge time used by the rest of the system is `edge32`, not `now32`.
+We explicitly backdate from `now32` by `latency16`:
+
+    edge32 = now32 - (uint32_t)latency16;
+
+So a larger `latency16` does NOT automatically mean a bad PPS timestamp.
+What matters is whether `edge32` is reconstructed correctly.
+
+In the analysed baseline runs:
+  - `l` / `latency16` showed real structure,
+  - but there was no evidence that this structure caused bad discipline,
+    unlocks, or obvious PPS timestamp failure.
+It appeared to be a harmless implementation fingerprint, especially near
+wrap-adjacent cases.
+
+Related diagnostics
+-------------------
+
+Useful nearby diagnostics / variables:
+  - `pps_latency_last`
+  - `pps_latency_min`
+  - `pps_latency_max`
+  - `pps_latency_sum`
+  - `pps_latency_count`
+  - `g_pps_latency16_max`
+  - `g_pps_latency16_wrapRisk`
+
+`g_pps_latency16_wrapRisk` increments when `latency16 > 60000U`, i.e. when the
+raw 16-bit subtraction result lands suspiciously close to 65535. That is a
+useful flag for wrap-adjacent or pathological cases, but not every elevated
+`latency16` is pathological.
+
+When to care
+------------
+
+Investigate further only if one or more of the following start happening:
+  - elevated `latency16` events become frequent,
+  - `g_pps_latency16_wrapRisk` grows unexpectedly,
+  - `l` starts correlating with `r`, `j`, `en`, or lock-state changes,
+  - or there is evidence that `edge32` reconstruction is actually wrong.
+
+Until then, treat `l` as a useful ISR-timing diagnostic, not as a failure
+indicator by itself.
 */
-
-
-// |-----------------------------------------------------------------------------------------------|
-// | ISR: TCB1_INT_vect (IR sensor edge capture)                                                   |
-// | Estimated cycle cost (ATmega4809 @ 16MHz)                                                     |
-// | Component                          | Cycles | Explanation                                     |
-// |------------------------------------|--------|-------------------------------------------------|
-// | ISR prologue + epilogue            | ~22    | gcc pushes/pops regs + `reti`                   |
-// | Read+clear `TCB1.INTFLAGS`         | ~4     | load flags + write-1-to-clear                   |
-// | Non-CAPT gate + branch             | ~3-6   | `flags & TCB_CAPT_bm` test and branch           |
-// | Read `TCB1.CCMP` + `TCB1.CNT`      | 8      | two 16-bit peripheral reads                     |
-// | `now32 = tcb0_now_coherent_isr()`  | ~20    | coherent overflow/CNT sample in TCB0 domain     |
-// | `latency16` + `edge32` arithmetic  | ~6     | 16-bit sub + 32-bit backdate                    |
-// | Tick/tock branch logic             | ~2-4   | branch on `isTick`                              |
-// | `push_event(...)`                  | ~33    | ring index, stores, dropped-event guard         |
-// | Update `TCB1.EVCTRL` + `isTick`    | ~4     | select next edge + state toggle                 |
-// | Optional diag timing updates       | ~18-30 | read CNT twice + sub16 + compare/store max      |
-// | **Total (CAPT path, diag OFF / ON)**| **~102-107 / ~120-137** | **~6.4-6.7µs / ~7.5-8.6µs**   |
-// |-----------------------------------------------------------------------------------------------|
-ISR(TCB1_INT_vect) {
-#if ENABLE_ISR_DIAGNOSTICS
-  const uint16_t isr_start = read_TCB0_CNT();
-#endif
-  const uint8_t flags = TCB1.INTFLAGS;
-  TCB1.INTFLAGS = flags;
-
-  if (!(flags & TCB_CAPT_bm)) {
-    return;
-  }
-
-  // Latch the captured edge time (TCB1 domain)
-  const uint16_t ccmp = TCB1.CCMP;
-
-  // Coherent 32-bit "now" in TCB0 domain (t2)
-  const uint32_t now32 = tcb0_now_coherent_isr();
-
-  // Tightened: sample CNT as close as possible to now32 (also ~t2)
-  const uint16_t cnt = TCB1.CNT;
-
-  // Latency since edge measured at ~t2, in TCB1 ticks
-  const uint16_t latency16 = (uint16_t)(cnt - ccmp);
-
-  // Backdate into TCB0 domain
-  const uint32_t edge32 = now32 - (uint32_t)latency16;
-
-  constexpr uint8_t EVCTRL_CAPTURE_EDGE_HIGH_TO_LOW = TCB_CAPTEI_bm | TCB_EDGE_bm | TCB_FILTER_bm;
-  constexpr uint8_t EVCTRL_CAPTURE_EDGE_LOW_TO_HIGH = TCB_CAPTEI_bm | TCB_FILTER_bm;
-
-  if (isTick) {
-    push_event(edge32, 0);                             // rising (LOW->HIGH, EDGE=0)
-    TCB1.EVCTRL = EVCTRL_CAPTURE_EDGE_HIGH_TO_LOW;     // capture events EDGE = 1
-    isTick = false;
-  } else {
-    push_event(edge32, 1);                             // falling (HIGH->LOW, EDGE=1)
-    TCB1.EVCTRL = EVCTRL_CAPTURE_EDGE_LOW_TO_HIGH;     // capture events EDGE = 0
-    isTick = true;
-  }
-#if ENABLE_ISR_DIAGNOSTICS
-  const uint16_t dur = sub16(read_TCB0_CNT(), isr_start);
-  isr_last_tcb1_ticks = dur;
-  if (dur > max_isr_tcb1_ticks) max_isr_tcb1_ticks = dur;
-#endif
-}
-
-// |------------------------------------------------------------------------------------------------|
-// | ISR: TCB2_INT_vect (PPS capture)                                                               |
-// | Estimated cycle cost (ATmega4809 @ 16MHz)                                                      |
-// | Component                           | Cycles | Explanation                                     |
-// |-------------------------------------|--------|-------------------------------------------------|
-// | ISR prologue + epilogue             | ~22    | gcc pushes/pops regs + `reti`                   |
-// | Read+clear `TCB2.INTFLAGS`          | ~4     | load flags + write-1-to-clear                   |
-// | Non-CAPT gate + branch              | ~3-6   | `flags & TCB_CAPT_bm` test and branch           |
-// | Read `TCB2.CCMP` + `TCB2.CNT`       | 8      | two 16-bit peripheral reads                     |
-// | `now32 = tcb0_now_coherent_isr()`   | ~20    | coherent overflow/CNT sample in TCB0 domain     |
-// | `latency16` + `edge32` arithmetic   | ~6     | 16-bit sub + 32-bit backdate                    |
-// | `pps_seen++` + `lastPpsEdgeCapture` | ~12-16 | 32-bit increment + 32-bit store                 |
-// | `ppsData_push_isr(...)`             | ~28    | ring-buffer index + payload stores              |
-// | Optional PPS latency diagnostics    | ~34-60 | max/wrap/min/max/sum/count updates              |
-// | Optional diag timing updates        | ~18-30 | read CNT twice + sub16 + compare/store max      |
-// | **Total (CAPT path, diag OFF / ON)**| **~103-110 / ~155-200** | **~6.4-6.9µs / ~9.7-12.5µs**   |
-// |------------------------------------------------------------------------------------------------|
-ISR(TCB2_INT_vect) {
-#if ENABLE_ISR_DIAGNOSTICS
-  uint16_t isr_start = read_TCB0_CNT();
-#endif
-  // Read and clear flags early to avoid losing the one-deep capture
-  const uint8_t flags = TCB2.INTFLAGS;
-  TCB2.INTFLAGS = flags; // clear CAPT/OVF that were set (write-1-to-clear)
-
-  // If this ISR can fire for non-CAPT reasons, gate it
-  if (!(flags & TCB_CAPT_bm)) {
-    return;
-  }
-
-  // Latch the captured edge time (TCB2 domain)
-  const uint16_t ccmp = TCB2.CCMP;
-
-  // Coherent 32-bit "now" in TCB0 domain (t2)
-  const uint32_t now32 = tcb0_now_coherent_isr();
-
-  // Tightened: sample CNT as close as possible to now32 (also ~t2)
-  const uint16_t cnt = TCB2.CNT;
-
-  // Latency since edge measured at ~t2, in TCB2 ticks
-  const uint16_t latency16 = (uint16_t)(cnt - ccmp);
-
-  // Backdate into TCB0 domain
-  const uint32_t edge32 = now32 - (uint32_t)latency16;
-
-  pps_seen++;
-#if STS_DIAG > 0
-  pps_isr_count++;
-#endif
-#if ENABLE_ISR_DIAGNOSTICS
-  pps_latency_last = latency16;
-  if (latency16 > g_pps_latency16_max) g_pps_latency16_max = latency16;
-  // >60000 sits close to 16-bit rollover (65535), hinting bad reconstruction or extreme ISR latency.
-  if (latency16 > 60000U) g_pps_latency16_wrapRisk++;
-  if (pps_latency_count == 0 || latency16 < pps_latency_min) pps_latency_min = latency16;
-  if (latency16 > pps_latency_max) pps_latency_max = latency16;
-  pps_latency_sum += (uint32_t)latency16;
-  pps_latency_count++;
-#endif
-
-  ppsData_push_isr(edge32, now32, tcb0Ovf, ccmp, cnt, latency16); // enqueue PPS timestamp/capture context
-  lastPpsEdgeCapture = edge32;           // freshest PPS arrival for holdover timing
-#if ENABLE_ISR_DIAGNOSTICS
-  uint16_t dur = sub16(read_TCB0_CNT(), isr_start);
-  isr_last_tcb2_ticks = dur;
-  if (dur > max_isr_tcb2_ticks) max_isr_tcb2_ticks = dur;
-#endif
-}

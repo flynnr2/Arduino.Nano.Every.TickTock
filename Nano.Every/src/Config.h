@@ -2,6 +2,26 @@
 
 #include <Arduino.h>
 
+
+#ifndef USE_ARDUINO_TIMEBASE
+#define USE_ARDUINO_TIMEBASE 0
+#endif
+
+#if ((USE_ARDUINO_TIMEBASE) != 0) && ((USE_ARDUINO_TIMEBASE) != 1)
+#error "USE_ARDUINO_TIMEBASE must be 0 or 1"
+#endif
+
+#ifndef DISABLE_ARDUINO_TCB3_TIMEBASE
+#define DISABLE_ARDUINO_TCB3_TIMEBASE ((USE_ARDUINO_TIMEBASE) ? 0 : 1)
+#endif
+
+#if ((DISABLE_ARDUINO_TCB3_TIMEBASE) != 0) && ((DISABLE_ARDUINO_TCB3_TIMEBASE) != 1)
+#error "DISABLE_ARDUINO_TCB3_TIMEBASE must be 0 or 1"
+#endif
+
+#if (USE_ARDUINO_TIMEBASE == 1) && (DISABLE_ARDUINO_TCB3_TIMEBASE == 1)
+#error "Cannot disable Arduino TCB3 timebase while USE_ARDUINO_TIMEBASE=1"
+#endif
 const int ledPin = LED_BUILTIN;
 
 enum class DataUnits : uint8_t;
@@ -20,14 +40,18 @@ constexpr bool     PPS_MEDIAN3_DEFAULT       = true;    // enable median-of-3 af
 constexpr uint16_t PPS_BLEND_LO_PPM_DEFAULT  = 50;       // prefer slow below this R
 constexpr uint16_t PPS_BLEND_HI_PPM_DEFAULT  = 150;      // fully fast above this R
 constexpr uint16_t PPS_LOCK_R_PPM_DEFAULT    = 175;      // R threshold to declare LOCKED (matches legacy live policy)
-constexpr uint16_t PPS_LOCK_J_PPM_DEFAULT    = 1000;     // legacy name: MAD ticks threshold to declare LOCKED
+constexpr uint16_t PPS_LOCK_J_PPM_DEFAULT    = 600;      // legacy name: MAD ticks threshold to declare LOCKED
 constexpr uint16_t PPS_UNLOCK_R_PPM_DEFAULT  = 300;      // R to drop lock
-constexpr uint16_t PPS_UNLOCK_J_PPM_DEFAULT  = 1500;     // Jitter to drop lock
+constexpr uint16_t PPS_UNLOCK_J_PPM_DEFAULT  = 900;      // Jitter to drop lock
 constexpr uint8_t  PPS_LOCK_COUNT_MIN        = 1;        // min consecutive good PPS to lock
 constexpr uint8_t  PPS_LOCK_COUNT_MAX        = 60;       // max consecutive good PPS to lock
 constexpr uint8_t  PPS_LOCK_COUNT_DEFAULT    = 30;       // consecutive good PPS to lock (matches legacy live policy)
-constexpr uint8_t  PPS_UNLOCK_COUNT_DEFAULT  = 3;        // consecutive pulses to unlock
-constexpr uint16_t PPS_HOLDOVER_MS_DEFAULT   = 60000;    // holdover exit/stale threshold (u16-limited, closest to legacy 600000 ms)
+constexpr uint8_t  PPS_UNLOCK_COUNT_DEFAULT  = 5;        // consecutive pulses to unlock
+constexpr uint16_t PPS_HOLDOVER_MS_DEFAULT   = 60000;    // holdover exit threshold
+constexpr uint16_t PPS_STALE_MS_DEFAULT      = 2200;     // PPS freshness timeout for sample arrival
+constexpr uint16_t PPS_ISR_STALE_MS_DEFAULT  = 2200;     // PPS freshness timeout for ISR activity
+constexpr uint16_t PPS_CFG_REEMIT_DELAY_MS_DEFAULT = 2000; // delay before re-emitting config/status after boot
+constexpr uint16_t PPS_ACQUIRE_MIN_MS_DEFAULT = 60000;   // minimum acquire dwell before disciplined lock-in
 
 
 #ifndef PROTECT_SHARED_READS
@@ -55,7 +79,11 @@ constexpr uint16_t PPS_HOLDOVER_MS_DEFAULT   = 60000;    // holdover exit/stale 
 #endif
 
 #ifndef PPS_TUNING_TELEMETRY
-#define PPS_TUNING_TELEMETRY 1 // concise PPS threshold-tuning telemetry (TUNE_CFG/TUNE_WIN/TUNE_EVT)
+#define PPS_TUNING_TELEMETRY 0 // concise PPS threshold-tuning telemetry (TUNE_CFG/TUNE_WIN/TUNE_EVT)
+#endif
+
+#ifndef ENABLE_PPS_BASELINE_TELEMETRY
+#define ENABLE_PPS_BASELINE_TELEMETRY 0 // compact per-PPS baseline telemetry stream for long PPS-only characterization runs
 #endif
 
 #ifndef STS_DIAG
@@ -109,53 +137,30 @@ namespace Tunables {
   extern uint16_t  ppsUnlockJppm;         // legacy name: MAD residual ticks to unlock from LOCKED
   extern uint8_t   ppsLockCount;          // consecutive good PPS to lock
   extern uint8_t   ppsUnlockCount;        // consecutive bad PPS to unlock
-  extern uint16_t  ppsHoldoverMs;         // PPS gap to enter HOLDOVER
+  extern uint16_t  ppsHoldoverMs;         // holdover dwell before dropping to FREE_RUN
+  extern uint16_t  ppsStaleMs;            // PPS freshness timeout for sample arrival
+  extern uint16_t  ppsIsrStaleMs;         // PPS freshness timeout for ISR count changes
+  extern uint16_t  ppsConfigReemitDelayMs; // startup delay before config/status re-emit
+  extern uint16_t  ppsAcquireMinMs;       // minimum ACQUIRE dwell before DISCIPLINED
 
   extern DataUnits dataUnits;             // output units (ticks/us/ns)
 
-  inline uint8_t ppsFastShiftActive() {
-    const uint8_t v = ppsFastShift;
-    return (v < PPS_SHIFT_MIN) ? PPS_SHIFT_MIN : (v > PPS_SHIFT_MAX ? PPS_SHIFT_MAX : v);
-  }
-
-  inline uint8_t ppsSlowShiftActive() {
-    const uint8_t v = ppsSlowShift;
-    return (v < PPS_SHIFT_MIN) ? PPS_SHIFT_MIN : (v > PPS_SHIFT_MAX ? PPS_SHIFT_MAX : v);
-  }
-
-  inline uint16_t ppsBlendLoPpmActive() { return ppsBlendLoPpm; }
-
-  inline uint16_t ppsBlendHiPpmActive() {
-    return (ppsBlendHiPpm <= ppsBlendLoPpm) ? (uint16_t)(ppsBlendLoPpm + 1U) : ppsBlendHiPpm;
-  }
-
-  inline uint16_t ppsLockRppmActive() { return ppsLockRppm; }
-  inline uint16_t ppsLockJppmActive() { return ppsLockJppm; }
-  inline uint16_t ppsUnlockRppmActive() { return ppsUnlockRppm; }
-  inline uint16_t ppsUnlockJppmActive() { return ppsUnlockJppm; }
-
-  inline uint8_t ppsLockCountActive() {
-    const uint8_t v = ppsLockCount;
-    return (v < PPS_LOCK_COUNT_MIN) ? PPS_LOCK_COUNT_MIN : (v > PPS_LOCK_COUNT_MAX ? PPS_LOCK_COUNT_MAX : v);
-  }
-
-  inline uint8_t ppsUnlockCountActive() {
-    return (ppsUnlockCount == 0U) ? 1U : ppsUnlockCount;
-  }
-
-  inline uint16_t ppsHoldoverMsActive() {
-    return (ppsHoldoverMs == 0U) ? 1U : ppsHoldoverMs;
-  }
-
-  inline void normalizePpsTunables() {
-    ppsFastShift = ppsFastShiftActive();
-    ppsSlowShift = ppsSlowShiftActive();
-    ppsEmaShift = ppsSlowShift; // deprecated alias must mirror live slow shift
-    ppsBlendHiPpm = ppsBlendHiPpmActive();
-    ppsLockCount = ppsLockCountActive();
-    ppsUnlockCount = ppsUnlockCountActive();
-    ppsHoldoverMs = ppsHoldoverMsActive();
-  }
+  uint8_t ppsFastShiftActive();
+  uint8_t ppsSlowShiftActive();
+  uint16_t ppsBlendLoPpmActive();
+  uint16_t ppsBlendHiPpmActive();
+  uint16_t ppsLockRppmActive();
+  uint16_t ppsLockJppmActive();
+  uint16_t ppsUnlockRppmActive();
+  uint16_t ppsUnlockJppmActive();
+  uint8_t ppsLockCountActive();
+  uint8_t ppsUnlockCountActive();
+  uint16_t ppsHoldoverMsActive();
+  uint16_t ppsStaleMsActive();
+  uint16_t ppsIsrStaleMsActive();
+  uint16_t ppsConfigReemitDelayMsActive();
+  uint16_t ppsAcquireMinMsActive();
+  void normalizePpsTunables();
 }
 
 struct TunableConfig {
@@ -170,6 +175,10 @@ struct TunableConfig {
   uint16_t  ppsUnlockRppm;
   uint16_t  ppsUnlockJppm;
   uint16_t  ppsHoldoverMs;
+  uint16_t  ppsStaleMs;
+  uint16_t  ppsIsrStaleMs;
+  uint16_t  ppsConfigReemitDelayMs;
+  uint16_t  ppsAcquireMinMs;
   uint16_t  crc16;
 
   uint8_t   ppsEmaShift;

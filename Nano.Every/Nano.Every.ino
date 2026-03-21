@@ -10,12 +10,13 @@
 #include "src/PendulumProtocol.h"
 #include "src/PendulumCore.h"
 #include "src/SerialParser.h"
+#include "src/PlatformTime.h"
 
 void setup() {
-  delay(5000);
+  disableArduinoTimebaseTCB3IfConfigured();
   pendulumSetup();
   digitalWrite(ledPin, HIGH);
-  delay(5000);
+  platformDelayMs(5);
   digitalWrite(ledPin, LOW);
 }
 

@@ -105,7 +105,7 @@ void FreqDiscipliner::observe(PpsValidator::SampleClass cls, bool pps_valid, uin
     }
 
     if (state_ == DiscState::ACQUIRE &&
-        (uint32_t)(now_ms - acq_start_ms_) >= T_ACQ_MIN_MS &&
+        (uint32_t)(now_ms - acq_start_ms_) >= (uint32_t)Tunables::ppsAcquireMinMsActive() &&
         lock_streak_ >= lockConsecutiveGoodSamplesRequired()) {
       state_ = DiscState::DISCIPLINED;
       transition_streak_ = lock_streak_;

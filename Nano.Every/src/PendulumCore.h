@@ -1,12 +1,10 @@
 #pragma once
 
 #include "Config.h"
+#include "PendulumCapture.h"
+#include "StatusTelemetry.h"
 
 #include <Arduino.h>
 
 void pendulumSetup();
 void pendulumLoop();
-
-void emitPpsTuningConfigSnapshot();
-
-extern volatile uint32_t droppedEvents;

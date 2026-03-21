@@ -27,8 +27,6 @@ public:
   static inline uint8_t lockConsecutiveGoodSamplesRequired() { return Tunables::ppsLockCountActive(); }
 
 private:
-  static constexpr uint32_t T_ACQ_MIN_MS = 60000;
-
   static constexpr uint8_t W_MAD = 31;
 
   DiscState state_ = DiscState::FREE_RUN;

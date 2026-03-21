@@ -90,6 +90,10 @@ static constexpr char PARAM_PPS_UNLOCK_J_PPM[] = "ppsUnlockJppm";
 static constexpr char PARAM_PPS_LOCK_COUNT[]   = "ppsLockCount";
 static constexpr char PARAM_PPS_UNLOCK_COUNT[] = "ppsUnlockCount";
 static constexpr char PARAM_PPS_HOLDOVER_MS[]  = "ppsHoldoverMs";
+static constexpr char PARAM_PPS_STALE_MS[]     = "ppsStaleMs";
+static constexpr char PARAM_PPS_ISR_STALE_MS[] = "ppsIsrStaleMs";
+static constexpr char PARAM_PPS_CFG_REEMIT_DELAY_MS[] = "ppsCfgReemitDelayMs";
+static constexpr char PARAM_PPS_ACQUIRE_MIN_MS[] = "ppsAcquireMinMs";
 
 // 4) Structure
 struct PendulumSample {

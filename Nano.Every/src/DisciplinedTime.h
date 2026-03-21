@@ -21,8 +21,14 @@ public:
   Quality timeQuality() const;
 
 private:
-  uint32_t f_cpu_nominal_ = 16000000UL;
-  uint32_t f_hat_ = 16000000UL;
+#if defined(F_CPU)
+  static constexpr uint32_t kDefaultFcpu = static_cast<uint32_t>(F_CPU);
+#else
+  static constexpr uint32_t kDefaultFcpu = 16UL * 1000000UL;
+#endif
+
+  uint32_t f_cpu_nominal_ = kDefaultFcpu;
+  uint32_t f_hat_ = kDefaultFcpu;
   FreqDiscipliner::DiscState state_ = FreqDiscipliner::DiscState::FREE_RUN;
   bool pps_valid_ = false;
   uint32_t holdover_age_ms_ = 0;

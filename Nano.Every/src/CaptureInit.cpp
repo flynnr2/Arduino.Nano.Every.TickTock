@@ -37,7 +37,7 @@ void tcb1_init_IR_capt() {
 void tcb2_init_PPS_capt() {
   TCB2.CTRLA    = 0x0;                                          // turn off
   TCB2.CTRLB    = TCB_CNTMODE_CAPT_gc;                          // capture mode
-  TCB2.EVCTRL   = TCB_CAPTEI_bm | TCB_FILTER_bm;                // capture events EDGE = 0
+  TCB2.EVCTRL   = TCB_CAPTEI_bm;                                // capture events EDGE = 0
   TCB2.INTCTRL  = TCB_CAPT_bm;                                  // capture interrupt
   TCB2.INTFLAGS = TCB_CAPT_bm             ;                     // clear flags
   TCB2.CTRLA    = TCB_CLKSEL_CLKDIV1_gc | TCB_ENABLE_bm;        // clock select still needed for state machine
