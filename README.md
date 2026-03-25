@@ -1,404 +1,272 @@
 # Arduino Pendulum Timer (Nano Every)
 
-High‑precision pendulum timing on a single **Arduino Nano Every (ATmega4809)**, disciplined by GPS.  
-This little beast does IR beam edge capture (tick/tock), GPS PPS capture, maintains a 32‑bit timebase, and spits out neat CSV lines you can chew on later.  
-Now upgraded with **dual‑track PPS smoothing** that outputs a single blended correction so it can react fast *and* stay chill when GPS gets noisy.
+High-precision pendulum timing on a single **Arduino Nano Every (ATmega4809)**, disciplined by GPS PPS.
+The firmware captures IR beam edges and PPS pulses on one shared timer base, reconstructs full swings in the main loop, and emits a reduced serial surface consisting of raw-cycle samples plus compact `STS` telemetry.
 
 ---
 
 ## Architecture
 
-- **TCB0** – 16‑bit “free‑running” base timer (Periodic Interrupt mode, `CCMP=0xFFFF`). Overflow ISR keeps the high word.
-- **TCB1** – IR sensor capture via EVSYS. Alternating rising/falling edges = tick/tock + beam‑block timing.
-- **TCB2** – GPS PPS capture via EVSYS. Feeds the dual‑track smoothing logic.
-- **EVSYS** – Routes pins to TCB captures:
-  - **PB0 → TCB1 CAPT** (IR)
-  - **PD0 → TCB2 CAPT** (PPS)  
+- **TCB0** - 16-bit free-running base timer with a software-maintained high word.
+- **TCB1** - IR capture via EVSYS. Alternating rising/falling edges become pendulum edge events.
+- **TCB2** - GPS PPS capture via EVSYS. Each pulse is projected back onto the TCB0 timeline.
+- **EVSYS** - hardware routing for low-jitter capture:
+  - **PB0 -> TCB1 CAPT** (IR)
+  - **PD0 -> TCB2 CAPT** (PPS)
 
-All the heavy math happens in the main loop (`pendulumLoop()`), not in the ISRs — they just timestamp and queue events.
+The ISRs stay intentionally small: they timestamp captures, maintain counters, and push events into rings. Swing assembly, PPS validation/disciplining, command handling, EEPROM persistence, and serial output all run in the main loop.
 
 ---
 
 ## Hardware & Wiring
 
-- **IR beam sensor** → **PB0** (input)
-- **GPS PPS** → **PD0** (input)
-- GPS module: Adafruit Ultimate GPS Breakout (MTK3339, ±20 ns jitter claimed)
-- Nano Every @ 16MHz (`CLKDIV1`)
-- Pull‑ups and conditioning as your sensors/GPS require
+- **IR beam sensor** -> **PB0**
+- **GPS PPS** -> **PD0**
+- Optional: **EXTCLK** -> PA0
+- IR beam sensor: OPB912W55Z (requires ~180 Ω resistor on anode (red), pull-up not required)
+- GPS module: Adafruit Ultimate GPS Breakout (MTK3339-class PPS source)
+- Nano Every build frequency set by `F_CPU` / `MAIN_CLOCK_HZ` (default Nano Every build: 16 MHz)
+- Pull-ups / signal conditioning as required by the attached sensors
 
 ---
 
 ## Codebase Layout
 
-```
+```text
 Nano.Every/
-  Nano.Every.ino       → tiny wrapper for setup/loop
+  Nano.Every.ino         -> tiny sketch wrapper that calls pendulumSetup()/pendulumLoop()
   src/
-    CaptureInit.*      → EVSYS + TCB0/1/2 setup
-    PendulumCore.*     → ISRs, rings, PPS smoothing, sample assembly
-    SerialParser.*     → command parser, CSV/header output
-    EEPROMConfig.*     → tunable storage + CRC
-    PendulumProtocol.h → shared wire protocol (tags, fields, tunables)
-    Config.h           → defaults (rings, smoothing params, thresholds)
-    AtomicUtils.h      → safe shared reads
+    CaptureInit.*        -> EVSYS + TCB0/TCB1/TCB2 hardware setup
+    PendulumCapture.*    -> ISR-owned capture rings, coherent TCB0 clock reads, shared counters
+    SwingAssembler.*     -> main-loop reconstruction of EdgeEvent streams into FullSwing records
+    PpsValidator.*       -> PPS interval classification and startup/recovery reference seeding
+    FreqDiscipliner.*    -> fast/slow estimates plus FREE_RUN/ACQUIRE/DISCIPLINED/HOLDOVER state
+    DisciplinedTime.*    -> active ticks-per-second estimate used by host-side conversion
+    PendulumCore.*       -> top-level orchestration and sample packaging
+    SerialParser.*       -> command parsing plus HDR/sample/STS emission
+    TunableRegistry.*    -> authoritative tunable metadata, parsing, validation, and EEPROM mapping
+    TunableCommands.*    -> get/set/reset handlers built on the tunable registry
+    TunablesRuntime.cpp  -> live tunable storage plus normalization helpers
+    StatusTelemetry.*    -> retained boot/config STS records
+    EEPROMConfig.*       -> EEPROM load/save for the active PPS tunable schema
+    PlatformTime.*       -> millis()/delay() wrapper and optional TCB3 shutdown in custom-timebase mode
+    PendulumProtocol.h   -> serial tags, status codes, tunable names, and sample schema
+    Config.h             -> compile-time defaults and supported build-time modes
 ```
 
 ---
 
 ## Quick Start
 
-1. Fire up Arduino IDE (or equivalent), select **Nano Every (ATmega4809)**.
-2. Clone/untar project, open `Nano.Every.ino`.
-3. Flash at 115200bps.  
-4. Open Serial Monitor @ 115200.  
-5. Type `help` — bask in the list of commands.
-6. You’ll start seeing `HDR` and data lines tagged by units (e.g. `16Mhz`, `uSec`).
+1. Open `Nano.Every/Nano.Every.ino` in Arduino IDE or an equivalent Arduino build flow.
+2. Select **Arduino Nano Every** as the board.
+3. Build and flash the sketch.
+4. Open the serial port at **115200 baud**.
+5. On boot the firmware emits boot metadata (`STS,...` plus `CFG,...`) and one `HDR,...` sample header line.
+6. Type `help` to inspect the retained CLI surface.
+
+## Reproducible Build / Test Notes
+
+For repeatable local builds, prefer `arduino-cli` over ad-hoc IDE state:
+
+```bash
+arduino-cli compile \
+  --fqbn arduino:megaavr:nona4809 \
+  --build-path build/nano-every \
+  Nano.Every
+```
+
+Suggested verification workflow after a firmware change:
+
+1. Run the compile command above and archive the emitted binary plus a short boot log.
+2. Verify the runtime CLI still responds as expected (`help`, representative `get`, representative `set`, and `reset defaults` when appropriate).
+3. If hardware is attached, confirm the boot log contains the retained `STS` records, one `CFG` line, one `HDR` line, and raw-cycle sample rows.
+4. When changing the operator-facing serial contract, update this README and `Docs/IMPLEMENTATION.md` in the same change.
+
+For the dedicated external-main-clock validation workflow, see `Docs/external_clock_test_plan.md`.
 
 ---
 
-## Serial Line Interface
+## Runtime Serial Interface
 
-### Line Tags
+The firmware uses one serial stream for four line families:
 
-- `HDR`   — CSV header/meta (sent on start & when units change)
-- `16Mhz` — data sample in raw cycles
-- `nSec`  — data sample in nanoseconds
-- `uSec`  — data sample in microseconds
-- `mSec`  — data sample in milliseconds
-- `STS`   — status/diagnostic
+- `CFG` - session/config metadata for host recovery
+- `HDR` - names the sample columns currently emitted by the device
+- `SMP` - raw-cycle sample rows matching the latest `HDR`
+- `STS` - compact boot, configuration, and optional PPS telemetry
 
-### CSV Schema
+### Retained CLI Surface
 
-Data lines report instantaneous and blended corrections:
+The command parser exposes the core tuning commands:
 
-| Tag                  | tick_* | tock_* | tick_block_* | tock_block_* | corr_inst_ppm | corr_blend_ppm | gps_status | dropped_events |
-|----------------------|--------|--------|--------------|--------------|---------------|----------------|------------|----------------|
-| HDR                  | tick_* | tock_* | tick_block_* | tock_block_* | corr_inst_ppm | corr_blend_ppm | gps_status | dropped_events |
-| 16Mhz/nSec/uSec/mSec | value  | value  | value        | value        | value         | value          | value      | value          |
+- `help` or `?` - list the available top-level commands
+- `help <command>` - show usage/details for one command
+- `help tunables` - list all retained tunables, current values, examples, and validation notes
+- `get <param>` - print the current value of one tunable
+- `set <param> <value>` - update a tunable, normalize dependent values, emit optional tuning telemetry, and save to EEPROM
+- `reset defaults` - restore the firmware's compiled defaults to the live tunables, reset runtime PPS state, and rewrite EEPROM without consulting the old EEPROM contents
 
-Unit suffix `*` depends on mode:
-- `RawCycles`: `tick_cycles, tock_cycles, tick_block_cycles, tock_block_cycles`
-- `AdjustedMs`: `tick_ms, ...`
-- `AdjustedUs`: `tick_us, ...`
-- `AdjustedNs`: `tick_ns, ...`
+### Retained STS Records
 
-Notes:
-- `corr_inst_ppm` = instantaneous PPS correction (ppm, int; scaled by 1,000,000)
-- `corr_blend_ppm` = blended PPS correction after fast/slow smoothing
-- `gps_status`: 0 = no PPS, 1 = acquiring, 2 = locked, 3 = holdover
-- `dropped_events`: PPS/IR samples dropped
+The reduced firmware keeps these `STS,PROGRESS_UPDATE,...` payload families:
 
-Example (AdjustedUs):
+- `rstfr` - reset-cause snapshot from `RSTCTRL.RSTFR`
+- `build` - build identity (`git`, dirty bit, UTC, board, MCU, clock, baud)
+- `schema` - serial contract versions (`sts`, sample schema, EEPROM schema)
+- `flags` - supported compile-time runtime modes compiled into the image
+- `<param>=<value>` tunables snapshots emitted as three parameter-list lines:
+  - line 1: `ppsFastShift`, `ppsSlowShift`, `ppsBlendLoPpm`, `ppsBlendHiPpm`, `ppsLockRppm`
+  - line 2: `ppsLockMadTicks`, `ppsUnlockRppm`, `ppsUnlockMadTicks`, `ppsLockCount`, `ppsUnlockCount`
+  - line 3: `ppsHoldoverMs`, `ppsStaleMs`, `ppsIsrStaleMs`, `ppsCfgReemitDelayMs`, `ppsAcquireMinMs`
+- `cfg` - explicit sample-stream metadata (`nominal_hz`, `sample_tag`, `sample_schema`)
+- `pps_cfg` - PPS validator/reference thresholds
+- `pps_freshness` - names the two stale-PPS freshness tunables (`ppsStaleMs`, `ppsIsrStaleMs`)
+
+Optional families remain available behind intentional compile-time flags:
+
+- `TUNE_CFG`, `TUNE_WIN`, `TUNE_EVT` when `PPS_TUNING_TELEMETRY=1`
+- `PPS_BASE` when `ENABLE_PPS_BASELINE_TELEMETRY=1`
+
+### Raw-Cycle-Only Sample Format
+
+The Nano emits a single raw-cycle sample schema:
+
+| Tag family | Fields |
+|------------|--------|
+| `CFG`      | `nominal_hz=<ticks/sec>,sample_tag=SMP,sample_schema=raw_cycles_hz_v2` |
+| `HDR`      | `tick`, `tock`, `tick_block`, `tock_block`, `f_inst_hz`, `f_hat_hz`, `gps_status`, `holdover_age_ms`, `r_ppm`, `j_ticks`, `dropped` |
+| `SMP`      | values for the fields named by the latest `HDR` line |
+
+Field meanings:
+
+- `tick` / `tock` - unblocked pendulum half-swing durations in raw TCB0 cycles
+- `tick_block` / `tock_block` - beam-block durations in raw TCB0 cycles
+- `f_inst_hz` - latest PPS interval estimate in ticks per second
+- `f_hat_hz` - active disciplined frequency estimate in ticks per second
+- `gps_status` - `0=no PPS`, `1=acquiring`, `2=locked`, `3=holdover`
+- `holdover_age_ms` - discipliner holdover age in milliseconds
+- `r_ppm` - fast/slow disagreement metric in ppm
+- `j_ticks` - robust jitter metric as MAD residual ticks
+- `dropped` - cumulative lost IR/PPS events due to ring overflow
+
+Example:
+
+```text
+STS,PROGRESS_UPDATE,schema,sts=1,sample=raw_cycles_hz_v2,eeprom=4
+STS,PROGRESS_UPDATE,cfg,nominal_hz=16000000,sample_tag=SMP,sample_schema=raw_cycles_hz_v2
+CFG,nominal_hz=16000000,sample_tag=SMP,sample_schema=raw_cycles_hz_v2
+HDR,tick,tock,tick_block,tock_block,f_inst_hz,f_hat_hz,gps_status,holdover_age_ms,r_ppm,j_ticks,dropped
+SMP,7872371,7871904,20105,19968,15999978,15999984,2,0,3,1,0
 ```
-HDR,tick_us,tock_us,tick_block_us,tock_block_us,corr_inst_ppm,corr_blend_ppm,gps_status,dropped_events
-uSec,492023,491994,1256,1248,-1400,-875,2,0
-```
 
-### Commands
-
-- `help` — list commands  
-- `help tunables` — list tunables  
-- `get <param>` — read tunable  
-- `set <param> <value>` — set tunable (auto-saved to EEPROM)  
-- `stats` — buffer fill, drops, truncation  
+The Nano does **not** convert raw cycle counts into wall-clock units on-device. Downstream tools should ingest the raw counts and use `f_hat_hz` as the disciplined denominator for corrected time conversion, e.g. `corrected_seconds = raw_ticks / f_hat_hz`.
 
 ---
 
 ## Tunables
 
-All can be set via serial and saved to EEPROM. Defaults in `Config.h`.
+All retained tunables are available through the runtime `get` / `set` path and persist through `EEPROMConfig`. The authoritative metadata lives in `TunableRegistry`, so use `help tunables` on the device for the runtime-generated list and treat `Nano.Every/src/TunableRegistry.cpp` plus `Nano.Every/src/Config.h` as the source of truth for names, validation, examples, and compiled defaults.
 
-| Param                  | Type   | Default    | Notes
-|------------------------|--------|------------|-------------------------------------------------------------------------
-| `dataUnits`            | enum   | raw_cycles | Output units: `raw_cycles`, `adjusted_ms`, `adjusted_us`, `adjusted_ns`
-| `correctionJumpThresh` | float  | 0.002      | **Compatibility-only / no-op** (retained for CLI+EEPROM+status round-trip)
-| `ppsFastShift`         | uint8  | 3          | Short‑term EWMA shift (lower = faster)
-| `ppsSlowShift`         | uint8  | 8          | Long‑term EWMA shift (higher = smoother)
-| `ppsHampelWin`         | uint8  | 7          | **Compatibility-only / no-op** (retained for CLI+EEPROM+status round-trip)
-| `ppsHampelKx100`       | uint16 | 300        | **Compatibility-only / no-op** (retained for CLI+EEPROM+status round-trip)
-| `ppsMedian3`           | bool   | 1          | **Compatibility-only / no-op** (retained for CLI+EEPROM+status round-trip)
-| `ppsBlendLoPpm`        | uint16 | 50         | Below this drift, prefer slow smoother
-| `ppsBlendHiPpm`        | uint16 | 200        | Above this drift, fully fast smoother
-| `ppsLockRppm`          | uint16 | 200        | Max drift to declare lock
-| `ppsLockJppm`          | uint16 | 2000       | Legacy-named MAD threshold (ticks) to declare lock
-| `ppsUnlockRppm`        | uint16 | 500        | Drift to unlock
-| `ppsUnlockJppm`        | uint16 | 160        | Jitter to unlock
-| `ppsLockCount`         | uint8  | 30         | Consecutive good PPS required to lock
-| `ppsUnlockCount`       | uint8  | 3          | Consecutive bad PPS before unlock
-| `ppsHoldoverMs`        | uint16 | 60000      | PPS gap to enter holdover
+The retained tunables are the active PPS discipliner controls:
 
-Example:
-```
+- `ppsFastShift`, `ppsSlowShift`
+- `ppsBlendLoPpm`, `ppsBlendHiPpm`
+- `ppsLockRppm`, `ppsLockMadTicks`, `ppsLockCount`
+- `ppsUnlockRppm`, `ppsUnlockMadTicks`, `ppsUnlockCount`
+- `ppsHoldoverMs`, `ppsStaleMs`, `ppsIsrStaleMs` (`ppsStaleMs` = queued/main-loop PPS sample freshness, `ppsIsrStaleMs` = ISR-edge freshness)
+- `ppsCfgReemitDelayMs`, `ppsAcquireMinMs`
+
+Example commands:
+
+```text
+get ppsFastShift
 set ppsFastShift 3
 set ppsSlowShift 8
-set ppsHampelWin 7
-set ppsHampelKx100 300
-set ppsMedian3 1
-set correctionJumpThresh 0.002
+set ppsLockRppm 175
+set ppsLockMadTicks 600
+set ppsHoldoverMs 60000
+reset defaults
 ```
+
+Deprecated CLI aliases `ppsLockJppm` and `ppsUnlockJppm` are still accepted as backwards-compatible synonyms for `ppsLockMadTicks` and `ppsUnlockMadTicks`, but all canonical output now uses the unit-correct MAD-ticks names.
+
+EEPROM note: schema version 4 persists only the active PPS tunables. Older saved layouts are no longer migrated; if EEPROM still contains an older record, the firmware falls back to compiled defaults until the next successful `set` or `reset defaults` rewrites schema 4.
 
 ---
 
+## PPS Processing Summary
 
-## GPS PPS Processing (Live Behavior)
+1. **Capture and validation**
+   Each PPS edge is captured in hardware, backdated onto the TCB0 timeline, and queued by `PendulumCapture`. The main loop classifies the resulting intervals with `PpsValidator` as `OK`, `GAP`, `DUP`, or `HARD_GLITCH`.
 
-Implementation note: the source code is authoritative for runtime behavior; this section summarizes the currently compiled path for operators.
+2. **Frequency disciplining**
+   Accepted PPS samples feed `FreqDiscipliner`, which maintains fast/slow estimates plus the `FREE_RUN`, `ACQUIRE`, `DISCIPLINED`, and `HOLDOVER` runtime states.
 
-### Intuition: Two Questions the Firmware Must Answer
+3. **Active timebase selection**
+   `DisciplinedTime` chooses the effective ticks-per-second value that host-side tools should use when converting raw cycle counts into time units.
 
-Each GPS PPS pulse should arrive exactly **1 second apart**, which corresponds to:
-
-    16,000,000 timer ticks at 16 MHz
-
-But real measurements vary slightly due to GPS noise and MCU timing effects.  
-The firmware therefore evaluates two different properties of the PPS signal:
-
-| Metric | Question Answered                              |
-|--------|------------------------------------------------|
-| **J**  | *Is the PPS signal stable enough to trust?*    |
-| **R**  | *How far off is the MCU clock from true time?* |
-
-These two metrics allow the system to distinguish **PPS quality problems** from **normal oscillator drift**.
+4. **Swing reconstruction and reporting**
+   `SwingAssembler` produces `FullSwing` records, and `PendulumCore` emits each sample as raw cycle counts plus correction/gps/drop metadata.
 
 ---
 
-### J — Short‑Term PPS Jitter
+## Supported Compile-Time Modes
 
-`J` measures how much the PPS interval changes **from second to second**.  
-It is computed using a **median absolute deviation (MAD)** style statistic over recent intervals.
+The supported compile-time flags are:
 
-Example of a **good PPS signal**:
+- `MAIN_CLOCK_HZ` - semantic firmware main clock rate used by runtime math and telemetry; must match `F_CPU`
+- `USE_EXTCLK_MAIN` - on ATmega4809/Nano Every, perform a one-shot boot-time handoff to driven `EXTCLK` on **D2 / PA0**
+- `USE_ARDUINO_TIMEBASE` - switch `PlatformTime` to Arduino `millis()` / `delay()` instead of the TCB0-derived clock
+- `DISABLE_ARDUINO_TCB3_TIMEBASE` - disable Arduino's TCB3 interrupt source when running the custom TCB0 timebase
+- `PPS_TUNING_TELEMETRY` - enable optional `TUNE_*` STS telemetry
+- `ENABLE_PPS_BASELINE_TELEMETRY` - enable optional `PPS_BASE` telemetry
+- `ENABLE_PERIODIC_FLUSH` / `FLUSH_PERIOD_MS` - enable and tune periodic serial flushing
+- `LED_ACTIVITY_ENABLE` / `LED_ACTIVITY_DIV` - toggle the onboard LED after successful serial writes
+- `GIT_SHA`, `BUILD_UTC`, `BUILD_DIRTY` - build metadata injected into boot telemetry
 
-```
-16000002
-15999999
-16000001
-16000000
-```
+### External main clock (`USE_EXTCLK_MAIN`)
 
-Intervals barely change → **J is small**.
-
-Example of a **bad PPS signal**:
-
-```
-15998900
-16001200
-15999400
-16000900
-```
-
-Large variation → **J is large**.
-
-If J exceeds configured thresholds the PPS signal is considered unreliable.
-
-Typical logic:
-
-```
-if J > lockJ:
-    PPS not trustworthy → remain in ACQUIRING
-```
-
-MAD is used instead of standard deviation so that **occasional glitches do not destabilize the system**.
+- **Off by default.** Existing internal-clock behavior is unchanged unless `USE_EXTCLK_MAIN=1`.
+- When enabled, the firmware performs a **boot-time-only** handoff to `EXTCLK` before serial/timer initialization.
+- The external source must be a **driven digital clock**, already present on **D2 / PA0** before boot.
+- D2 / PA0 is therefore **not available as GPIO** in this mode.
+- `MAIN_CLOCK_HZ` must match `F_CPU`, and the **physical external clock frequency must also match them**.
+- If a valid external clock is not present when selected, recovery may require reset/reflash.
+- Nano Every / ATmega4809 builds should use **Registers Emulation = None (ATMEGA4809)** when building in the Arduino IDE.
 
 ---
-
-### R — Long‑Term Frequency Error
-
-`R` measures the **average frequency error of the MCU clock** relative to GPS.
-
-If the measured PPS interval is:
-
-```
-n_k = 16,000,240 ticks
-```
-
-then the MCU clock is running **+240 ticks/sec fast**, or:
-
-```
-+15 ppm frequency error
-```
-
-That error is reported as **R**.
-
-Example of a **stable but offset PPS sequence**:
-
-```
-16000240
-16000239
-16000241
-16000240
-```
-
-Intervals are consistent → **J small**  
-But the clock is fast → **R ≈ +15 ppm**
-
-This is **perfectly valid PPS** and the discipliner can correct for it.
-
----
-
-### Why Both Metrics Are Needed
-
-Consider two PPS streams:
-
-Stable but offset (good):
-
-```
-16000240
-16000239
-16000241
-16000240
-```
-
-Noisy PPS (bad):
-
-```
-15998900
-16001200
-15999400
-16000900
-```
-
-Both might average near 16 000 000 ticks, meaning **R ≈ 0**, but the second stream has huge **J** and must be rejected.
-
-Thus:
-
-| Metric | Purpose                                 |
-|--------|-----------------------------------------|
-| **J**  | determines whether PPS can be trusted   |
-| **R**  | determines the MCU frequency correction |
-
----
-
-### PPS Validation and Classification
-
-Each PPS interval is classified by `PpsValidator`:
-
-- `OK`
-- `GAP`
-- `DUP`
-- `HARD_GLITCH`
-
-Startup seeding establishes the reference interval and allows the validator to tolerate small errors while rejecting pathological ones.
-
----
-
-### Dual‑Track PPS Discipliner
-
-Once PPS samples are accepted, the discipliner estimates MCU frequency using two EWMAs:
-
-| Track               | Purpose                           |
-|---------------------|-----------------------------------|
-| **Fast (`f_fast`)** | reacts quickly during acquisition |
-| **Slow (`f_slow`)** | low‑noise long‑term estimate      |
-
-The active correction (`f_hat`) blends these using R‑based thresholds:
-
-| Condition             | Behaviour            |
-|-----------------------|----------------------|
-| |R| < `ppsBlendLoPpm` | prefer slow smoother |
-| |R| > `ppsBlendHiPpm` | prefer fast smoother |
-| between thresholds    | weighted blend       |
-
-This allows the system to **lock quickly but remain stable once disciplined**.
-
----
-
-### State Machine
-
-The discipliner exposes four states:
-
-```
-NO_PPS → ACQUIRING → LOCKED
-   ↑         ↑          ↓
-   └─────────┴──────────┴──→ HOLDOVER
-```
-
-Transitions depend on:
-
-- `R` and `J` thresholds
-- consecutive good/bad PPS counts
-- PPS presence/absence
-
----
-
-### Frequency Correction Applied to Pendulum Measurements
-
-Once locked, the discipliner produces a calibrated timer frequency estimate:
-
-```
-f_hat ≈ F_CPU * (1 + R / 1e6)
-```
-
-Pendulum measurements are scaled using this estimate so that:
-
-- MCU oscillator drift is removed
-- measurements track **true SI seconds derived from GPS**
-
-The output fields reflect this:
-
-| Field            | Meaning                             |
-|------------------|-------------------------------------|
-| `corr_inst_ppm`  | instantaneous PPS correction        |
-| `corr_blend_ppm` | blended correction used for scaling |
-
----
-
-Compatibility note: `ppsHampelWin`, `ppsHampelKx100`, `ppsMedian3`, and `correctionJumpThresh` remain in CLI/EEPROM/status for backward compatibility but are currently **no‑op in the live discipliner path**.
 
 ## Accuracy & Units
 
-- **RawCycles** = TCB0 ticks @ 16MHz
-- **Adjusted** = scaled using PPS smoothing (fast during acquisition, slow when locked)
-- PPS correction fields are scaled ×1e6 → µppm ints
+- **Raw cycle counts** = raw TCB0 ticks at the configured `MAIN_CLOCK_HZ`
+- **Host-side converted values** = raw cycle counts scaled by the appropriate disciplined ticks-per-second estimate after capture
+- `f_inst_hz` / `f_hat_hz` are integer ticks-per-second estimates suitable for `raw_ticks / f_hat_hz`
+- `r_ppm` is reported in ppm and `j_ticks` is reported in raw ticks
 
-## Estimated long‑term timing accuracy
+## Estimated long-term timing accuracy
 
-1. **Base resolution**  
-   The Nano Every runs at 16MHz, so the free‑running timer advances in steps of
-
-    T_tick = 1 / 16,000,000 = 62.5 ns
-
-2. **Noise per PPS measurement**  
-   - Quantization of one timer tick ⇒ standard deviation  
-     sigma_q = 62.5 ns / sqrt(12) ≈ 18 ns
-   - GPS PPS jitter ≈ 20ns (rms)  
-   - Combined measurement noise  
-     sigma_meas = sqrt(18^2 + 20^2) ≈ 26.9 ns
-
-3. **Noise after slow smoothing**  
-   The slow PPS smoother uses an EWMA with shift=8 → α=1/256.  
-   Thus the RMS error of the calibrated 1‑s interval is  
-   sigma_out = 26.9 ns * sqrt((1/256) / (2 - 1/256)) ≈ 1.2 ns
-
-4. **Fractional frequency error**  
-   epsilon = sigma_out / 1 s ≈ 1.2 × 10^-9 (about 1.2 ppb)
-
-5. **Accumulated time error over extended periods**  
-   For a duration T, the expected timing error is epsilon * T:
-   - For 1 hour, error ≈ 1.2 × 10^-9 * 3600 ≈ 4.3 µs
-   - For 1 day, error ≈ 1.2 × 10^-9 * 86,400 ≈ 0.10 ms
-
-   Summing per‑tick quantization noise over N=T seconds adds about  
-   18 ns * sqrt(N) ≈ 1 µs per hour, so the total error remains ≈5µs per hour.
-
-**Conclusion:**  
-With continuous GPS lock and the provided smoothing, the pendulum timer should maintain long‑term accuracy on the order of **±5µs per hour (≈0.1ms per day)**, equivalent to roughly **1ppb** frequency precision.
-
+1. **Base resolution**
+   `T_tick = 1 / MAIN_CLOCK_HZ` (for the default 16 MHz Nano Every build this is `62.5 ns`)
+2. **Noise per PPS measurement**
+   Quantization plus GPS PPS jitter yields about `26.9 ns` RMS combined measurement noise in the default 16 MHz build; scale the quantization term accordingly if `MAIN_CLOCK_HZ` changes.
+3. **Noise after slow smoothing**
+   With the default slow shift (`ppsSlowShift = 8`), the slow estimator heavily suppresses one-second PPS noise.
+4. **Long-term implication**
+   Under continuous PPS lock, pendulum timing should stay in the low-microsecond-per-hour class, while holdover/free-run behavior is bounded by the local oscillator and current discipliner state.
 
 ---
 
 ## Build Notes
 
-- EVSYS mapping on ATmega4809 is weird — see `CaptureInit.cpp` comments.
-- Rings: IR=64, PPS=16 (power-of-two ring sizes).
-- (naked) ISRs avoid anything uncessary (i.e. `Serial.print`) like the plague.
-- CSV lines capped at 256 bytes.
+- `CaptureInit.cpp` documents the EVSYS routing quirks on the ATmega4809.
+- Ring sizes are power-of-two: IR `64`, PPS `16`.
+- CSV lines are capped at 256 bytes.
+- In the default custom-timebase configuration, `PlatformTime.cpp` disables Arduino's TCB3 timebase interrupt so the firmware relies on the coherent TCB0-derived clock instead.
+- `StatusTelemetry` emits both the raw toolchain `f_cpu` and the semantic firmware `main_clock_hz`; downstream tools should treat `main_clock_hz` / `nominal_hz` as the runtime contract.
 
 ---
 
 ## License
 
 MIT. See `LICENSE`.
-
----

@@ -2,10 +2,19 @@
 
 #include "PendulumCapture.h"
 
+#if DISABLE_ARDUINO_TCB3_TIMEBASE
+#include <avr/interrupt.h>
+#include <avr/io.h>
+
+#if !defined(__AVR_ATmega4809__)
+#error "DISABLE_ARDUINO_TCB3_TIMEBASE is currently supported only on ATmega4809 targets"
+#endif
+#endif
+
 namespace {
 #if !USE_ARDUINO_TIMEBASE
-static_assert((F_CPU % 1000UL) == 0UL, "Custom platformMillis/platformDelayMs require F_CPU divisible by 1000");
-constexpr uint64_t TICKS_PER_MS = (uint64_t)(F_CPU / 1000UL);
+static_assert((MAIN_CLOCK_HZ % 1000UL) == 0UL, "Custom platformMillis/platformDelayMs require MAIN_CLOCK_HZ divisible by 1000");
+constexpr uint64_t TICKS_PER_MS = (uint64_t)(MAIN_CLOCK_HZ / 1000UL);
 static uint64_t s_last_platform_ms = 0;
 static uint32_t s_platform_ms_backstep_count = 0;
 #endif
@@ -61,10 +70,20 @@ void platformDelayMs(uint32_t ms) {
 
 void disableArduinoTimebaseTCB3IfConfigured() {
 #if DISABLE_ARDUINO_TCB3_TIMEBASE
-  // In custom timebase mode we can disable Arduino's TCB3 millis()/delay() ISR source
-  // to remove periodic interrupt load without modifying Arduino core sources.
+  // Nano Every / megaAVR core timebase notes:
+  // - This is a one-shot boot-time shutdown that must run before pendulumSetup()
+  //   or any other subsystem that expects the final Arduino/custom timebase state.
+  // - The stock Nano Every / megaAVR core uses TCB3 as the millis()/delay() ISR source,
+  //   while this firmware's custom timebase comes from the coherent TCB0 timeline.
+  // - This low-level TCB3 register path therefore assumes the ATmega4809 peripheral map
+  //   and the current Arduino Nano Every core timer assignment; fail fast elsewhere.
+  const uint8_t saved_sreg = SREG;
+  cli();
+
   TCB3.INTCTRL = 0;
   TCB3.INTFLAGS = TCB_CAPT_bm;
   TCB3.CTRLA = 0;
+
+  SREG = saved_sreg;
 #endif
 }

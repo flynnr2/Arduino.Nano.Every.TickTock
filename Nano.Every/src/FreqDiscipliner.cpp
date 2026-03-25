@@ -1,5 +1,12 @@
 #include "FreqDiscipliner.h"
 
+namespace {
+static constexpr uint8_t kMadWindowSize = 31;
+
+static uint32_t abs_i32(int32_t v) {
+  return (uint32_t)(v >= 0 ? v : -v);
+}
+
 static uint32_t median_u32(uint32_t *vals, uint8_t n) {
   for (uint8_t i = 1; i < n; i++) {
     uint32_t v = vals[i];
@@ -13,13 +20,45 @@ static uint32_t median_u32(uint32_t *vals, uint8_t n) {
   return vals[n / 2];
 }
 
+static uint32_t ppm_from_error(int32_t err_ticks, uint32_t denom_ticks) {
+  if (denom_ticks == 0U) return 0U;
+  return (uint32_t)((1000000ULL * (uint64_t)abs_i32(err_ticks)) / (uint64_t)denom_ticks);
+}
+
+static uint32_t mad_from_residuals(const int32_t* residuals, uint8_t n) {
+  if (n == 0U) return 0U;
+
+  uint32_t mags[kMadWindowSize];
+  for (uint8_t i = 0; i < n; ++i) {
+    mags[i] = abs_i32(residuals[i]);
+  }
+  const uint32_t med_abs = median_u32(mags, n);
+  for (uint8_t i = 0; i < n; ++i) {
+    const uint32_t a = abs_i32(residuals[i]);
+    mags[i] = (a > med_abs) ? (a - med_abs) : (med_abs - a);
+  }
+  return median_u32(mags, n);
+}
+
+} // namespace
+
 void FreqDiscipliner::reset(uint32_t f_cpu_nominal) {
   state_ = DiscState::FREE_RUN;
   f_fast_ = f_cpu_nominal;
   f_slow_ = f_cpu_nominal;
   f_hat_ = f_cpu_nominal;
   r_ppm_ = 0;
-  mad_res_ticks_ = 0;
+  err_fast_ticks_ = 0;
+  err_slow_ticks_ = 0;
+  err_applied_ticks_ = 0;
+  fast_err_ppm_ = 0;
+  slow_err_ppm_ = 0;
+  applied_err_ppm_ = 0;
+  mad_slow_ticks_ = 0;
+  mad_applied_ticks_ = 0;
+  mad_legacy_ticks_ = 0;
+  lock_pass_mask_ = 0;
+  unlock_breach_mask_ = 0;
   res_head_ = 0;
   res_fill_ = 0;
   lock_streak_ = 0;
@@ -34,6 +73,9 @@ void FreqDiscipliner::reset(uint32_t f_cpu_nominal) {
 void FreqDiscipliner::observe(PpsValidator::SampleClass cls, bool pps_valid, uint32_t n_k, uint32_t now_ms, bool had_recent_anomaly) {
   if (state_ == DiscState::HOLDOVER) holdover_age_ms_ = now_ms - holdover_start_ms_;
   else holdover_age_ms_ = 0;
+  transition_streak_ = 0;
+  lock_pass_mask_ = 0;
+  unlock_breach_mask_ = 0;
 
   if (pps_valid && state_ == DiscState::FREE_RUN) {
     state_ = DiscState::ACQUIRE;
@@ -73,30 +115,40 @@ void FreqDiscipliner::observe(PpsValidator::SampleClass cls, bool pps_valid, uin
     else if (r_ppm_ >= hi) w_q16 = 65535;
     else w_q16 = (uint32_t)(((uint64_t)(r_ppm_ - lo) * 65535ULL) / (uint64_t)(hi - lo));
 
-    if (state_ == DiscState::DISCIPLINED) w_q16 = 0;
-    if (state_ == DiscState::ACQUIRE) {
-      // keep fast-dominant in acquire
-    }
-
     f_hat_ = (uint32_t)(((uint64_t)f_slow_ * (65535U - w_q16) + (uint64_t)f_fast_ * w_q16) / 65535U);
 
-    residuals_[res_head_] = (int32_t)n_k - (int32_t)f_hat_;
+    err_fast_ticks_ = (int32_t)n_k - (int32_t)f_fast_;
+    err_slow_ticks_ = (int32_t)n_k - (int32_t)f_slow_;
+    err_applied_ticks_ = (int32_t)n_k - (int32_t)f_hat_;
+    fast_err_ppm_ = ppm_from_error(err_fast_ticks_, f_fast_);
+    slow_err_ppm_ = ppm_from_error(err_slow_ticks_, f_slow_);
+    applied_err_ppm_ = ppm_from_error(err_applied_ticks_, f_hat_);
+
+    slow_residuals_[res_head_] = err_slow_ticks_;
+    applied_residuals_[res_head_] = err_applied_ticks_;
+    // Preserve the richer slow/applied MAD telemetry, but drive the state machine
+    // with the earlier single residual path that worked better for noisy
+    // oscillators and pendulum metrology. In ACQUIRE/FREE_RUN this matches the
+    // blended estimator; in DISCIPLINED/HOLDOVER it matches the exported slow
+    // estimate and holdover anchor.
+    const bool use_slow_legacy_residual =
+        (state_ == DiscState::DISCIPLINED) || (state_ == DiscState::HOLDOVER);
+    legacy_residuals_[res_head_] = use_slow_legacy_residual ? err_slow_ticks_ : err_applied_ticks_;
     res_head_ = (uint8_t)((res_head_ + 1U) % W_MAD);
     if (res_fill_ < W_MAD) res_fill_++;
+    mad_slow_ticks_ = mad_from_residuals(slow_residuals_, res_fill_);
+    mad_applied_ticks_ = mad_from_residuals(applied_residuals_, res_fill_);
+    mad_legacy_ticks_ = mad_from_residuals(legacy_residuals_, res_fill_);
 
-    uint32_t mags[W_MAD];
-    for (uint8_t i = 0; i < res_fill_; i++) {
-      mags[i] = (uint32_t)(residuals_[i] >= 0 ? residuals_[i] : -residuals_[i]);
-    }
-    uint32_t med_abs = median_u32(mags, res_fill_);
-    for (uint8_t i = 0; i < res_fill_; i++) {
-      uint32_t a = (uint32_t)(residuals_[i] >= 0 ? residuals_[i] : -residuals_[i]);
-      mags[i] = (a > med_abs) ? (a - med_abs) : (med_abs - a);
-    }
-    mad_res_ticks_ = median_u32(mags, res_fill_);
+    if (r_ppm_ < lockFrequencyErrorThresholdPpm()) lock_pass_mask_ |= kMetricFastSlowAgree;
+    if (slow_err_ppm_ < lockFrequencyErrorThresholdPpm()) lock_pass_mask_ |= kMetricSlowErr;
+    if (mad_slow_ticks_ < lockMadThresholdTicks()) lock_pass_mask_ |= kMetricSlowMad;
+    if (applied_err_ppm_ < lockFrequencyErrorThresholdPpm()) lock_pass_mask_ |= kMetricAppliedErr;
+    if (mad_applied_ticks_ < lockMadThresholdTicks()) lock_pass_mask_ |= kMetricAppliedMad;
+    if (!had_recent_anomaly) lock_pass_mask_ |= kMetricNoAnomaly;
 
     const bool lock_ok = (r_ppm_ < lockFrequencyErrorThresholdPpm()) &&
-                         (mad_res_ticks_ < lockMadThresholdTicks()) &&
+                         (mad_legacy_ticks_ < lockMadThresholdTicks()) &&
                          !had_recent_anomaly;
     if (lock_ok) {
       if (lock_streak_ < 255) lock_streak_++;
@@ -117,8 +169,14 @@ void FreqDiscipliner::observe(PpsValidator::SampleClass cls, bool pps_valid, uin
       f_hat_ = f_slow_;
       last_good_slow_ = f_slow_;
 
+      if (applied_err_ppm_ > (uint32_t)Tunables::ppsUnlockRppmActive()) unlock_breach_mask_ |= kMetricAppliedErr;
+      if (mad_applied_ticks_ > (uint32_t)Tunables::ppsUnlockMadTicksActive()) unlock_breach_mask_ |= kMetricAppliedMad;
+      if (slow_err_ppm_ > (uint32_t)Tunables::ppsUnlockRppmActive()) unlock_breach_mask_ |= kMetricSlowErr;
+      if (mad_slow_ticks_ > (uint32_t)Tunables::ppsUnlockMadTicksActive()) unlock_breach_mask_ |= kMetricSlowMad;
+      if (r_ppm_ > (uint32_t)Tunables::ppsUnlockRppmActive()) unlock_breach_mask_ |= kMetricFastSlowAgree;
+      if (had_recent_anomaly) unlock_breach_mask_ |= kMetricNoAnomaly;
       const bool unlock_bad = (r_ppm_ > (uint32_t)Tunables::ppsUnlockRppmActive()) ||
-                              (mad_res_ticks_ > (uint32_t)Tunables::ppsUnlockJppmActive()) ||
+                              (mad_legacy_ticks_ > (uint32_t)Tunables::ppsUnlockMadTicksActive()) ||
                               had_recent_anomaly;
       if (unlock_bad) {
         if (unlock_streak_ < 255U) unlock_streak_++;

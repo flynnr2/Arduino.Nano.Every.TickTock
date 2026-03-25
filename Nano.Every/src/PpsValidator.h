@@ -1,5 +1,7 @@
 #pragma once
 
+#include "Config.h"
+
 #include <stdint.h>
 
 class PpsValidator {
@@ -37,7 +39,7 @@ public:
   static constexpr uint8_t okMaxNum10() { return 13; } // <=1.3*ref => broad OK upper bound
   static constexpr uint8_t gapNum10() { return 17; }  // >1.7*ref => GAP
   static constexpr uint8_t ratioDen10() { return 10; }
-  static constexpr uint32_t nominalRefTicks() { return (uint32_t)F_CPU; }
+  static constexpr uint32_t nominalRefTicks() { return (uint32_t)MAIN_CLOCK_HZ; }
 
   // Startup/recovery guidance bands around the known 1 Hz PPS period.
   static constexpr uint8_t seedNear2xMaxNum10() { return 23; }

@@ -14,10 +14,12 @@ constexpr int      EEPROM_SLOT_NANO_A_ADDR = 0;       // EEPROM slot for 1st cop
 constexpr int      EEPROM_SLOT_NANO_B_ADDR = 64;      // EEPROM slot for 2nd copy
 constexpr uint16_t EEPROM_SLOT_SIZE        = (uint16_t)(EEPROM_SLOT_NANO_B_ADDR - EEPROM_SLOT_NANO_A_ADDR);
 
-constexpr uint8_t  EEPROM_CONFIG_VERSION_LEGACY                = 0; // seq did not encode schema version
-constexpr uint8_t  EEPROM_CONFIG_VERSION_PPS_SLOWSHIFT_PRIMARY = 1; // ppsSlowShift is canonical
-constexpr uint8_t  EEPROM_CONFIG_VERSION_PPS_TIMEBASE_TUNABLES = 2; // adds PPS freshness/acquire timing tunables
-constexpr uint8_t  EEPROM_CONFIG_VERSION_CURRENT                = EEPROM_CONFIG_VERSION_PPS_TIMEBASE_TUNABLES;
+constexpr uint8_t  EEPROM_CONFIG_VERSION_ACTIVE_PPS_ONLY      = 4; // removes obsolete compatibility-only tunables from persisted config
+constexpr uint8_t  EEPROM_CONFIG_VERSION_CURRENT               = EEPROM_CONFIG_VERSION_ACTIVE_PPS_ONLY;
 
 static_assert(sizeof(TunableConfig) <= EEPROM_SLOT_SIZE,
               "TunableConfig must fit within one EEPROM slot");
+
+// Older EEPROM layouts are not migrated anymore. If a saved record does not match
+// the current schema/CRC, firmware falls back to compiled defaults until a new save
+// rewrites the active schema.

@@ -15,12 +15,13 @@ void DisciplinedTime::sync(const FreqDiscipliner& discipliner, bool pps_valid) {
 
   switch (state_) {
     case FreqDiscipliner::DiscState::DISCIPLINED:
+      // In DISCIPLINED, use the smoother slow estimate for metrology stability.
       f_hat_ = discipliner.slow();
       break;
     case FreqDiscipliner::DiscState::ACQUIRE:
-      f_hat_ = discipliner.applied();
-      break;
     case FreqDiscipliner::DiscState::HOLDOVER:
+      // HOLDOVER is anchored by the discipliner on the last known-good slow
+      // estimate, which is exposed through applied() while holdover is active.
       f_hat_ = discipliner.applied();
       break;
     case FreqDiscipliner::DiscState::FREE_RUN:

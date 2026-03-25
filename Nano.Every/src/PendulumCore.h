@@ -8,3 +8,5 @@
 
 void pendulumSetup();
 void pendulumLoop();
+void resetRuntimeStateAfterTunablesChange();
+void emitMetadataNow();

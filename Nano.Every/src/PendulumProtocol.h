@@ -1,33 +1,26 @@
 #pragma once
 
+// Shared serial interface definitions for the reduced Nano Every firmware.
 
-// -----------------------------------------------------------------------------
-// PendulumProtocol.h
-// Shared serial interface definitions for Nano Every ↔ Uno R4
-// -----------------------------------------------------------------------------
+// Line tags written to DATA_SERIAL.
+static constexpr char TAG_CFG[] = "CFG";     // session/config metadata (includes schema ID, not literal CSV header)
+static constexpr char TAG_HDR[] = "HDR";     // authoritative literal CSV sample header; SMP rows must match this order
+static constexpr char TAG_STS[] = "STS";     // structured boot/status telemetry
+static constexpr char TAG_SMP[] = "SMP";     // raw-cycle sample rows
 
-// 0) DATA_SERIAL line tags
-//    Prefixes prepended to each line written to DATA_SERIAL so consumers can
-//    distinguish content.
-static constexpr char TAG_HDR[] = "HDR"; // CSV header/meta line
-static constexpr char TAG_DAT[] = "DAT"; // data sample line
-static constexpr char TAG_STS[] = "STS"; // status/diagnostic line
-static constexpr char TAG_16MHZ[] = "16Mhz"; // raw-cycle sample line
-static constexpr char TAG_NS[]   = "nSec";  // nanosecond sample line
-static constexpr char TAG_US[]   = "uSec";  // microsecond sample line
-static constexpr char TAG_MS[]   = "mSec";  // millisecond sample line
+static constexpr char SAMPLE_SCHEMA[] =
+    "tick,tock,tick_block,tock_block,f_inst_hz,f_hat_hz,gps_status,holdover_age_ms,r_ppm,j_ticks,dropped";
 
-// Status codes for STS lines
+// Status codes for STS lines.
 enum class StatusCode : uint8_t {
-  Ok = 0,            // generic success / informational message
-  UnknownCommand,    // command was not recognized
-  InvalidParam,      // parameter name is not valid
-  InvalidValue,      // value provided is out of range/invalid
-  InternalError,     // catch‑all for unexpected failures
-  ProgressUpdate,    // periodic/streaming diagnostics and telemetry
+  Ok = 0,
+  UnknownCommand,
+  InvalidParam,
+  InvalidValue,
+  InternalError,
+  ProgressUpdate,
 };
 
-// Optional helper to stringify StatusCode
 inline const char* statusCodeToStr(StatusCode code) {
   switch (code) {
     case StatusCode::Ok:             return "OK";
@@ -40,53 +33,76 @@ inline const char* statusCodeToStr(StatusCode code) {
   }
 }
 
-// 1) Field indices
-//    Use these to index into split() or sscanf() results
-//    NB: correction fields use integer scaling (ppm × 1e6)
+// Header/sample field order for raw-cycle rows with frequency estimates in ticks/sec.
 enum CsvField {
   CF_TICK = 0,
   CF_TOCK,
   CF_TICK_BLOCK,
   CF_TOCK_BLOCK,
-  CF_CORR_INST_PPM,
-  CF_CORR_BLEND_PPM,
+  CF_F_INST_HZ,
+  CF_F_HAT_HZ,
   CF_GPS_STATUS,
+  CF_HOLDOVER_AGE_MS,
+  CF_R_PPM,
+  CF_J_TICKS,
   CF_DROPPED,
   CF_COUNT
 };
 
 enum GpsStatus : uint8_t {
-  NO_PPS     = 0,  // never seen PPS or PPS absent beyond horizon; no valid epoch
-  ACQUIRING  = 1,  // PPS present but not yet stable enough to trust
-  LOCKED     = 2,  // PPS present and stable; trusted regime
-  HOLDOVER   = 3,  // PPS absent, but last-good scale exists and is being held
-  BAD_JITTER = 4,  // PPS present but too noisy/out-of-family to trust
+  NO_PPS    = 0,
+  ACQUIRING = 1,
+  LOCKED    = 2,
+  HOLDOVER  = 3,
 };
 static_assert(sizeof(GpsStatus) == 1, "GpsStatus must be 1 byte");
 
-// 2) Command protocol
-//    Shared commands for runtime tuning
-static constexpr char CMD_HELP[]  = "help";
-static constexpr char CMD_GET[]   = "get";
-static constexpr char CMD_SET[]   = "set";
-static constexpr char CMD_STATS[] = "stats";
+inline const char* gpsStatusToStr(GpsStatus status) {
+  switch (status) {
+    case NO_PPS:    return "NO_PPS";
+    case ACQUIRING: return "ACQUIRING";
+    case LOCKED:    return "LOCKED";
+    case HOLDOVER:  return "HOLDOVER";
+    default:        return "UNKNOWN";
+  }
+}
 
-// 3) Tunable names
-//    Must match members in namespace Tunables
-static constexpr char PARAM_CORR_JUMP[]     = "correctionJumpThresh";
-static constexpr char PARAM_PPS_EMA_SHIFT[] = "ppsEmaShift";
-static constexpr char PARAM_DATA_UNITS[]    = "dataUnits";
+inline const char* gpsStatusToShortStr(GpsStatus status) {
+  switch (status) {
+    case NO_PPS:    return "NO";
+    case ACQUIRING: return "ACQ";
+    case LOCKED:    return "LCK";
+    case HOLDOVER:  return "HLD";
+    default:        return "UNK";
+  }
+}
+
+// Runtime CLI commands.
+static constexpr char CMD_HELP[] = "help";
+static constexpr char CMD_GET[]  = "get";
+static constexpr char CMD_SET[]  = "set";
+static constexpr char CMD_RESET[] = "reset";
+static constexpr char CMD_RESET_DEFAULTS[] = "defaults";
+static constexpr char CMD_EMIT[] = "emit";
+static constexpr char CMD_EMIT_META[] = "meta";
+
+// Structured tunables command acknowledgements carried in STS,OK,... replies.
+static constexpr char STS_TUNABLES_GET[] = "get";
+static constexpr char STS_TUNABLES_SET[] = "set";
+static constexpr char STS_TUNABLES_RESET[] = "reset";
+static constexpr char STS_EMIT_META[] = "emit,meta";
+
+// Runtime tunable names. These must match namespace Tunables.
 static constexpr char PARAM_PPS_FAST_SHIFT[]   = "ppsFastShift";
 static constexpr char PARAM_PPS_SLOW_SHIFT[]   = "ppsSlowShift";
-static constexpr char PARAM_PPS_HAMPEL_WIN[]   = "ppsHampelWin";
-static constexpr char PARAM_PPS_HAMPEL_KX100[] = "ppsHampelKx100";
-static constexpr char PARAM_PPS_MEDIAN3[]      = "ppsMedian3";
 static constexpr char PARAM_PPS_BLEND_LO_PPM[] = "ppsBlendLoPpm";
 static constexpr char PARAM_PPS_BLEND_HI_PPM[] = "ppsBlendHiPpm";
 static constexpr char PARAM_PPS_LOCK_R_PPM[]   = "ppsLockRppm";
-static constexpr char PARAM_PPS_LOCK_J_PPM[]   = "ppsLockJppm";
+static constexpr char PARAM_PPS_LOCK_MAD_TICKS[] = "ppsLockMadTicks";
+static constexpr char PARAM_PPS_LOCK_MAD_TICKS_DEPRECATED_ALIAS[] = "ppsLockJppm";
 static constexpr char PARAM_PPS_UNLOCK_R_PPM[] = "ppsUnlockRppm";
-static constexpr char PARAM_PPS_UNLOCK_J_PPM[] = "ppsUnlockJppm";
+static constexpr char PARAM_PPS_UNLOCK_MAD_TICKS[] = "ppsUnlockMadTicks";
+static constexpr char PARAM_PPS_UNLOCK_MAD_TICKS_DEPRECATED_ALIAS[] = "ppsUnlockJppm";
 static constexpr char PARAM_PPS_LOCK_COUNT[]   = "ppsLockCount";
 static constexpr char PARAM_PPS_UNLOCK_COUNT[] = "ppsUnlockCount";
 static constexpr char PARAM_PPS_HOLDOVER_MS[]  = "ppsHoldoverMs";
@@ -95,49 +111,18 @@ static constexpr char PARAM_PPS_ISR_STALE_MS[] = "ppsIsrStaleMs";
 static constexpr char PARAM_PPS_CFG_REEMIT_DELAY_MS[] = "ppsCfgReemitDelayMs";
 static constexpr char PARAM_PPS_ACQUIRE_MIN_MS[] = "ppsAcquireMinMs";
 
-// 4) Structure
 struct PendulumSample {
-  uint32_t tick;                  // raw ticks since last tick entry
-  uint32_t tock;                  // raw ticks since last tick exit
-  uint32_t tick_block;            // raw ticks beam entry duration
-  uint32_t tock_block;            // raw ticks beam exit duration
-  int32_t  corr_inst_ppm;         // instantaneous clock correction (ppm ×1e6)
-  int32_t  corr_blend_ppm;        // blended clock correction (ppm ×1e6)
-  uint16_t dropped_events;        // number of lost events
-  GpsStatus gps_status;           // GPS lock status
-  float    temperature_C;         // °C
-  float    humidity_pct;          // % RH
-  float    pressure_hPa;          // hPa
+  uint32_t tick;
+  uint32_t tock;
+  uint32_t tick_block;
+  uint32_t tock_block;
+  uint32_t f_inst_hz;
+  uint32_t f_hat_hz;
+  uint32_t holdover_age_ms;
+  uint32_t r_ppm;
+  uint32_t j_ticks;
+  GpsStatus gps_status;
+  uint16_t dropped_events;
 };
 
-// 5) Units & scaling
-//    How raw values map to engineering units
-//    - tick etc. are raw TCB0 ticks (integer)
-//    - pps correction factors are ppm×1e6 (integer micro‑ppm deltas)
-enum class DataUnits : uint8_t {
-  RawCycles = 0,
-  AdjustedMs,
-  AdjustedUs,
-  AdjustedNs,
-};
-
-constexpr DataUnits DATA_UNITS_DEFAULT = DataUnits::RawCycles;
-
-// Map DataUnits to CSV line tag describing the units
-inline const char* dataUnitsTag(DataUnits du) {
-  switch (du) {
-    case DataUnits::RawCycles:  return TAG_16MHZ;
-    case DataUnits::AdjustedNs: return TAG_NS;
-    case DataUnits::AdjustedUs: return TAG_US;
-    case DataUnits::AdjustedMs: return TAG_MS;
-    default:                    return TAG_DAT; // fallback for legacy parsers
-  }
-}
-
-static constexpr int32_t CORR_PPM_SCALE = 1000000;
-
-// Serial baud rate
-#define SERIAL_BAUD_NANO   115200
-
-// 6) Utility declarations (optional)
-//   e.g. bool parseParam(const char* name, const char* val);
+#define SERIAL_BAUD_NANO 115200

@@ -12,13 +12,11 @@
 #include "StringCase.h"
 #include "PendulumProtocol.h"
 #include "SerialParser.h"
-#include "AtomicUtils.h"
-#include "PlatformTime.h"
-#include "PendulumCapture.h"
+#include "PendulumCore.h"
 #include "TunableCommands.h"
 #include "TunableRegistry.h"
 
-// === HELP REGISTRY & HANDLERS ==============================================
+// Help registry for the retained CLI surface (help/get/set/reset/emit).
 namespace {
 
   struct CmdHelp {
@@ -28,18 +26,14 @@ namespace {
     const char* category_P; // PROGMEM
   };
 
-  // Categories
+  // Help categories.
   const char CAT_core[]     PROGMEM = "core";
   const char CAT_tunables[] PROGMEM = "tunables";
 
-  // Command text
+  // Command text.
   const char H_name[]     PROGMEM = "help";
   const char H_syn[]      PROGMEM = "Show help for commands or tunables";
   const char H_use[]      PROGMEM = "help [<command>|tunables]";
-
-  const char S_name[]     PROGMEM = "stats";
-  const char S_syn[]      PROGMEM = "Print running metrics";
-  const char S_use[]      PROGMEM = "stats";
 
   const char G_name[]     PROGMEM = "get";
   const char G_syn[]      PROGMEM = "Read a tunable";
@@ -49,21 +43,30 @@ namespace {
   const char SET_syn[]    PROGMEM = "Set a tunable";
   const char SET_use[]    PROGMEM = "set <param> <value>";
 
-  // Registry (single source of truth)
+  const char RESET_name[] PROGMEM = "reset";
+  const char RESET_syn[]  PROGMEM = "Reset firmware defaults into live config and EEPROM";
+  const char RESET_use[]  PROGMEM = "reset defaults";
+
+  const char EMIT_name[]  PROGMEM = "emit";
+  const char EMIT_syn[]   PROGMEM = "Emit runtime telemetry events";
+  const char EMIT_use[]   PROGMEM = "emit meta";
+
+  // Registry for top-level commands.
   const CmdHelp HELP_REGISTRY[] PROGMEM = {
     { H_name,   H_syn,   H_use,   CAT_core     },
-    { S_name,   S_syn,   S_use,   CAT_core     },
     { G_name,   G_syn,   G_use,   CAT_tunables },
     { SET_name, SET_syn, SET_use, CAT_tunables },
+    { RESET_name, RESET_syn, RESET_use, CAT_tunables },
+    { EMIT_name, EMIT_syn, EMIT_use, CAT_core },
   };
   constexpr uint8_t HELP_N = sizeof(HELP_REGISTRY) / sizeof(HELP_REGISTRY[0]);
   constexpr uint8_t MAX_HELP_SUGGESTIONS = 5; // cap on similar command hints
 
-  // PROGMEM printing helpers
+  // PROGMEM printing helpers.
   inline void print_P (const char* p)   { CMD_SERIAL.print(FPSTR(p)); }
   inline void println_P(const char* p)  { CMD_SERIAL.println(FPSTR(p)); }
 
-  // Case-insensitive compare RAM vs PROGMEM
+  // Case-insensitive compare RAM vs PROGMEM.
   bool equals_ci_P(const char* ram, const char* pgm) {
     if (!ram) return false;
     while (true) {
@@ -76,7 +79,7 @@ namespace {
     }
   }
 
-  // Prefix match RAM vs PROGMEM (for suggestions)
+  // Prefix match RAM vs PROGMEM for suggestions.
   bool starts_with_ci_P(const char* ram, const char* pgm) {
     if (!ram) return false;
     while (*ram) {
@@ -158,7 +161,6 @@ namespace {
     }
   }
 
-  // was: void handleHelp(const char* arg1) { ... }
   void helpImpl(const char* arg1) {
     if (!arg1 || *arg1 == '\0') { list_commands(); return; }
     if (equalsIgnoreCaseAscii(arg1, "tunables")) { show_tunables(); return; }
@@ -168,7 +170,6 @@ namespace {
     }
   }
 } // anon namespace
-// ========================================================================
 
 // Global symbol declared in SerialParser.h
 void handleHelp(const char* arg1) {
@@ -176,18 +177,11 @@ void handleHelp(const char* arg1) {
 }
 
 constexpr size_t CMD_BUFFER_SIZE = 64;      // serial command buffer length
-// Buffer for accumulating incoming command characters (CMD_BUFFER_SIZE)
+// Buffer for accumulating one incoming command line.
 static char cmdBuf[CMD_BUFFER_SIZE];
 static uint8_t cmdIdx = 0;
 static char lineBuf[CSV_LINE_MAX];
 static bool headerPending = false;
-
-#if ENABLE_METRICS
-volatile uint8_t  maxFill = 0;
-volatile uint32_t stsPayloadTrunc = 0;
-volatile uint32_t csvLineTrunc = 0;
-volatile uint32_t serialTrunc = 0;
-#endif
 
 void processSerialCommands() {
   while (CMD_SERIAL.available()) {
@@ -201,8 +195,6 @@ void processSerialCommands() {
         if (equalsIgnoreCaseAscii(token, CMD_HELP) || strcmp(token, "?") == 0) {
           char* arg1 = strtok_r(NULL, " ", &save);
           handleHelp(arg1);
-        } else if (equalsIgnoreCaseAscii(token, CMD_STATS)) {
-          reportMetrics();
         } else if (equalsIgnoreCaseAscii(token, CMD_GET)) {
           char *name = strtok_r(NULL, " ", &save);
           handleGetCommand(name);
@@ -210,6 +202,28 @@ void processSerialCommands() {
           char *name = strtok_r(NULL, " ", &save);
           char *val  = strtok_r(NULL, " ", &save);
           handleSetCommand(name, val, headerPending);
+        } else if (equalsIgnoreCaseAscii(token, CMD_RESET)) {
+          char *action = strtok_r(NULL, " ", &save);
+          handleResetCommand(action, headerPending);
+        } else if (equalsIgnoreCaseAscii(token, CMD_EMIT)) {
+          char *sub = strtok_r(NULL, " ", &save);
+          if (!sub) {
+            CMD_SERIAL.println(F("ERROR: emit requires subcommand"));
+            sendStatus(StatusCode::InvalidParam, "emit requires subcommand");
+          } else if (!equalsIgnoreCaseAscii(sub, CMD_EMIT_META)) {
+            CMD_SERIAL.print(F("ERROR: unknown emit subcommand: "));
+            CMD_SERIAL.println(sub);
+            sendStatus(StatusCode::UnknownCommand, sub);
+          } else {
+            char *extra = strtok_r(NULL, " ", &save);
+            if (extra) {
+              CMD_SERIAL.println(F("ERROR: emit meta takes no arguments"));
+              sendStatus(StatusCode::InvalidParam, "emit meta takes no arguments");
+            } else {
+              sendStatus(StatusCode::Ok, STS_EMIT_META);
+              emitMetadataNow();
+            }
+          }
         } else {
           CMD_SERIAL.println(F("ERROR: unknown command"));
           sendStatus(StatusCode::UnknownCommand, token);
@@ -256,9 +270,6 @@ void queueCSVLine(const char* buf, int len) {
   int payloadLen = len;
   if (payloadLen >= (int)CSV_LINE_MAX) {
     payloadLen = (int)CSV_LINE_MAX - 1;
-#if ENABLE_METRICS
-    csvLineTrunc++;
-#endif
   }
 
   if (payloadLen < len) {
@@ -292,53 +303,33 @@ void queueCSVLine(const char* buf, int len) {
   }
 #endif
 
-#if ENABLE_METRICS
-  if (written != writeLen) serialTrunc++;
-#endif
   txInProgress = false;
 }
+void sendTaggedCsvLine(const char* tag, const char* text) {
+  if (!tag) return;
+  if (!text) text = "";
+
+  int len = snprintf(lineBuf, CSV_LINE_MAX, "%s,%s\n", tag, text);
+  queueCSVLine(lineBuf, len);
+}
+
 void sendStatus(StatusCode code, const char* text) {
   const char* codeStr = statusCodeToStr(code);
   if (!text) text = "";
 
   char payloadBuf[CSV_PAYLOAD_MAX];
-  int payloadLen = snprintf(payloadBuf, sizeof(payloadBuf), "%s", text);
-#if ENABLE_METRICS
-  if (payloadLen >= (int)sizeof(payloadBuf)) stsPayloadTrunc++;
-#endif
-
-  int len = snprintf(lineBuf, CSV_LINE_MAX, "%s,%s,%s\n", TAG_STS, codeStr, payloadBuf);
-  queueCSVLine(lineBuf, len);
+  if (text[0] != '\0') {
+    snprintf(payloadBuf, sizeof(payloadBuf), "%s,%s", codeStr, text);
+  } else {
+    snprintf(payloadBuf, sizeof(payloadBuf), "%s", codeStr);
+  }
+  sendTaggedCsvLine(TAG_STS, payloadBuf);
 }
 
 void printCsvHeader() {
   DATA_SERIAL.flush();
-  switch (Tunables::dataUnits) {
-    case DataUnits::RawCycles: {
-      const char* fields = "tick_cycles,tock_cycles,tick_block_cycles,tock_block_cycles,corr_inst_ppm,corr_blend_ppm,gps_status,dropped_events";
-      int len = snprintf(lineBuf, CSV_LINE_MAX, "%s,%s\n", TAG_HDR, fields);
-      queueCSVLine(lineBuf, len);
-      break;
-    }
-    case DataUnits::AdjustedMs: {
-      const char* fields = "tick_ms,tock_ms,tick_block_ms,tock_block_ms,corr_inst_ppm,corr_blend_ppm,gps_status,dropped_events";
-      int len = snprintf(lineBuf, CSV_LINE_MAX, "%s,%s\n", TAG_HDR, fields);
-      queueCSVLine(lineBuf, len);
-      break;
-    }
-    case DataUnits::AdjustedUs: {
-      const char* fields = "tick_us,tock_us,tick_block_us,tock_block_us,corr_inst_ppm,corr_blend_ppm,gps_status,dropped_events";
-      int len = snprintf(lineBuf, CSV_LINE_MAX, "%s,%s\n", TAG_HDR, fields);
-      queueCSVLine(lineBuf, len);
-      break;
-    }
-    case DataUnits::AdjustedNs: {
-      const char* fields = "tick_ns,tock_ns,tick_block_ns,tock_block_ns,corr_inst_ppm,corr_blend_ppm,gps_status,dropped_events";
-      int len = snprintf(lineBuf, CSV_LINE_MAX, "%s,%s\n", TAG_HDR, fields);
-      queueCSVLine(lineBuf, len);
-      break;
-    }
-  }
+  // HDR is the authoritative literal CSV schema for SMP payload rows.
+  sendTaggedCsvLine(TAG_HDR, SAMPLE_SCHEMA);
   headerPending = false;
   DATA_SERIAL.flush();
 }
@@ -349,38 +340,18 @@ void sendSample(const PendulumSample &s) {
   }
 
   int len = snprintf(lineBuf, CSV_LINE_MAX,
-    "%s,%lu,%lu,%lu,%lu,%ld,%ld,%u,%u\n",
-    dataUnitsTag(Tunables::dataUnits),
+    "%s,%lu,%lu,%lu,%lu,%lu,%lu,%u,%lu,%lu,%lu,%u\n",
+    TAG_SMP,
     (unsigned long)s.tick,
     (unsigned long)s.tock,
     (unsigned long)s.tick_block,
     (unsigned long)s.tock_block,
-    (long)s.corr_inst_ppm,
-    (long)s.corr_blend_ppm,
+    (unsigned long)s.f_inst_hz,
+    (unsigned long)s.f_hat_hz,
     (unsigned int)s.gps_status,
+    (unsigned long)s.holdover_age_ms,
+    (unsigned long)s.r_ppm,
+    (unsigned long)s.j_ticks,
     (unsigned int)s.dropped_events);
   queueCSVLine(lineBuf, len);
-}
-
-void reportMetrics() {
-#if ENABLE_METRICS
-  static uint32_t lastMetricsMs = 0;
-  uint32_t nowMs = platformMillis();
-  if (nowMs - lastMetricsMs >= METRICS_PERIOD_MS) {
-    lastMetricsMs = nowMs;
-    uint32_t dropped = captureDroppedEvents();
-    char msg[96];
-    snprintf(msg, sizeof(msg), "fill=%u,drop=%lu,serTrunc=%lu,payTrunc=%lu,csvTrunc=%lu",
-             maxFill,
-             (unsigned long)dropped,
-             (unsigned long)serialTrunc,
-             (unsigned long)stsPayloadTrunc,
-             (unsigned long)csvLineTrunc);
-    sendStatus(StatusCode::ProgressUpdate, msg);
-    serialTrunc = 0;
-    stsPayloadTrunc = 0;
-    csvLineTrunc = 0;
-    maxFill = 0;
-  }
-#endif
 }

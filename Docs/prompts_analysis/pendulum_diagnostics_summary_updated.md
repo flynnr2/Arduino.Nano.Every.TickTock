@@ -16,7 +16,7 @@ Raw timestamps are in **MCU timer ticks / cycles**. Conversion to seconds requir
 
 - Prefer naming raw units as `*_ticks` or `*_cycles`.
 - If legacy columns are named `*_us`, treat them as **ticks** unless proven otherwise.
-- In the current pendulum CSV, fields such as `tick_us`, `tock_us`, `tick_block_us`, and `tock_block_us` should be interpreted as timer-cycle units unless you have explicitly changed the logging format.
+- In the current pendulum CSV, the Nano emits raw-cycle fields `tick`, `tock`, `tick_block`, and `tock_block`. Convert them to time units off-device using the disciplined ticks-per-second context appropriate for your analysis.
 
 ### 1.2 PPS input validity vs discipline convergence
 Do not conflate “PPS looks sane” with “the discipliner has converged”.
@@ -179,7 +179,7 @@ Use the current log families explicitly if present.
 
 ### 7.1 Pendulum CSV
 Typical useful fields:
-- `tick_us`, `tock_us`, `tick_block_us`, `tock_block_us` (timer-cycle units despite suffix)
+- `tick`, `tock`, `tick_block`, `tock_block` (raw timer-cycle counts emitted by the Nano)
 - `corr_inst_ppm`, `corr_blend_ppm`
 - `gps_status`
 - `dropped`
@@ -382,4 +382,3 @@ For a long overnight run, generate:
 - `pps_health_summary.md` — time in state, reasons, anomaly counts, wrap / latency health
 - `pps_forensics.csv` — extracted `court*`, `gps_health_d2`, and optional `gps_snap*` anomalies
 - plots: period vs time, ppm vs time, phase fold, Allan deviation, asymmetry vs time, temperature correlation, `R_ppm` / `J` vs time, and selected wrap / latency metrics
-

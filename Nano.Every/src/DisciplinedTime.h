@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Config.h"
 #include "FreqDiscipliner.h"
 #include <stdint.h>
 
@@ -21,8 +22,8 @@ public:
   Quality timeQuality() const;
 
 private:
-#if defined(F_CPU)
-  static constexpr uint32_t kDefaultFcpu = static_cast<uint32_t>(F_CPU);
+#if defined(MAIN_CLOCK_HZ)
+  static constexpr uint32_t kDefaultFcpu = static_cast<uint32_t>(MAIN_CLOCK_HZ);
 #else
   static constexpr uint32_t kDefaultFcpu = 16UL * 1000000UL;
 #endif

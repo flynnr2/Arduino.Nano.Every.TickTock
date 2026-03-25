@@ -5,11 +5,6 @@
 #include <Arduino.h>
 #include <stddef.h>
 
-struct TunableConfigLoadContext {
-  bool useLegacyPpsEmaShift;
-  bool hasTimebaseTunables;
-};
-
 enum class TunableCliType : uint8_t {
   Unsigned,
   Float,
@@ -18,6 +13,7 @@ enum class TunableCliType : uint8_t {
 
 struct TunableDescriptor {
   const char* cliName;
+  const char* deprecatedCliAlias;
   TunableCliType type;
   const char* validationText;
   const char* exampleText;
@@ -25,7 +21,7 @@ struct TunableDescriptor {
   void (*printCurrent)(Print& out);
   bool (*parseAndSet)(const char* value, bool& tuningChanged, bool& headerPending);
   void (*writeToConfig)(TunableConfig& cfg);
-  void (*applyFromConfig)(const TunableConfig& cfg, const TunableConfigLoadContext& ctx);
+  void (*applyFromConfig)(const TunableConfig& cfg);
 };
 
 const TunableDescriptor* tunableRegistryBegin();
@@ -34,5 +30,3 @@ size_t tunableRegistryCount();
 const TunableDescriptor* findTunableDescriptor(const char* cliName);
 
 const char* tunableTypeName(TunableCliType type);
-const char* dataUnitsName(DataUnits du);
-bool tryParseDataUnits(const char* value, DataUnits& out);

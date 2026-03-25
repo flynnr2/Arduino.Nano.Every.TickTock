@@ -24,7 +24,10 @@ static uint16_t crcConfig(TunableConfig cfg) {
 static uint32_t currentSeq = 0;
 
 static constexpr uint32_t EEPROM_CONFIG_VERSION_SHIFT = 24U;
+// The low 24 bits store a wrapping counter; when comparing two values, treat a
+// forward delta smaller than half the 24-bit range as "newer" to handle wrap.
 static constexpr uint32_t EEPROM_CONFIG_SEQ_MASK = 0x00FFFFFFUL;
+static constexpr uint32_t EEPROM_CONFIG_SEQ_HALF_RANGE = (EEPROM_CONFIG_SEQ_MASK + 1UL) / 2UL;
 
 static uint8_t configVersion(const TunableConfig &cfg) {
   return (uint8_t)(cfg.seq >> EEPROM_CONFIG_VERSION_SHIFT);
@@ -32,6 +35,25 @@ static uint8_t configVersion(const TunableConfig &cfg) {
 
 static uint32_t configSeqCounter(const TunableConfig &cfg) {
   return (cfg.seq & EEPROM_CONFIG_SEQ_MASK);
+}
+
+static bool isSeqCounterNewer(uint32_t candidate, uint32_t reference) {
+  const uint32_t delta = (candidate - reference) & EEPROM_CONFIG_SEQ_MASK;
+  return (delta != 0U) && (delta < EEPROM_CONFIG_SEQ_HALF_RANGE);
+}
+
+static uint32_t newerSeqCounter(uint32_t a, uint32_t b) {
+  return isSeqCounterNewer(b, a) ? b : a;
+}
+
+static bool readConfigAt(int addr, TunableConfig& out, bool& valid) {
+  TunableConfig cfg = {};
+  EEPROM.get(addr, cfg);
+  valid = (crcConfig(cfg) == cfg.crc16) && (configVersion(cfg) == EEPROM_CONFIG_VERSION_CURRENT);
+  if (valid) {
+    out = cfg;
+  }
+  return valid;
 }
 
 static uint32_t packConfigSeq(uint32_t seqCounter, uint8_t version) {
@@ -50,13 +72,8 @@ TunableConfig getCurrentConfig() {
 
 
 void applyConfig(const TunableConfig &cfg) {
-  const TunableConfigLoadContext context = {
-    (configVersion(cfg) <= EEPROM_CONFIG_VERSION_LEGACY),
-    (configVersion(cfg) >= EEPROM_CONFIG_VERSION_PPS_TIMEBASE_TUNABLES),
-  };
-
   for (const TunableDescriptor* it = tunableRegistryBegin(); it != tunableRegistryEnd(); ++it) {
-    it->applyFromConfig(cfg, context);
+    it->applyFromConfig(cfg);
   }
 
   Tunables::normalizePpsTunables();
@@ -64,15 +81,16 @@ void applyConfig(const TunableConfig &cfg) {
 
 
 bool loadConfig(TunableConfig &out) {
-  TunableConfig a, b;
-  EEPROM.get(EEPROM_SLOT_NANO_A_ADDR, a);
-  EEPROM.get(EEPROM_SLOT_NANO_B_ADDR, b);
-  bool validA = (crcConfig(a) == a.crc16);
-  bool validB = (crcConfig(b) == b.crc16);
+  TunableConfig a = {};
+  TunableConfig b = {};
+  bool validA = false;
+  bool validB = false;
+  readConfigAt(EEPROM_SLOT_NANO_A_ADDR, a, validA);
+  readConfigAt(EEPROM_SLOT_NANO_B_ADDR, b, validB);
   if (validA && !validB) { out = a; currentSeq = configSeqCounter(a); return true; }
   if (!validA && validB) { out = b; currentSeq = configSeqCounter(b); return true; }
   if (validA && validB) {
-    if (configSeqCounter(b) > configSeqCounter(a)) {
+    if (isSeqCounterNewer(configSeqCounter(b), configSeqCounter(a))) {
       out = b;
       currentSeq = configSeqCounter(b);
     } else {
@@ -81,7 +99,7 @@ bool loadConfig(TunableConfig &out) {
     }
     return true;
   }
-  currentSeq = (configSeqCounter(a) > configSeqCounter(b)) ? configSeqCounter(a) : configSeqCounter(b);
+  currentSeq = newerSeqCounter(configSeqCounter(a), configSeqCounter(b));
   return false;
 }
 

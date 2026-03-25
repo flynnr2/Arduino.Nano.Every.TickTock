@@ -2,23 +2,14 @@
 #include "PendulumProtocol.h"
 
 namespace Tunables {
-  float     correctionJumpThresh = CORRECTION_JUMP_THRESHOLD; // compatibility-only (no-op in live discipliner path)
-
-  // Back-compat alias to slow
-  uint8_t   ppsEmaShift          = PPS_SLOW_SHIFT_DEFAULT;
-
-  // New:
   uint8_t   ppsFastShift         = PPS_FAST_SHIFT_DEFAULT;
   uint8_t   ppsSlowShift         = PPS_SLOW_SHIFT_DEFAULT;
-  uint8_t   ppsHampelWin         = PPS_HAMPEL_WIN_DEFAULT;   // compatibility-only (no-op); retained for CLI/EEPROM/status round-trip
-  uint16_t  ppsHampelKx100       = PPS_HAMPEL_KX100_DEFAULT; // compatibility-only (no-op); retained for CLI/EEPROM/status round-trip
-  bool      ppsMedian3           = PPS_MEDIAN3_DEFAULT;      // compatibility-only (no-op); retained for CLI/EEPROM/status round-trip
   uint16_t  ppsBlendLoPpm        = PPS_BLEND_LO_PPM_DEFAULT;
   uint16_t  ppsBlendHiPpm        = PPS_BLEND_HI_PPM_DEFAULT;
   uint16_t  ppsLockRppm          = PPS_LOCK_R_PPM_DEFAULT;
-  uint16_t  ppsLockJppm          = PPS_LOCK_J_PPM_DEFAULT;
+  uint16_t  ppsLockMadTicks      = PPS_LOCK_MAD_TICKS_DEFAULT;
   uint16_t  ppsUnlockRppm        = PPS_UNLOCK_R_PPM_DEFAULT;
-  uint16_t  ppsUnlockJppm        = PPS_UNLOCK_J_PPM_DEFAULT;
+  uint16_t  ppsUnlockMadTicks    = PPS_UNLOCK_MAD_TICKS_DEFAULT;
   uint8_t   ppsLockCount         = PPS_LOCK_COUNT_DEFAULT;
   uint8_t   ppsUnlockCount       = PPS_UNLOCK_COUNT_DEFAULT;
   uint16_t  ppsHoldoverMs        = PPS_HOLDOVER_MS_DEFAULT;
@@ -27,7 +18,6 @@ namespace Tunables {
   uint16_t  ppsConfigReemitDelayMs = PPS_CFG_REEMIT_DELAY_MS_DEFAULT;
   uint16_t  ppsAcquireMinMs      = PPS_ACQUIRE_MIN_MS_DEFAULT;
 
-  DataUnits dataUnits            = DATA_UNITS_DEFAULT;
 
   uint8_t ppsFastShiftActive() {
     const uint8_t v = ppsFastShift;
@@ -51,16 +41,16 @@ namespace Tunables {
     return ppsLockRppm;
   }
 
-  uint16_t ppsLockJppmActive() {
-    return ppsLockJppm;
+  uint16_t ppsLockMadTicksActive() {
+    return ppsLockMadTicks;
   }
 
   uint16_t ppsUnlockRppmActive() {
     return ppsUnlockRppm;
   }
 
-  uint16_t ppsUnlockJppmActive() {
-    return ppsUnlockJppm;
+  uint16_t ppsUnlockMadTicksActive() {
+    return ppsUnlockMadTicks;
   }
 
   uint8_t ppsLockCountActive() {
@@ -95,7 +85,6 @@ namespace Tunables {
   void normalizePpsTunables() {
     ppsFastShift = ppsFastShiftActive();
     ppsSlowShift = ppsSlowShiftActive();
-    ppsEmaShift = ppsSlowShift; // deprecated alias must mirror live slow shift
     ppsBlendHiPpm = ppsBlendHiPpmActive();
     ppsLockCount = ppsLockCountActive();
     ppsUnlockCount = ppsUnlockCountActive();
@@ -103,5 +92,24 @@ namespace Tunables {
     ppsStaleMs = ppsStaleMsActive();
     ppsIsrStaleMs = ppsIsrStaleMsActive();
     ppsAcquireMinMs = ppsAcquireMinMsActive();
+  }
+
+  void restoreDefaults() {
+    ppsFastShift = PPS_FAST_SHIFT_DEFAULT;
+    ppsSlowShift = PPS_SLOW_SHIFT_DEFAULT;
+    ppsBlendLoPpm = PPS_BLEND_LO_PPM_DEFAULT;
+    ppsBlendHiPpm = PPS_BLEND_HI_PPM_DEFAULT;
+    ppsLockRppm = PPS_LOCK_R_PPM_DEFAULT;
+    ppsLockMadTicks = PPS_LOCK_MAD_TICKS_DEFAULT;
+    ppsUnlockRppm = PPS_UNLOCK_R_PPM_DEFAULT;
+    ppsUnlockMadTicks = PPS_UNLOCK_MAD_TICKS_DEFAULT;
+    ppsLockCount = PPS_LOCK_COUNT_DEFAULT;
+    ppsUnlockCount = PPS_UNLOCK_COUNT_DEFAULT;
+    ppsHoldoverMs = PPS_HOLDOVER_MS_DEFAULT;
+    ppsStaleMs = PPS_STALE_MS_DEFAULT;
+    ppsIsrStaleMs = PPS_ISR_STALE_MS_DEFAULT;
+    ppsConfigReemitDelayMs = PPS_CFG_REEMIT_DELAY_MS_DEFAULT;
+    ppsAcquireMinMs = PPS_ACQUIRE_MIN_MS_DEFAULT;
+    normalizePpsTunables();
   }
 }
