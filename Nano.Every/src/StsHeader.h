@@ -12,8 +12,8 @@
 
 namespace StsHeader {
 
-constexpr uint8_t STS_SCHEMA_VER = 1;
-constexpr const char SAMPLE_SCHEMA_ID[] = "raw_cycles_hz_v2";
+constexpr uint8_t STS_SCHEMA_VER = 3;
+constexpr const char SAMPLE_SCHEMA_ID[] = "raw_cycles_hz_v3";
 
 inline const char* dirtyField() {
   if (BUILD_DIRTY == 0) return "0";
@@ -43,6 +43,10 @@ inline uint8_t ppsTuningTelemetryField() {
 
 inline uint8_t ppsBaselineTelemetryField() {
   return ENABLE_PPS_BASELINE_TELEMETRY ? 1U : 0U;
+}
+
+inline uint8_t clockDiagStsField() {
+  return ENABLE_CLOCK_DIAG_STS ? 1U : 0U;
 }
 
 inline uint8_t periodicFlushField() {

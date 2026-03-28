@@ -43,36 +43,20 @@ static_assert(static_cast<uint32_t>(MAIN_CLOCK_HZ) == static_cast<uint32_t>(F_CP
 #error "Cannot disable Arduino TCB3 timebase while USE_ARDUINO_TIMEBASE=1"
 #endif
 
-const int ledPin = LED_BUILTIN;
-
-constexpr uint8_t  RING_SIZE_IR_SENSOR              = 64;      // IR edge ring depth
-constexpr uint8_t  RING_SIZE_PPS                    = 16;      // PPS capture ring depth
-constexpr uint8_t  PPS_FAST_SHIFT_DEFAULT           = 3;       // fast EWMA gain (~8 s)
-constexpr uint8_t  PPS_SLOW_SHIFT_DEFAULT           = 8;       // slow EWMA gain (~4.3 min)
-constexpr uint8_t  PPS_SHIFT_MIN                    = 1;       // smallest supported EWMA shift
-constexpr uint8_t  PPS_SHIFT_MAX                    = 15;      // largest supported EWMA shift on AVR
-constexpr uint16_t PPS_BLEND_LO_PPM_DEFAULT         = 50;      // prefer the slow estimate below this R threshold
-constexpr uint16_t PPS_BLEND_HI_PPM_DEFAULT         = 150;     // prefer the fast estimate above this R threshold
-constexpr uint16_t PPS_LOCK_R_PPM_DEFAULT           = 175;     // max frequency error to enter DISCIPLINED
-constexpr uint16_t PPS_LOCK_MAD_TICKS_DEFAULT       = 600;     // max MAD residual ticks to enter DISCIPLINED
-constexpr uint16_t PPS_UNLOCK_R_PPM_DEFAULT         = 300;     // frequency error threshold to leave DISCIPLINED
-constexpr uint16_t PPS_UNLOCK_MAD_TICKS_DEFAULT     = 900;     // MAD residual ticks threshold to leave DISCIPLINED
-constexpr uint8_t  PPS_LOCK_COUNT_MIN               = 1;       // minimum good-sample streak needed to lock
-constexpr uint8_t  PPS_LOCK_COUNT_MAX               = 60;      // maximum accepted good-sample streak setting
-constexpr uint8_t  PPS_LOCK_COUNT_DEFAULT           = 30;      // default good-sample streak needed to lock
-constexpr uint8_t  PPS_UNLOCK_COUNT_DEFAULT         = 5;       // default bad-sample streak needed to unlock
-constexpr uint16_t PPS_HOLDOVER_MS_DEFAULT          = 60000;   // HOLDOVER dwell before dropping to FREE_RUN
-constexpr uint16_t PPS_STALE_MS_DEFAULT             = 2200;    // PPS freshness timeout for processed queued samples
-constexpr uint16_t PPS_ISR_STALE_MS_DEFAULT         = 2200;    // PPS freshness timeout for ISR edge/counter activity
-constexpr uint16_t PPS_CFG_REEMIT_DELAY_MS_DEFAULT  = 2000;    // delay before re-emitting PPS config after boot
-constexpr uint16_t PPS_ACQUIRE_MIN_MS_DEFAULT       = 60000;   // minimum ACQUIRE dwell before DISCIPLINED
-
 #ifndef PPS_TUNING_TELEMETRY
 #define PPS_TUNING_TELEMETRY 1 // emit optional TUNE_CFG/TUNE_WIN/TUNE_EVT STS records
 #endif
 
 #ifndef ENABLE_PPS_BASELINE_TELEMETRY
-#define ENABLE_PPS_BASELINE_TELEMETRY 0 // emit optional PPS_BASE records for PPS-only characterization
+#define ENABLE_PPS_BASELINE_TELEMETRY 1 // emit optional PPS_BASE records for PPS-only characterization
+#endif
+
+#ifndef ENABLE_CLOCK_DIAG_STS
+#define ENABLE_CLOCK_DIAG_STS 1 // emit optional STS clock-diagnostic records at boot
+#endif
+
+#ifndef ENABLE_PENDULUM_ADJ_PROVENANCE
+#define ENABLE_PENDULUM_ADJ_PROVENANCE 1 // include compact PPS-adjustment provenance fields in SMP/HDR rows
 #endif
 
 #ifndef ENABLE_PERIODIC_FLUSH
@@ -94,6 +78,32 @@ constexpr uint16_t PPS_ACQUIRE_MIN_MS_DEFAULT       = 60000;   // minimum ACQUIR
 #ifndef GIT_SHA
 #define GIT_SHA "unknown"
 #endif
+
+const int ledPin = LED_BUILTIN;
+
+constexpr uint8_t  RING_SIZE_IR_SENSOR              = 64;      // IR edge ring depth
+constexpr uint8_t  RING_SIZE_SWING_ROWS             = 16;      // completed full-swing row ring depth (slower-rate queue than edge capture)
+constexpr uint8_t  RING_SIZE_PPS                    = 16;      // PPS capture ring depth
+constexpr uint8_t  PPS_SCALE_RING_SIZE              = 16;      // finalized PPS-second scale spans retained for interval correction
+constexpr uint8_t  PPS_FAST_SHIFT_DEFAULT           = 3;       // fast EWMA gain (~8 s)
+constexpr uint8_t  PPS_SLOW_SHIFT_DEFAULT           = 8;       // slow EWMA gain (~4.3 min)
+constexpr uint8_t  PPS_SHIFT_MIN                    = 1;       // smallest supported EWMA shift
+constexpr uint8_t  PPS_SHIFT_MAX                    = 15;      // largest supported EWMA shift on AVR
+constexpr uint16_t PPS_BLEND_LO_PPM_DEFAULT         = 50;      // prefer the slow estimate below this R threshold
+constexpr uint16_t PPS_BLEND_HI_PPM_DEFAULT         = 150;     // prefer the fast estimate above this R threshold
+constexpr uint16_t PPS_LOCK_R_PPM_DEFAULT           = 175;     // max frequency error to enter DISCIPLINED
+constexpr uint16_t PPS_LOCK_MAD_TICKS_DEFAULT       = 600;     // max MAD residual ticks to enter DISCIPLINED
+constexpr uint16_t PPS_UNLOCK_R_PPM_DEFAULT         = 300;     // frequency error threshold to leave DISCIPLINED
+constexpr uint16_t PPS_UNLOCK_MAD_TICKS_DEFAULT     = 900;     // MAD residual ticks threshold to leave DISCIPLINED
+constexpr uint8_t  PPS_LOCK_COUNT_MIN               = 1;       // minimum good-sample streak needed to lock
+constexpr uint8_t  PPS_LOCK_COUNT_MAX               = 60;      // maximum accepted good-sample streak setting
+constexpr uint8_t  PPS_LOCK_COUNT_DEFAULT           = 30;      // default good-sample streak needed to lock
+constexpr uint8_t  PPS_UNLOCK_COUNT_DEFAULT         = 5;       // default bad-sample streak needed to unlock
+constexpr uint16_t PPS_HOLDOVER_MS_DEFAULT          = 60000;   // HOLDOVER dwell before dropping to FREE_RUN
+constexpr uint16_t PPS_STALE_MS_DEFAULT             = 2200;    // PPS freshness timeout for processed queued samples
+constexpr uint16_t PPS_ISR_STALE_MS_DEFAULT         = 2200;    // PPS freshness timeout for ISR edge/counter activity
+constexpr uint16_t PPS_CFG_REEMIT_DELAY_MS_DEFAULT  = 2000;    // delay before re-emitting PPS config after boot
+constexpr uint16_t PPS_ACQUIRE_MIN_MS_DEFAULT       = 60000;   // minimum ACQUIRE dwell before DISCIPLINED
 
 namespace Tunables {
   extern uint8_t   ppsFastShift;           // fast PPS EWMA shift

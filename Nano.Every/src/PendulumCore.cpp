@@ -14,6 +14,7 @@
 #include "DisciplinedTime.h"
 #include "PlatformTime.h"
 #include "PpsFreshness.h"
+#include "PpsAdjust.h"
 
 static_assert(sizeof(uint16_t) == 2, "Expected 16-bit capture modulo domain");
 static_assert(sizeof(uint32_t) == 4, "Expected 32-bit PPS tick domain");
@@ -271,6 +272,7 @@ void resetRuntimeStateAfterTunablesChange() {
   last_pps_processed_ms = 0;
   pps_last_edge32 = 0;
   lastPpsCap16 = 0;
+  ppsAdjustReset((uint32_t)MAIN_CLOCK_HZ);
 #if ENABLE_PPS_BASELINE_TELEMETRY
   pps_base_seq = 0;
 #endif
@@ -368,6 +370,7 @@ static void process_pps() {
       lastPpsCapture = t;
       lastPpsCap16 = cap.cap16;
       last_pps_processed_ms = now_ms;
+      ppsAdjustOnPpsPrimed(t, pps_delta_active ? (uint32_t)pps_delta_active : (uint32_t)MAIN_CLOCK_HZ);
       continue;
     }
 
@@ -380,6 +383,8 @@ static void process_pps() {
     const uint16_t prev_cap16 = lastPpsCap16;
     uint32_t pps_dt32_ticks = elapsed32(t, prev_edge32);
     uint16_t pps_dt16_mod = sub16(cap.cap16, prev_cap16);
+    const uint32_t applied_for_completed_second =
+        pps_delta_active ? (uint32_t)pps_delta_active : (uint32_t)MAIN_CLOCK_HZ;
 
     pps_last_edge32 = t;
     lastPpsCapture = t;
@@ -408,6 +413,10 @@ static void process_pps() {
 
     pps_delta_inst = pps_dt32_ticks;
     pps_delta_active = gDisciplinedTime.ticksPerSecond();
+    ppsAdjustOnPpsFinalized(prev_edge32,
+                            t,
+                            applied_for_completed_second,
+                            pps_delta_active ? (uint32_t)pps_delta_active : (uint32_t)MAIN_CLOCK_HZ);
     pps_R_ppm = gFreqDiscipliner.rPpm();
     pps_J_ticks = gFreqDiscipliner.madTicks();
 
@@ -444,9 +453,13 @@ void pendulumLoop() {
 
     PendulumSample sample{};
     sample.tick       = fs.tick;
+    sample.tick_adj   = fs.tick_adj;
     sample.tock       = fs.tock;
+    sample.tock_adj   = fs.tock_adj;
     sample.tick_block = fs.tick_block;
+    sample.tick_block_adj = fs.tick_block_adj;
     sample.tock_block = fs.tock_block;
+    sample.tock_block_adj = fs.tock_block_adj;
     sample.f_inst_hz      = pps_delta_inst ? pps_delta_inst : (uint32_t)MAIN_CLOCK_HZ;
     sample.f_hat_hz       = pps_delta_active ? (uint32_t)pps_delta_active : (uint32_t)MAIN_CLOCK_HZ;
     sample.holdover_age_ms = gFreqDiscipliner.holdoverAgeMs();
@@ -454,6 +467,10 @@ void pendulumLoop() {
     sample.j_ticks        = pps_J_ticks;
     sample.gps_status     = gpsStatus;
     sample.dropped_events = captureDroppedEvents();
+    sample.adj_diag       = fs.adj_diag;
+#if ENABLE_PENDULUM_ADJ_PROVENANCE
+    sample.pps_seq_row    = fs.pps_seq_row;
+#endif
 
     sendSample(sample);
   }

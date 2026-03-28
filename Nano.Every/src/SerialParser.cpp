@@ -339,19 +339,47 @@ void sendSample(const PendulumSample &s) {
     printCsvHeader();
   }
 
+#if ENABLE_PENDULUM_ADJ_PROVENANCE
   int len = snprintf(lineBuf, CSV_LINE_MAX,
-    "%s,%lu,%lu,%lu,%lu,%lu,%lu,%u,%lu,%lu,%lu,%u\n",
+    "%s,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%u,%lu,%lu,%lu,%u,%u,%lu\n",
     TAG_SMP,
     (unsigned long)s.tick,
-    (unsigned long)s.tock,
+    (unsigned long)s.tick_adj,
     (unsigned long)s.tick_block,
+    (unsigned long)s.tick_block_adj,
+    (unsigned long)s.tock,
+    (unsigned long)s.tock_adj,
     (unsigned long)s.tock_block,
+    (unsigned long)s.tock_block_adj,
     (unsigned long)s.f_inst_hz,
     (unsigned long)s.f_hat_hz,
     (unsigned int)s.gps_status,
     (unsigned long)s.holdover_age_ms,
     (unsigned long)s.r_ppm,
     (unsigned long)s.j_ticks,
-    (unsigned int)s.dropped_events);
+    (unsigned int)s.dropped_events,
+    (unsigned int)s.adj_diag,
+    (unsigned long)s.pps_seq_row);
+#else
+  int len = snprintf(lineBuf, CSV_LINE_MAX,
+    "%s,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%u,%lu,%lu,%lu,%u,%u\n",
+    TAG_SMP,
+    (unsigned long)s.tick,
+    (unsigned long)s.tick_adj,
+    (unsigned long)s.tick_block,
+    (unsigned long)s.tick_block_adj,
+    (unsigned long)s.tock,
+    (unsigned long)s.tock_adj,
+    (unsigned long)s.tock_block,
+    (unsigned long)s.tock_block_adj,
+    (unsigned long)s.f_inst_hz,
+    (unsigned long)s.f_hat_hz,
+    (unsigned int)s.gps_status,
+    (unsigned long)s.holdover_age_ms,
+    (unsigned long)s.r_ppm,
+    (unsigned long)s.j_ticks,
+    (unsigned int)s.dropped_events,
+    (unsigned int)s.adj_diag);
+#endif
   queueCSVLine(lineBuf, len);
 }

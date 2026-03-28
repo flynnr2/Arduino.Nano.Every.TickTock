@@ -49,12 +49,13 @@ void emitFlagsHeader() {
   char* line = prepareStatusLineBuf();
   const int n = snprintf(line,
                          CSV_PAYLOAD_MAX,
-                         "flags,timebase=%s,sharedReads=%u,disableTcb3=%u,ppsTuning=%u,ppsBase=%u,periodicFlush=%u,ledActivity=%u",
+                         "flags,timebase=%s,sharedReads=%u,disableTcb3=%u,ppsTuning=%u,ppsBase=%u,clockDiagSts=%u,periodicFlush=%u,ledActivity=%u",
                          StsHeader::timebaseField(),
                          (unsigned int)StsHeader::sharedReadsField(),
                          (unsigned int)StsHeader::disableTcb3Field(),
                          (unsigned int)StsHeader::ppsTuningTelemetryField(),
                          (unsigned int)StsHeader::ppsBaselineTelemetryField(),
+                         (unsigned int)StsHeader::clockDiagStsField(),
                          (unsigned int)StsHeader::periodicFlushField(),
                          (unsigned int)StsHeader::ledActivityField());
   if (n > 0) sendStatus(StatusCode::ProgressUpdate, line);
@@ -132,10 +133,65 @@ void emitStatusSampleConfig() {
   if (cfg_n > 0) sendTaggedCsvLine(TAG_CFG, cfgLine);
 }
 
+#if ENABLE_CLOCK_DIAG_STS
+void emitStatusClockDiagnostics() {
+  const uint8_t rstfr = RSTCTRL.RSTFR;
+  const uint8_t osccfg = FUSE.OSCCFG;
+  const uint8_t mclkctrla = CLKCTRL.MCLKCTRLA;
+  const uint8_t mclkctrlb = CLKCTRL.MCLKCTRLB;
+  const uint8_t mclkstatus = CLKCTRL.MCLKSTATUS;
+  const uint8_t osc20mcaliba = CLKCTRL.OSC20MCALIBA;
+  const uint8_t osc20mcalibb = CLKCTRL.OSC20MCALIBB;
+
+  const int8_t osc16err3v = (int8_t)SIGROW.OSC16ERR3V;
+  const int8_t osc16err5v = (int8_t)SIGROW.OSC16ERR5V;
+  const int8_t osc20err3v = (int8_t)SIGROW.OSC20ERR3V;
+  const int8_t osc20err5v = (int8_t)SIGROW.OSC20ERR5V;
+
+  const uint8_t devid0 = SIGROW.DEVICEID0;
+  const uint8_t devid1 = SIGROW.DEVICEID1;
+  const uint8_t devid2 = SIGROW.DEVICEID2;
+
+  char line[CSV_PAYLOAD_MAX];
+  int n = snprintf(line,
+                   sizeof(line),
+                   "clkdiag_core,f_cpu=%lu,rstfr=0x%02X,osccfg=0x%02X,mclkctrla=0x%02X,mclkctrlb=0x%02X,mclkstatus=0x%02X,osc20mcaliba=0x%02X,osc20mcalibb=0x%02X",
+                   (unsigned long)F_CPU,
+                   (unsigned int)rstfr,
+                   (unsigned int)osccfg,
+                   (unsigned int)mclkctrla,
+                   (unsigned int)mclkctrlb,
+                   (unsigned int)mclkstatus,
+                   (unsigned int)osc20mcaliba,
+                   (unsigned int)osc20mcalibb);
+  if (n > 0) sendStatus(StatusCode::ProgressUpdate, line);
+
+  n = snprintf(line,
+               sizeof(line),
+               "clkdiag_err,osc16err3v=%d,osc16err5v=%d,osc20err3v=%d,osc20err5v=%d",
+               (int)osc16err3v,
+               (int)osc16err5v,
+               (int)osc20err3v,
+               (int)osc20err5v);
+  if (n > 0) sendStatus(StatusCode::ProgressUpdate, line);
+
+  n = snprintf(line,
+               sizeof(line),
+               "clkdiag_id,deviceid=0x%02X%02X%02X",
+               (unsigned int)devid2,
+               (unsigned int)devid1,
+               (unsigned int)devid0);
+  if (n > 0) sendStatus(StatusCode::ProgressUpdate, line);
+}
+#else
+void emitStatusClockDiagnostics() {}
+#endif
+
 void emitStatusBootHeaders() {
   emitBuildHeader();
   emitSchemaHeader();
   emitFlagsHeader();
+  emitStatusClockDiagnostics();
   emitStatusTunables();
   emitStatusSampleConfig();
   emitStatusPpsConfig();

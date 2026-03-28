@@ -8,8 +8,13 @@ static constexpr char TAG_HDR[] = "HDR";     // authoritative literal CSV sample
 static constexpr char TAG_STS[] = "STS";     // structured boot/status telemetry
 static constexpr char TAG_SMP[] = "SMP";     // raw-cycle sample rows
 
+#if ENABLE_PENDULUM_ADJ_PROVENANCE
 static constexpr char SAMPLE_SCHEMA[] =
-    "tick,tock,tick_block,tock_block,f_inst_hz,f_hat_hz,gps_status,holdover_age_ms,r_ppm,j_ticks,dropped";
+    "tick,tick_adj,tick_block,tick_block_adj,tock,tock_adj,tock_block,tock_block_adj,f_inst_hz,f_hat_hz,gps_status,holdover_age_ms,r_ppm,j_ticks,dropped,adj_diag,pps_seq_row";
+#else
+static constexpr char SAMPLE_SCHEMA[] =
+    "tick,tick_adj,tick_block,tick_block_adj,tock,tock_adj,tock_block,tock_block_adj,f_inst_hz,f_hat_hz,gps_status,holdover_age_ms,r_ppm,j_ticks,dropped,adj_diag";
+#endif
 
 // Status codes for STS lines.
 enum class StatusCode : uint8_t {
@@ -33,12 +38,17 @@ inline const char* statusCodeToStr(StatusCode code) {
   }
 }
 
-// Header/sample field order for raw-cycle rows with frequency estimates in ticks/sec.
+// Header/sample field order for the superset raw-cycle row contract used by parsers/storage.
+// Wire emission remains controlled by SAMPLE_SCHEMA and may omit trailing optional fields.
 enum CsvField {
   CF_TICK = 0,
-  CF_TOCK,
+  CF_TICK_ADJ,
   CF_TICK_BLOCK,
+  CF_TICK_BLOCK_ADJ,
+  CF_TOCK,
+  CF_TOCK_ADJ,
   CF_TOCK_BLOCK,
+  CF_TOCK_BLOCK_ADJ,
   CF_F_INST_HZ,
   CF_F_HAT_HZ,
   CF_GPS_STATUS,
@@ -46,8 +56,13 @@ enum CsvField {
   CF_R_PPM,
   CF_J_TICKS,
   CF_DROPPED,
+  CF_ADJ_DIAG,
+  CF_PPS_SEQ_ROW,
   CF_COUNT
 };
+
+static constexpr uint8_t CF_REQUIRED_COUNT = CF_ADJ_DIAG + 1;
+static constexpr uint8_t CF_OPTIONAL_COUNT = CF_COUNT;
 
 enum GpsStatus : uint8_t {
   NO_PPS    = 0,
@@ -113,9 +128,13 @@ static constexpr char PARAM_PPS_ACQUIRE_MIN_MS[] = "ppsAcquireMinMs";
 
 struct PendulumSample {
   uint32_t tick;
-  uint32_t tock;
+  uint32_t tick_adj;
   uint32_t tick_block;
+  uint32_t tick_block_adj;
+  uint32_t tock;
+  uint32_t tock_adj;
   uint32_t tock_block;
+  uint32_t tock_block_adj;
   uint32_t f_inst_hz;
   uint32_t f_hat_hz;
   uint32_t holdover_age_ms;
@@ -123,6 +142,10 @@ struct PendulumSample {
   uint32_t j_ticks;
   GpsStatus gps_status;
   uint16_t dropped_events;
+  uint8_t adj_diag;
+  // Optional trailing wire field (when provenance is enabled), but always present
+  // in the superset parser/storage contract.
+  uint32_t pps_seq_row;
 };
 
 #define SERIAL_BAUD_NANO 115200

@@ -94,7 +94,7 @@ In the main loop, `PendulumCore::process_pps()` then:
 
 ### Applied timebase stage
 
-`DisciplinedTime` is the runtime authority for “how many ticks equal one second right now.” The firmware exports raw cycle counts plus frequency metadata; host-side tooling is responsible for converting those cycles into seconds or sub-second units.
+`DisciplinedTime` is the runtime authority for “how many ticks equal one second right now.” The firmware now exports both raw cycle counts and authoritative per-interval PPS-adjusted cycle counts (`*_adj`) in nominal 16 MHz-equivalent ticks.
 
 ## Pendulum Sample Assembly and Output
 
@@ -103,19 +103,19 @@ In the main loop, `PendulumCore::process_pps()` then:
 2. process queued PPS captures and update disciplined time
 3. process queued IR captures via `SwingAssembler`
 4. pop completed `FullSwing` records
-5. copy the swing fields as raw cycle counts
-6. attach `f_inst_hz`, `f_hat_hz`, `gps_status`, `holdover_age_ms`, `r_ppm`, `j_ticks`, and `dropped`
+5. copy raw swing fields and per-interval PPS-adjusted `*_adj` fields
+6. attach row-level context/diagnostics (`f_inst_hz`, `f_hat_hz`, `gps_status`, `holdover_age_ms`, `r_ppm`, `j_ticks`, `dropped`, and adjustment diagnostics)
 7. emit the sample through `SerialParser`
 
 ### Raw-cycle sample contract
 
 The retained sample contract is:
 
-- `CFG,nominal_hz=<ticks/sec>,sample_tag=SMP,sample_schema=raw_cycles_hz_v2`
-- `HDR,tick,tock,tick_block,tock_block,f_inst_hz,f_hat_hz,gps_status,holdover_age_ms,r_ppm,j_ticks,dropped`
+- `CFG,nominal_hz=<ticks/sec>,sample_tag=SMP,sample_schema=raw_cycles_hz_v3`
+- `HDR,tick,tick_adj,tick_block,tick_block_adj,tock,tock_adj,tock_block,tock_block_adj,f_inst_hz,f_hat_hz,gps_status,holdover_age_ms,r_ppm,j_ticks,dropped,adj_diag[,pps_seq_row]`
 - `SMP,...` rows carrying values for exactly those columns
 
-There is no on-device compatibility schema for converted durations, environmental sensors, or alternate sample tags.
+Raw fields remain capture source truth. `*_adj` fields are authoritative PPS-aware corrections. `f_hat_hz` remains row-level context and must not be interpreted as a universal per-interval correction factor when exact `*_adj` fields are present.
 
 ## Serial Commands and Telemetry
 
