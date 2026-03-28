@@ -14,11 +14,11 @@ constexpr size_t   CSV_PAYLOAD_MAX    = CSV_LINE_MAX - CSV_STS_WRAP_MAX;
 
 
 #ifndef DATA_SERIAL
-#define DATA_SERIAL Serial1
+#define DATA_SERIAL Serial
 #endif
 
 #ifndef CMD_SERIAL
-#define CMD_SERIAL Serial1
+#define CMD_SERIAL Serial
 #endif
 
 void processSerialCommands();

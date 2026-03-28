@@ -48,15 +48,15 @@ static_assert(static_cast<uint32_t>(MAIN_CLOCK_HZ) == static_cast<uint32_t>(F_CP
 #endif
 
 #ifndef ENABLE_PPS_BASELINE_TELEMETRY
-#define ENABLE_PPS_BASELINE_TELEMETRY 1 // emit optional PPS_BASE records for PPS-only characterization
+#define ENABLE_PPS_BASELINE_TELEMETRY 0 // emit optional PPS_BASE records for PPS-only characterization
 #endif
 
 #ifndef ENABLE_CLOCK_DIAG_STS
-#define ENABLE_CLOCK_DIAG_STS 1 // emit optional STS clock-diagnostic records at boot
+#define ENABLE_CLOCK_DIAG_STS 0 // emit optional STS clock-diagnostic records at boot
 #endif
 
 #ifndef ENABLE_PENDULUM_ADJ_PROVENANCE
-#define ENABLE_PENDULUM_ADJ_PROVENANCE 1 // include compact PPS-adjustment provenance fields in SMP/HDR rows
+#define ENABLE_PENDULUM_ADJ_PROVENANCE 0 // include compact PPS-adjustment provenance fields in SMP/HDR rows
 #endif
 
 #ifndef ENABLE_PERIODIC_FLUSH
