@@ -122,8 +122,8 @@ Use these fields as quality/context indicators, not as replacements for interval
 
 Given:
 - `nominal_hz = 16000000`
-- `tick_adj = 7872380`
-- `tock_adj = 7871914`
+- `tick_adj + tick_block_adj = 7872380`
+- `tock_adj + tock_block_adj = 7871914`
 
 Then:
 - half-swing times:
