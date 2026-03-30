@@ -18,8 +18,15 @@ struct PpsCapture {
   uint16_t latency16;
 };
 
-constexpr uint8_t CAPTURE_EDGE_BUFFER_SIZE = 64;
+// Keep this alias so ISR capture code has one local name; source of truth lives in Config.h.
+constexpr uint8_t CAPTURE_EDGE_BUFFER_SIZE = RING_SIZE_IR_SENSOR;
 constexpr uint8_t CAPTURE_PPS_RING_SIZE = RING_SIZE_PPS;
+
+static_assert(CAPTURE_EDGE_BUFFER_SIZE > 0U &&
+                  (CAPTURE_EDGE_BUFFER_SIZE & (CAPTURE_EDGE_BUFFER_SIZE - 1U)) == 0U,
+              "CAPTURE_EDGE_BUFFER_SIZE must be a non-zero power-of-two for mask arithmetic");
+static_assert(CAPTURE_EDGE_BUFFER_SIZE == (RING_SIZE_SWING_ROWS * 4U),
+              "IR edge ring must remain 4x swing-row ring depth");
 
 
 void captureMarkHardwareInitialized();
@@ -32,8 +39,12 @@ EdgeEvent capturePopEdge();
 bool capturePpsAvailable();
 PpsCapture capturePopPps();
 
-// Exposes the firmware's coherent TCB0 monotonic counters for platform timing.
-uint32_t tcb0NowCoherent();
+// Usage contract for coherent TCB0 readers:
+// - ISR-only helper exists privately in PendulumCapture.cpp and must not use ATOMIC_BLOCK.
+// - Foreground/main-loop code must call the public *_MainLoop() / *64() APIs below.
+// Foreground-safe coherent 32-bit read (uses ATOMIC_BLOCK internally).
+uint32_t tcb0NowCoherentMainLoop();
+// Foreground-safe coherent 64-bit read (uses ATOMIC_BLOCK internally).
 uint64_t tcb0NowCoherent64();
 
 uint32_t captureDroppedEvents();

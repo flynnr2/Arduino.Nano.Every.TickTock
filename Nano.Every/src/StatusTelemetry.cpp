@@ -9,10 +9,22 @@
 #include "StsHeader.h"
 #include "PpsValidator.h"
 #include "FreqDiscipliner.h"
+#include "MemoryTelemetry.h"
 
 
 namespace {
 char status_line_buf[CSV_LINE_MAX];
+uint16_t g_boot_sequence_for_telemetry = 0;
+bool g_reset_cause_latched = false;
+uint8_t g_latched_rstfr = 0;
+bool g_reset_cause_emitted_this_boot = false;
+
+// Forensic boot sequence tracking:
+// - Retained in .noinit to survive software/watchdog/external resets.
+// - Reseeded only on fresh sessions (POR/BOR/UPDI), or if cookie is invalid.
+uint16_t g_boot_seq_noinit __attribute__((section(".noinit")));
+uint16_t g_boot_seq_cookie_noinit __attribute__((section(".noinit")));
+constexpr uint16_t BOOT_SEQ_COOKIE = 0xB007;
 
 char* prepareStatusLineBuf() {
   memset(status_line_buf, 0, sizeof(status_line_buf));
@@ -38,9 +50,10 @@ void emitSchemaHeader() {
   char* line = prepareStatusLineBuf();
   const int n = snprintf(line,
                          CSV_PAYLOAD_MAX,
-                         "schema,sts=%u,sample=%s,eeprom=%u",
-                         (unsigned int)StsHeader::STS_SCHEMA_VER,
-                         StsHeader::SAMPLE_SCHEMA_ID,
+                         "%s,sts=%u,sample=%s,eeprom=%u",
+                         STS_FAMILY_SCHEMA,
+                         (unsigned int)STS_SCHEMA_VERSION,
+                         SAMPLE_SCHEMA_ID,
                          (unsigned int)EEPROM_CONFIG_VERSION_CURRENT);
   if (n > 0) sendStatus(StatusCode::ProgressUpdate, line);
 }
@@ -62,6 +75,69 @@ void emitFlagsHeader() {
 }
 
 } // namespace
+
+void latchResetCauseOnceAtBoot() {
+  if (g_reset_cause_latched) return;
+  const uint8_t rstfr = RSTCTRL.RSTFR;
+  g_latched_rstfr = rstfr;
+  RSTCTRL.RSTFR = rstfr; // Clear exactly once after the single boot-time read.
+  g_reset_cause_latched = true;
+  g_reset_cause_emitted_this_boot = false;
+}
+
+uint8_t getLatchedResetCause() {
+  return g_latched_rstfr;
+}
+
+void setBootSequenceForTelemetry(uint16_t bootSeq) {
+  g_boot_sequence_for_telemetry = bootSeq;
+}
+
+uint16_t getBootSequenceForTelemetry() {
+  return g_boot_sequence_for_telemetry;
+}
+
+void formatLatchedResetFlags(char* out, size_t outLen) {
+  if (!out || outLen == 0) return;
+  const uint8_t rstfr = getLatchedResetCause();
+  size_t pos = 0;
+
+  auto appendFlag = [&](const char* flag) {
+    if (pos >= outLen - 1) return;
+    if (pos != 0 && pos < outLen - 1) out[pos++] = '|';
+    for (size_t i = 0; flag[i] != '\0' && pos < outLen - 1; ++i) {
+      out[pos++] = flag[i];
+    }
+    out[pos] = '\0';
+  };
+
+  out[0] = '\0';
+  if (rstfr & RSTCTRL_PORF_bm) appendFlag("PORF");
+  if (rstfr & RSTCTRL_BORF_bm) appendFlag("BORF");
+  if (rstfr & RSTCTRL_EXTRF_bm) appendFlag("EXTRF");
+  if (rstfr & RSTCTRL_WDRF_bm) appendFlag("WDRF");
+  if (rstfr & RSTCTRL_SWRF_bm) appendFlag("SWRF");
+  if (rstfr & RSTCTRL_UPDIRF_bm) appendFlag("UPDIRF");
+  if (pos == 0) appendFlag("NONE");
+}
+
+bool shouldResetBootSeqFromLatchedCause() {
+  const uint8_t rstfr = getLatchedResetCause();
+  return (rstfr & (RSTCTRL_PORF_bm | RSTCTRL_BORF_bm | RSTCTRL_UPDIRF_bm)) != 0;
+}
+
+uint16_t advanceBootSequenceForBoot() {
+  const bool fresh_session = shouldResetBootSeqFromLatchedCause();
+  if (fresh_session || g_boot_seq_cookie_noinit != BOOT_SEQ_COOKIE) {
+    g_boot_seq_noinit = 0;
+  }
+  g_boot_seq_cookie_noinit = BOOT_SEQ_COOKIE;
+
+  if (g_boot_seq_noinit == 0xFFFFu) g_boot_seq_noinit = 0;
+  g_boot_seq_noinit = (uint16_t)(g_boot_seq_noinit + 1u);
+  setBootSequenceForTelemetry(g_boot_seq_noinit);
+  return g_boot_seq_noinit;
+}
 
 #if PPS_TUNING_TELEMETRY
 void emitPpsTuningConfigSnapshot() {
@@ -117,25 +193,35 @@ void emitStatusSampleConfig() {
   // CFG carries metadata (including schema ID). The literal sample columns are emitted by HDR.
   const int n = snprintf(line,
                          CSV_PAYLOAD_MAX,
-                         "cfg,nominal_hz=%lu,sample_tag=%s,sample_schema=%s",
+                         "%s,%s=%u,%s=%lu,%s=%s,%s=%s",
+                         STS_FAMILY_CFG,
+                         CFG_KEY_PROTOCOL_VERSION,
+                         (unsigned int)PROTOCOL_VERSION,
+                         CFG_KEY_NOMINAL_HZ,
                          (unsigned long)MAIN_CLOCK_HZ,
+                         CFG_KEY_SAMPLE_TAG,
                          TAG_SMP,
-                         StsHeader::SAMPLE_SCHEMA_ID);
+                         CFG_KEY_SAMPLE_SCHEMA,
+                         SAMPLE_SCHEMA_ID);
   if (n > 0) sendStatus(StatusCode::ProgressUpdate, line);
 
-  char cfgLine[CSV_PAYLOAD_MAX];
-  const int cfg_n = snprintf(cfgLine,
-                             sizeof(cfgLine),
-                             "nominal_hz=%lu,sample_tag=%s,sample_schema=%s",
+  const int cfg_n = snprintf(line,
+                             CSV_PAYLOAD_MAX,
+                             "%s=%u,%s=%lu,%s=%s,%s=%s",
+                             CFG_KEY_PROTOCOL_VERSION,
+                             (unsigned int)PROTOCOL_VERSION,
+                             CFG_KEY_NOMINAL_HZ,
                              (unsigned long)MAIN_CLOCK_HZ,
+                             CFG_KEY_SAMPLE_TAG,
                              TAG_SMP,
-                             StsHeader::SAMPLE_SCHEMA_ID);
-  if (cfg_n > 0) sendTaggedCsvLine(TAG_CFG, cfgLine);
+                             CFG_KEY_SAMPLE_SCHEMA,
+                             SAMPLE_SCHEMA_ID);
+  if (cfg_n > 0) sendTaggedCsvLine(TAG_CFG, line);
 }
 
 #if ENABLE_CLOCK_DIAG_STS
 void emitStatusClockDiagnostics() {
-  const uint8_t rstfr = RSTCTRL.RSTFR;
+  const uint8_t rstfr = getLatchedResetCause();
   const uint8_t osccfg = FUSE.OSCCFG;
   const uint8_t mclkctrla = CLKCTRL.MCLKCTRLA;
   const uint8_t mclkctrlb = CLKCTRL.MCLKCTRLB;
@@ -191,6 +277,9 @@ void emitStatusBootHeaders() {
   emitBuildHeader();
   emitSchemaHeader();
   emitFlagsHeader();
+#if ENABLE_MEMORY_TELEMETRY_STS
+  emitStatusMemoryTelemetry(false);
+#endif
   emitStatusClockDiagnostics();
   emitStatusTunables();
   emitStatusSampleConfig();
@@ -198,34 +287,23 @@ void emitStatusBootHeaders() {
 }
 
 void emitResetCause() {
-  const uint8_t rstfr = RSTCTRL.RSTFR;
+  if (g_reset_cause_emitted_this_boot) return;
+  g_reset_cause_emitted_this_boot = true;
+
+  const uint8_t rstfr = getLatchedResetCause();
   char flags[48];
-  size_t pos = 0;
-
-  auto appendFlag = [&](const char* flag) {
-    if (pos >= sizeof(flags) - 1) return;
-    if (pos != 0 && pos < sizeof(flags) - 1) flags[pos++] = '|';
-    for (size_t i = 0; flag[i] != '\0' && pos < sizeof(flags) - 1; ++i) {
-      flags[pos++] = flag[i];
-    }
-    flags[pos] = '\0';
-  };
-
-  flags[0] = '\0';
-  if (rstfr & RSTCTRL_PORF_bm) appendFlag("PORF");
-  if (rstfr & RSTCTRL_BORF_bm) appendFlag("BORF");
-  if (rstfr & RSTCTRL_EXTRF_bm) appendFlag("EXTRF");
-  if (rstfr & RSTCTRL_WDRF_bm) appendFlag("WDRF");
-  if (rstfr & RSTCTRL_SWRF_bm) appendFlag("SWRF");
-  if (rstfr & RSTCTRL_UPDIRF_bm) appendFlag("UPDIRF");
-  if (pos == 0) appendFlag("NONE");
-
+  formatLatchedResetFlags(flags, sizeof(flags));
   char line[96];
-  const int n = snprintf(line, sizeof(line), "rstfr,raw=0x%02X,flags=%s", (unsigned int)rstfr, flags);
+  const int n = snprintf(line,
+                         sizeof(line),
+                         "rstfr,boot_seq=%u,raw=0x%02X,flags=%s",
+                         (unsigned int)g_boot_sequence_for_telemetry,
+                         (unsigned int)rstfr,
+                         flags);
   if (n > 0) sendStatus(StatusCode::ProgressUpdate, line);
-
-  RSTCTRL.RSTFR = rstfr;
 }
+
+void emitResetCauseOncePerBoot() { emitResetCause(); }
 
 void emitStatusTunables() {
   char* line = prepareStatusLineBuf();

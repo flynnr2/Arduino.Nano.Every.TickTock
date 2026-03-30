@@ -10,3 +10,4 @@ void pendulumSetup();
 void pendulumLoop();
 void resetRuntimeStateAfterTunablesChange();
 void emitMetadataNow();
+void emitStartupNow();

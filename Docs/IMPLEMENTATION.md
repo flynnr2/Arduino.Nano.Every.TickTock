@@ -32,6 +32,7 @@ Those four values are assembled into `FullSwing` records on the same 32-bit TCB0
 - **`TunableCommands.*`** wires `get` / `set` / `reset defaults` commands to the registry.
 - **`TunablesRuntime.cpp`** stores live tunable values and normalizes dependent settings.
 - **`StatusTelemetry.*`** emits retained boot/config `STS` records plus optional PPS tuning snapshots.
+- **`MemoryTelemetry.*`** computes current free SRAM on AVR (`__brkval`/`__heap_start` vs stack), tracks retained runtime minimum, and emits boot/periodic `mem` STS records.
 - **`EEPROMConfig.*`** loads/saves the active tunable schema with CRC protection.
 
 ### Top-level orchestration
@@ -111,11 +112,11 @@ In the main loop, `PendulumCore::process_pps()` then:
 
 The retained sample contract is:
 
-- `CFG,nominal_hz=<ticks/sec>,sample_tag=SMP,sample_schema=raw_cycles_hz_v3`
-- `HDR,tick,tick_adj,tick_block,tick_block_adj,tock,tock_adj,tock_block,tock_block_adj,f_inst_hz,f_hat_hz,gps_status,holdover_age_ms,r_ppm,j_ticks,dropped,adj_diag[,pps_seq_row]`
+- `CFG,nominal_hz=<ticks/sec>,sample_tag=SMP,sample_schema=raw_cycles_hz_v4`
+- `HDR,tick,tick_adj,tick_block,tick_block_adj,tick_total_adj_direct,tick_total_adj_diag,tock,tock_adj,tock_block,tock_block_adj,tock_total_adj_direct,tock_total_adj_diag,f_inst_hz,f_hat_hz,gps_status,holdover_age_ms,r_ppm,j_ticks,dropped,adj_diag[,pps_seq_row]`
 - `SMP,...` rows carrying values for exactly those columns
 
-Raw fields remain capture source truth. `*_adj` fields are authoritative PPS-aware corrections. `f_hat_hz` remains row-level context and must not be interpreted as a universal per-interval correction factor when exact `*_adj` fields are present.
+Raw fields remain capture source truth. Component `*_adj` fields are authoritative PPS-aware sub-interval corrections. `*_total_adj_direct` fields are authoritative PPS-aware full half-swing corrections. `f_hat_hz` remains row-level context and must not be interpreted as a universal per-interval correction factor when exact adjusted fields are present.
 
 ## Serial Commands and Telemetry
 
@@ -128,6 +129,7 @@ Raw fields remain capture source truth. `*_adj` fields are authoritative PPS-awa
 - `get <param>`
 - `set <param> <value>`
 - `reset defaults`
+- `emit meta`
 
 There is no separate metrics/debug command surface in the reduced firmware.
 
@@ -147,6 +149,7 @@ Responsibilities are intentionally split:
 - `build`
 - `schema`
 - `flags`
+- `mem`
 - three tunables snapshot lines emitted as `<param>,<value>,...` pairs:
   - line 1: `ppsFastShift`, `ppsSlowShift`, `ppsBlendLoPpm`, `ppsBlendHiPpm`, `ppsLockRppm`
   - line 2: `ppsLockMadTicks`, `ppsUnlockRppm`, `ppsUnlockMadTicks`, `ppsLockCount`, `ppsUnlockCount`
@@ -159,12 +162,14 @@ Optional families compiled in only when explicitly enabled:
 
 - `TUNE_CFG`, `TUNE_WIN`, `TUNE_EVT` when `PPS_TUNING_TELEMETRY=1`
 - `PPS_BASE` when `ENABLE_PPS_BASELINE_TELEMETRY=1`
+- `mem_warn` when `ENABLE_MEMORY_LOW_WATER_WARN_STS=1` and free SRAM crosses `MEMORY_LOW_WATER_WARN_BYTES`
 
 ### Boot record details
 
 - `build` identifies the binary (`git`, dirty bit, UTC, board, MCU, raw toolchain clock, selected main clock source/rate, baud)
 - `schema` states the current `STS` schema version, sample schema name, and EEPROM schema version
 - `flags` advertises which intentional compile-time runtime modes were compiled in
+- `mem` reports `free_now`, retained low-water `free_min`, and `phase` (`boot` at startup, `periodic` thereafter at `MEMORY_TELEMETRY_PERIOD_MS`); sampling updates continuously in `pendulumLoop()` to preserve a runtime watermark between emissions
 - the three tunables snapshot lines summarize retained tunables as `param,value` pairs
 - `cfg` publishes `nominal_hz`, the active sample row tag, and the sample schema name for host recovery
 - `CFG` mirrors that sample-stream metadata as a top-level line-tagged record for host recovery
@@ -179,6 +184,7 @@ Optional families compiled in only when explicitly enabled:
 - semantic main clock configuration (`MAIN_CLOCK_HZ`, `USE_EXTCLK_MAIN`)
 - timebase selection (`USE_ARDUINO_TIMEBASE`, `DISABLE_ARDUINO_TCB3_TIMEBASE`)
 - optional telemetry (`PPS_TUNING_TELEMETRY`, `ENABLE_PPS_BASELINE_TELEMETRY`)
+- memory telemetry controls (`ENABLE_MEMORY_TELEMETRY_STS`, `MEMORY_TELEMETRY_PERIOD_MS`, optional `ENABLE_MEMORY_LOW_WATER_WARN_STS` / `MEMORY_LOW_WATER_WARN_BYTES`)
 - serial behavior (`ENABLE_PERIODIC_FLUSH`, `FLUSH_PERIOD_MS`, `LED_ACTIVITY_ENABLE`, `LED_ACTIVITY_DIV`)
 - build metadata (`GIT_SHA`, `BUILD_UTC`, `BUILD_DIRTY`)
 

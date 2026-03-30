@@ -85,6 +85,8 @@ Suggested verification workflow after a firmware change:
 
 For the dedicated external-main-clock validation workflow, see `Docs/external_clock_test_plan.md`.
 
+For a field-by-field guide to `CFG`/`HDR`/`SMP` records and analysis interpretation, see `Docs/Pendulum_Data_Record_Guide.md`.
+
 ---
 
 ## Runtime Serial Interface
@@ -106,6 +108,7 @@ The command parser exposes the core tuning commands:
 - `get <param>` - print the current value of one tunable
 - `set <param> <value>` - update a tunable, normalize dependent values, emit optional tuning telemetry, and save to EEPROM
 - `reset defaults` - restore the firmware's compiled defaults to the live tunables, reset runtime PPS state, and rewrite EEPROM without consulting the old EEPROM contents
+- `emit meta` - emit `STS` metadata snapshots plus `CFG`/`HDR` immediately on demand
 
 ### Retained STS Records
 
@@ -115,6 +118,7 @@ The reduced firmware keeps these `STS,PROGRESS_UPDATE,...` payload families:
 - `build` - build identity (`git`, dirty bit, UTC, board, MCU, clock, baud)
 - `schema` - serial contract versions (`sts`, sample schema, EEPROM schema)
 - `flags` - supported compile-time runtime modes compiled into the image
+- `mem` - SRAM telemetry (`free_now`, retained `free_min`, `phase=boot|periodic`), with `free_min` tracked from continuous loop sampling and emitted at boot + periodic cadence
 - `<param>=<value>` tunables snapshots emitted as three parameter-list lines:
   - line 1: `ppsFastShift`, `ppsSlowShift`, `ppsBlendLoPpm`, `ppsBlendHiPpm`, `ppsLockRppm`
   - line 2: `ppsLockMadTicks`, `ppsUnlockRppm`, `ppsUnlockMadTicks`, `ppsLockCount`, `ppsUnlockCount`
@@ -127,6 +131,7 @@ Optional families remain available behind intentional compile-time flags:
 
 - `TUNE_CFG`, `TUNE_WIN`, `TUNE_EVT` when `PPS_TUNING_TELEMETRY=1`
 - `PPS_BASE` when `ENABLE_PPS_BASELINE_TELEMETRY=1`
+- `mem_warn` when `ENABLE_MEMORY_LOW_WATER_WARN_STS=1` and `free_now <= MEMORY_LOW_WATER_WARN_BYTES`
 
 ### Raw-Cycle-Only Sample Format
 
@@ -134,33 +139,38 @@ The Nano emits a single raw-cycle sample schema:
 
 | Tag family | Fields |
 |------------|--------|
-| `CFG`      | `nominal_hz=<ticks/sec>,sample_tag=SMP,sample_schema=raw_cycles_hz_v2` |
-| `HDR`      | `tick`, `tock`, `tick_block`, `tock_block`, `f_inst_hz`, `f_hat_hz`, `gps_status`, `holdover_age_ms`, `r_ppm`, `j_ticks`, `dropped` |
+| `CFG`      | `nominal_hz=<ticks/sec>,sample_tag=SMP,sample_schema=raw_cycles_hz_v4` |
+| `HDR`      | `tick`, `tick_adj`, `tick_block`, `tick_block_adj`, `tick_total_adj_direct`, `tick_total_adj_diag`, `tock`, `tock_adj`, `tock_block`, `tock_block_adj`, `tock_total_adj_direct`, `tock_total_adj_diag`, `f_inst_hz`, `f_hat_hz`, `gps_status`, `holdover_age_ms`, `r_ppm`, `j_ticks`, `dropped`, `adj_diag` (plus optional `pps_seq_row`) |
 | `SMP`      | values for the fields named by the latest `HDR` line |
 
 Field meanings:
 
 - `tick` / `tock` - unblocked pendulum half-swing durations in raw TCB0 cycles
 - `tick_block` / `tock_block` - beam-block durations in raw TCB0 cycles
+- `tick_adj` / `tock_adj` / `tick_block_adj` / `tock_block_adj` - authoritative PPS-adjusted durations in nominal 16 MHz-equivalent ticks, computed by splitting each interval by PPS-second segments touched
+- `tick_total_adj_direct` / `tock_total_adj_direct` - authoritative direct PPS-adjusted full half-swing intervals (preferred period-level observables)
+- `tick_total_adj_diag` / `tock_total_adj_diag` - direct-composite diagnostics bitmask (`bit0=crossed PPS`, `bit1=missing PPS scale`, `bit2=degraded fallback`, `bit3=crossed >1 PPS boundary`)
 - `f_inst_hz` - latest PPS interval estimate in ticks per second
-- `f_hat_hz` - active disciplined frequency estimate in ticks per second
+- `f_hat_hz` - row-level disciplined frequency context in ticks per second (diagnostic/context only)
 - `gps_status` - `0=no PPS`, `1=acquiring`, `2=locked`, `3=holdover`
 - `holdover_age_ms` - discipliner holdover age in milliseconds
 - `r_ppm` - fast/slow disagreement metric in ppm
 - `j_ticks` - robust jitter metric as MAD residual ticks
 - `dropped` - cumulative lost IR/PPS events due to ring overflow
+- `adj_diag` - compact adjustment diagnostics bitmask (`bit0=tick crossed PPS`, `bit1=tick_block crossed`, `bit2=tock crossed`, `bit3=tock_block crossed`, `bit4=missing PPS scale`, `bit5=degraded fallback`, `bit6=crossed >1 PPS boundary`)
+- `pps_seq_row` (when `ENABLE_PENDULUM_ADJ_PROVENANCE=1`) - PPS sequence for the row’s final interval closure (`ENABLE_PENDULUM_ADJ_PROVENANCE` defaults to `0` in constrained-memory builds)
 
 Example:
 
 ```text
-STS,PROGRESS_UPDATE,schema,sts=1,sample=raw_cycles_hz_v2,eeprom=4
-STS,PROGRESS_UPDATE,cfg,nominal_hz=16000000,sample_tag=SMP,sample_schema=raw_cycles_hz_v2
-CFG,nominal_hz=16000000,sample_tag=SMP,sample_schema=raw_cycles_hz_v2
-HDR,tick,tock,tick_block,tock_block,f_inst_hz,f_hat_hz,gps_status,holdover_age_ms,r_ppm,j_ticks,dropped
-SMP,7872371,7871904,20105,19968,15999978,15999984,2,0,3,1,0
+STS,PROGRESS_UPDATE,schema,sts=1,sample=raw_cycles_hz_v4,eeprom=4
+STS,PROGRESS_UPDATE,cfg,nominal_hz=16000000,sample_tag=SMP,sample_schema=raw_cycles_hz_v4
+CFG,nominal_hz=16000000,sample_tag=SMP,sample_schema=raw_cycles_hz_v4
+HDR,tick,tick_adj,tick_block,tick_block_adj,tick_total_adj_direct,tick_total_adj_diag,tock,tock_adj,tock_block,tock_block_adj,tock_total_adj_direct,tock_total_adj_diag,f_inst_hz,f_hat_hz,gps_status,holdover_age_ms,r_ppm,j_ticks,dropped,adj_diag,pps_seq_row
+SMP,7872371,7872380,20105,20106,7892486,0,7871904,7871914,19968,19969,7891883,0,15999978,15999984,2,0,3,1,0,0,12345
 ```
 
-The Nano does **not** convert raw cycle counts into wall-clock units on-device. Downstream tools should ingest the raw counts and use `f_hat_hz` as the disciplined denominator for corrected time conversion, e.g. `corrected_seconds = raw_ticks / f_hat_hz`.
+Raw fields remain capture source truth. Adjusted `*_adj` fields are the authoritative best-available PPS-corrected intervals for end-user analysis; `f_hat_hz` remains row context/diagnostics.
 
 ---
 
@@ -221,6 +231,9 @@ The supported compile-time flags are:
 - `DISABLE_ARDUINO_TCB3_TIMEBASE` - disable Arduino's TCB3 interrupt source when running the custom TCB0 timebase
 - `PPS_TUNING_TELEMETRY` - enable optional `TUNE_*` STS telemetry
 - `ENABLE_PPS_BASELINE_TELEMETRY` - enable optional `PPS_BASE` telemetry
+- `ENABLE_MEMORY_TELEMETRY_STS` - enable `mem` STS telemetry emission and SRAM low-water tracking
+- `MEMORY_TELEMETRY_PERIOD_MS` - cadence for periodic `mem` STS telemetry emission (when `ENABLE_MEMORY_TELEMETRY_STS=1`)
+- `ENABLE_MEMORY_LOW_WATER_WARN_STS` / `MEMORY_LOW_WATER_WARN_BYTES` - optional one-time `mem_warn` low-SRAM warning controls
 - `ENABLE_PERIODIC_FLUSH` / `FLUSH_PERIOD_MS` - enable and tune periodic serial flushing
 - `LED_ACTIVITY_ENABLE` / `LED_ACTIVITY_DIV` - toggle the onboard LED after successful serial writes
 - `GIT_SHA`, `BUILD_UTC`, `BUILD_DIRTY` - build metadata injected into boot telemetry

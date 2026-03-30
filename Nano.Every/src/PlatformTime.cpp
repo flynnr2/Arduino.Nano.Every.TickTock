@@ -32,6 +32,7 @@ uint64_t platformTicks64() {
 #if USE_ARDUINO_TIMEBASE
   return (uint64_t)millis();
 #else
+  // Foreground-safe coherent read; this API wraps the TCB0 sample in an atomic section.
   return tcb0NowCoherent64();
 #endif
 }
@@ -74,7 +75,8 @@ void disableArduinoTimebaseTCB3IfConfigured() {
   // - This is a one-shot boot-time shutdown that must run before pendulumSetup()
   //   or any other subsystem that expects the final Arduino/custom timebase state.
   // - The stock Nano Every / megaAVR core uses TCB3 as the millis()/delay() ISR source,
-  //   while this firmware's custom timebase comes from the coherent TCB0 timeline.
+  //   while this firmware's custom timebase comes from the foreground-safe coherent
+  //   TCB0 APIs (tcb0NowCoherentMainLoop()/tcb0NowCoherent64()).
   // - This low-level TCB3 register path therefore assumes the ATmega4809 peripheral map
   //   and the current Arduino Nano Every core timer assignment; fail fast elsewhere.
   const uint8_t saved_sreg = SREG;

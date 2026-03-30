@@ -24,7 +24,7 @@ A run emits three line families that should be consumed together:
 For the current reduced firmware, the sample header is:
 
 ```text
-HDR,tick,tick_adj,tick_block,tick_block_adj,tock,tock_adj,tock_block,tock_block_adj,f_inst_hz,f_hat_hz,gps_status,holdover_age_ms,r_ppm,j_ticks,dropped,adj_diag
+HDR,tick,tick_adj,tick_block,tick_block_adj,tick_total_adj_direct,tick_total_adj_diag,tock,tock_adj,tock_block,tock_block_adj,tock_total_adj_direct,tock_total_adj_diag,f_inst_hz,f_hat_hz,gps_status,holdover_age_ms,r_ppm,j_ticks,dropped,adj_diag
 ```
 
 If `ENABLE_PENDULUM_ADJ_PROVENANCE=1` at build time, one extra field is appended:
@@ -54,10 +54,15 @@ Use these when you want **capture-source truth** and are explicitly modeling loc
 - `tock_adj`
 - `tick_block_adj`
 - `tock_block_adj`
+- `tick_total_adj_direct`
+- `tock_total_adj_direct`
 
 These are PPS-aware corrected intervals in nominal-clock-equivalent ticks (nominally 16 MHz on default Nano Every builds).
 
-For end-user timing analysis, these `*_adj` fields are the authoritative intervals to use.
+Interpretation split:
+
+- `tick_adj` / `tick_block_adj` / `tock_adj` / `tock_block_adj` stay authoritative for component/sub-interval studies.
+- `tick_total_adj_direct` / `tock_total_adj_direct` are the authoritative full half-swing adjusted intervals and should generally be preferred for period-level observables over summing separately adjusted component pieces.
 
 ### Frequency and state context
 
@@ -85,6 +90,11 @@ Use these fields as quality/context indicators, not as replacements for interval
   - bit4: missing PPS scale
   - bit5: degraded fallback used
   - bit6: crossed more than one PPS boundary
+- `tick_total_adj_diag` / `tock_total_adj_diag` — direct-composite diagnostic bitmasks for `*_total_adj_direct`:
+  - bit0: crossed a PPS boundary
+  - bit1: missing PPS scale
+  - bit2: degraded fallback used
+  - bit3: crossed more than one PPS boundary
 
 ### Optional provenance
 
@@ -97,24 +107,25 @@ Use these fields as quality/context indicators, not as replacements for interval
 1. Parse and retain `CFG` + `HDR` before processing `SMP`.
 2. Use `nominal_hz` from `CFG` for converting ticks to seconds:
    - `seconds = ticks / nominal_hz`
-3. Use `tick_adj` and `tock_adj` as primary half-swing intervals.
+3. Use `tick_total_adj_direct` and `tock_total_adj_direct` as primary half-swing intervals.
 4. Build full-period observables from adjacent half-swings:
-   - `period_ticks_adj = tick_adj + tock_adj`
+   - `period_ticks_adj = tick_total_adj_direct + tock_total_adj_direct`
 5. Gate/annotate data quality using:
    - `gps_status` (prefer `LOCKED` for best stability)
    - `dropped` (detect acquisition stress/overflow windows)
-   - `adj_diag` bits 4/5/6 (flag degraded adjustments)
+   - `adj_diag` bits 4/5/6 (component adjustment degradation)
+   - `tick_total_adj_diag` / `tock_total_adj_diag` bits 1/2/3 (direct-composite degradation)
    - `r_ppm` and `j_ticks` (monitor discipliner noise/outlier windows)
-6. For beam/amplitude-proxy studies, use `tick_block_adj`/`tock_block_adj` and compare odd/even asymmetry over windows.
+6. For beam/amplitude-proxy studies, use component fields (`tick_adj`, `tick_block_adj`, `tock_adj`, `tock_block_adj`) and compare odd/even asymmetry over windows.
 
 ---
 
 ## 5) Interpretation rules (short version)
 
-- Prefer `*_adj` over raw fields for end-user timing metrics.
+- Prefer `*_total_adj_direct` for full half-swing and period metrics; use component `*_adj` fields when you specifically need sub-interval analysis.
 - Treat `f_hat_hz` as row context/diagnostics, not as a direct replacement for corrected intervals.
 - Never mix schemas blindly across runs; key your parser to `HDR` and `sample_schema`.
-- If `dropped` increases or `adj_diag` shows degraded modes, mark those windows in downstream statistics.
+- If `dropped` increases or either diagnostic family (`adj_diag`, `*_total_adj_diag`) shows degraded modes, mark those windows in downstream statistics.
 
 ---
 
@@ -122,8 +133,8 @@ Use these fields as quality/context indicators, not as replacements for interval
 
 Given:
 - `nominal_hz = 16000000`
-- `tick_adj + tick_block_adj = 7872380`
-- `tock_adj + tock_block_adj = 7871914`
+- `tick_total_adj_direct = 7872380`
+- `tock_total_adj_direct = 7871914`
 
 Then:
 - half-swing times:
@@ -131,4 +142,3 @@ Then:
   - `tock_s = 7871914 / 16000000 = 0.491994625 s`
 - full-period estimate:
   - `period_s = (7872380 + 7871914) / 16000000 = 0.984018375 s`
-

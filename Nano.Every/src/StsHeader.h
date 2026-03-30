@@ -12,9 +12,6 @@
 
 namespace StsHeader {
 
-constexpr uint8_t STS_SCHEMA_VER = 3;
-constexpr const char SAMPLE_SCHEMA_ID[] = "raw_cycles_hz_v3";
-
 inline const char* dirtyField() {
   if (BUILD_DIRTY == 0) return "0";
   if (BUILD_DIRTY == 1) return "1";

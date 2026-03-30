@@ -17,7 +17,8 @@ struct PpsScaleEntry {
   uint64_t scale_q32;  // round((16000000 << 32) / f_hat_hz_for_that_pps_second)
 };
 
-// Compact row-level diagnostics for authoritative interval adjustment.
+// Compact row-level diagnostics for component interval adjustments:
+// tick, tick_block, tock, tock_block.
 enum AdjDiagBits : uint8_t {
   ADJ_DIAG_TICK_CROSSED        = 1U << 0,
   ADJ_DIAG_TICK_BLOCK_CROSSED  = 1U << 1,
@@ -26,6 +27,15 @@ enum AdjDiagBits : uint8_t {
   ADJ_DIAG_MISSING_SCALE       = 1U << 4,
   ADJ_DIAG_DEGRADED_FALLBACK   = 1U << 5,
   ADJ_DIAG_MULTI_BOUNDARY      = 1U << 6,
+};
+
+// Compact diagnostics for direct-composite half-swing adjustments:
+// tick_total_adj_direct / tock_total_adj_direct.
+enum DirectAdjDiagBits : uint8_t {
+  DIRECT_ADJ_DIAG_CROSSED           = 1U << 0,
+  DIRECT_ADJ_DIAG_MISSING_SCALE     = 1U << 1,
+  DIRECT_ADJ_DIAG_DEGRADED_FALLBACK = 1U << 2,
+  DIRECT_ADJ_DIAG_MULTI_BOUNDARY    = 1U << 3,
 };
 
 void ppsAdjustReset(uint32_t nominal_hz);

@@ -48,15 +48,31 @@ static_assert(static_cast<uint32_t>(MAIN_CLOCK_HZ) == static_cast<uint32_t>(F_CP
 #endif
 
 #ifndef ENABLE_PPS_BASELINE_TELEMETRY
-#define ENABLE_PPS_BASELINE_TELEMETRY 0 // emit optional PPS_BASE records for PPS-only characterization
+#define ENABLE_PPS_BASELINE_TELEMETRY 1 // emit optional PPS_BASE records for PPS-only characterization
 #endif
 
 #ifndef ENABLE_CLOCK_DIAG_STS
-#define ENABLE_CLOCK_DIAG_STS 0 // emit optional STS clock-diagnostic records at boot
+#define ENABLE_CLOCK_DIAG_STS 1 // emit optional STS clock-diagnostic records at boot
 #endif
 
 #ifndef ENABLE_PENDULUM_ADJ_PROVENANCE
-#define ENABLE_PENDULUM_ADJ_PROVENANCE 0 // include compact PPS-adjustment provenance fields in SMP/HDR rows
+#define ENABLE_PENDULUM_ADJ_PROVENANCE 1 // include compact PPS-adjustment provenance fields in SMP/HDR rows
+#endif
+
+#ifndef ENABLE_MEMORY_LOW_WATER_WARN_STS
+#define ENABLE_MEMORY_LOW_WATER_WARN_STS 1 // emit one-time mem_warn STS when free SRAM crosses low-water threshold
+#endif
+
+#ifndef ENABLE_MEMORY_TELEMETRY_STS
+#define ENABLE_MEMORY_TELEMETRY_STS 1 // emit mem STS telemetry and maintain SRAM low-water tracking
+#endif
+
+#ifndef MEMORY_LOW_WATER_WARN_BYTES
+#define MEMORY_LOW_WATER_WARN_BYTES 256U // one-time warning threshold for low free SRAM
+#endif
+
+#ifndef MEMORY_TELEMETRY_PERIOD_MS
+#define MEMORY_TELEMETRY_PERIOD_MS 5000UL // periodic memory-telemetry emission cadence
 #endif
 
 #ifndef ENABLE_PERIODIC_FLUSH
@@ -75,16 +91,21 @@ static_assert(static_cast<uint32_t>(MAIN_CLOCK_HZ) == static_cast<uint32_t>(F_CP
 #define LED_ACTIVITY_DIV 1 // power-of-two divider for LED_ACTIVITY_ENABLE write counts
 #endif
 
+#ifndef STARTUP_SERIAL_SETTLE_MS
+#define STARTUP_SERIAL_SETTLE_MS 1200UL // delay after setup init to let serial consumers attach before startup emission
+#endif
+
 #ifndef GIT_SHA
 #define GIT_SHA "unknown"
 #endif
 
 const int ledPin = LED_BUILTIN;
 
-constexpr uint8_t  RING_SIZE_IR_SENSOR              = 64;      // IR edge ring depth
-constexpr uint8_t  RING_SIZE_SWING_ROWS             = 16;      // completed full-swing row ring depth (slower-rate queue than edge capture)
-constexpr uint8_t  RING_SIZE_PPS                    = 16;      // PPS capture ring depth
-constexpr uint8_t  PPS_SCALE_RING_SIZE              = 16;      // finalized PPS-second scale spans retained for interval correction
+// Ring-depth defaults (all must remain power-of-two for mask arithmetic).
+constexpr uint8_t  RING_SIZE_SWING_ROWS             = 8;       // completed full-swing row ring depth (slower-rate queue than edge capture)
+constexpr uint8_t  RING_SIZE_IR_SENSOR              = 32;      // IR edge ring depth (4x swing-row depth to absorb ISR bursts)
+constexpr uint8_t  RING_SIZE_PPS                    = 8;       // PPS capture ring depth
+constexpr uint8_t  PPS_SCALE_RING_SIZE              = 8;       // finalized PPS-second scale spans retained for interval correction
 constexpr uint8_t  PPS_FAST_SHIFT_DEFAULT           = 3;       // fast EWMA gain (~8 s)
 constexpr uint8_t  PPS_SLOW_SHIFT_DEFAULT           = 8;       // slow EWMA gain (~4.3 min)
 constexpr uint8_t  PPS_SHIFT_MIN                    = 1;       // smallest supported EWMA shift

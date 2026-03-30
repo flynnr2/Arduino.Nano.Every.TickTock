@@ -15,6 +15,7 @@
 #include "PlatformTime.h"
 #include "PpsFreshness.h"
 #include "PpsAdjust.h"
+#include "MemoryTelemetry.h"
 
 static_assert(sizeof(uint16_t) == 2, "Expected 16-bit capture modulo domain");
 static_assert(sizeof(uint32_t) == 4, "Expected 32-bit PPS tick domain");
@@ -58,7 +59,7 @@ static void emit_pps_baseline_telemetry(uint32_t seq,
                                         const FreqDiscipliner& discipliner,
                                         uint16_t latency16,
                                         uint16_t cap16) {
-  // Compact baseline PPS schema for long PPS-only runs (telemetry-only, disabled by default):
+  // Compact baseline PPS schema for long PPS-only runs (telemetry-only; compile-time gated):
   // PPS_BASE,q,m,d,ef,es,eh,pf,ps,pa,c,v,s,r,js,ja,lg,ub,l,cp
   // (all integer key=value fields).
   // Keep comfortably below STS payload limits; skip send if the formatted payload exceeds this guard.
@@ -99,10 +100,14 @@ static inline uint16_t sub16(uint16_t a, uint16_t b) { return (uint16_t)(a - b);
 
 
 #if PPS_TUNING_TELEMETRY
-static constexpr uint8_t TUNE_WIN_SIZE = 60;
+static constexpr uint8_t TUNE_WIN_SIZE = 32;
 static uint32_t tune_r_samples[TUNE_WIN_SIZE] = {};
 static uint32_t tune_js_samples[TUNE_WIN_SIZE] = {};
 static uint32_t tune_ja_samples[TUNE_WIN_SIZE] = {};
+// Keep sort scratch buffers off AVR stack to preserve headroom in telemetry paths.
+static uint32_t tune_r_sorted[TUNE_WIN_SIZE];
+static uint32_t tune_js_sorted[TUNE_WIN_SIZE];
+static uint32_t tune_ja_sorted[TUNE_WIN_SIZE];
 static uint8_t tune_win_fill = 0;
 static uint8_t tune_ok_count = 0;
 static uint8_t tune_val_count = 0;
@@ -135,9 +140,6 @@ static uint32_t percentile_u32(uint32_t* values, uint8_t n, uint8_t percentile) 
 static void emit_tune_window(FreqDiscipliner::DiscState state) {
   if (tune_win_fill == 0U) return;
 
-  uint32_t r_sorted[TUNE_WIN_SIZE];
-  uint32_t js_sorted[TUNE_WIN_SIZE];
-  uint32_t ja_sorted[TUNE_WIN_SIZE];
   uint32_t r_max = tune_r_samples[0];
   uint32_t js_max = tune_js_samples[0];
   uint32_t ja_max = tune_ja_samples[0];
@@ -146,17 +148,17 @@ static void emit_tune_window(FreqDiscipliner::DiscState state) {
     const uint32_t rv = tune_r_samples[i];
     const uint32_t jsv = tune_js_samples[i];
     const uint32_t jav = tune_ja_samples[i];
-    r_sorted[i] = rv;
-    js_sorted[i] = jsv;
-    ja_sorted[i] = jav;
+    tune_r_sorted[i] = rv;
+    tune_js_sorted[i] = jsv;
+    tune_ja_sorted[i] = jav;
     if (rv > r_max) r_max = rv;
     if (jsv > js_max) js_max = jsv;
     if (jav > ja_max) ja_max = jav;
   }
 
-  const uint32_t r95 = percentile_u32(r_sorted, tune_win_fill, 95U);
-  const uint32_t js95 = percentile_u32(js_sorted, tune_win_fill, 95U);
-  const uint32_t ja95 = percentile_u32(ja_sorted, tune_win_fill, 95U);
+  const uint32_t r95 = percentile_u32(tune_r_sorted, tune_win_fill, 95U);
+  const uint32_t js95 = percentile_u32(tune_js_sorted, tune_win_fill, 95U);
+  const uint32_t ja95 = percentile_u32(tune_ja_sorted, tune_win_fill, 95U);
 
   char line[CSV_PAYLOAD_MAX];
   const int n = snprintf(line,
@@ -243,14 +245,15 @@ static void emit_tune_event(FreqDiscipliner::DiscState from,
 }
 #endif
 
-static bool sts_pps_cfg_reemit_pending = false;
 static bool metadata_reemit_pending = false;
+static bool startup_output_ready = false;
 static bool pps_primed = false;
 static uint32_t pps_seen_prev = 0;
 static uint32_t last_pps_isr_change_ms = 0;
 static uint32_t last_pps_processed_ms = 0;
 static uint32_t pps_last_edge32 = 0;
 static uint16_t lastPpsCap16 = 0;
+static uint32_t last_mem_telemetry_ms = 0;
 #if ENABLE_PPS_BASELINE_TELEMETRY
 static uint32_t pps_base_seq = 0;
 #endif
@@ -272,6 +275,8 @@ void resetRuntimeStateAfterTunablesChange() {
   last_pps_processed_ms = 0;
   pps_last_edge32 = 0;
   lastPpsCap16 = 0;
+  startup_output_ready = false;
+  last_mem_telemetry_ms = 0;
   ppsAdjustReset((uint32_t)MAIN_CLOCK_HZ);
 #if ENABLE_PPS_BASELINE_TELEMETRY
   pps_base_seq = 0;
@@ -279,11 +284,34 @@ void resetRuntimeStateAfterTunablesChange() {
 }
 
 void emitMetadataNow() {
+  if (!startup_output_ready) {
+    // Queue metadata until startup emission has completed.
+    metadata_reemit_pending = true;
+    return;
+  }
+  // Recovery/startup metadata must be deterministic and minimal for parser lock.
+  // Emit only the startup contract in strict order:
+  //   1) CFG metadata row
+  //   2) HDR literal sample schema
   emitStatusSampleConfig();
   printCsvHeader();
 }
 
+void emitStartupNow() {
+  if (!startup_output_ready) {
+    // Defer parser-recovery metadata until startup emission has completed.
+    metadata_reemit_pending = true;
+    return;
+  }
+  emitResetCause();
+  emitStatusBootHeaders();
+  printCsvHeader();
+}
+
 void pendulumSetup() {
+  latchResetCauseOnceAtBoot();
+  advanceBootSequenceForBoot();
+
   pinMode(ledPin, OUTPUT);
 
   gpsStatus = GpsStatus::NO_PPS;
@@ -292,22 +320,19 @@ void pendulumSetup() {
     CMD_SERIAL.begin(SERIAL_BAUD_NANO);
   }
 
-  emitResetCause();
-
-  sendStatus(StatusCode::ProgressUpdate, "Begin setup() ...");
-
   TunableConfig cfg = {};
   if (loadConfig(cfg)) {
     applyConfig(cfg);
   }
 
   resetRuntimeStateAfterTunablesChange();
+#if ENABLE_MEMORY_TELEMETRY_STS
+  memoryTelemetryInitAtBoot();
+#endif
 
-  emitStatusBootHeaders();
-  sts_pps_cfg_reemit_pending = true;
   metadata_reemit_pending = true;
 #if PPS_TUNING_TELEMETRY
-  emitPpsTuningConfigSnapshot();
+  // Startup snapshot should not be emitted until startup_output_ready is set.
 #endif
   cli();
   evsys_init();
@@ -317,8 +342,21 @@ void pendulumSetup() {
   captureMarkHardwareInitialized();
   sei();
 
+  platformDelayMs((uint32_t)STARTUP_SERIAL_SETTLE_MS);
+  startup_output_ready = true;
+
+  emitResetCauseOncePerBoot();
+  sendStatus(StatusCode::ProgressUpdate, "Begin setup() ...");
+#if ENABLE_MEMORY_TELEMETRY_STS
+  memoryTelemetrySample();
+#endif
+  emitStatusBootHeaders();
+#if PPS_TUNING_TELEMETRY
+  emitPpsTuningConfigSnapshot();
+#endif
   sendStatus(StatusCode::ProgressUpdate, "... end setup()");
   printCsvHeader();
+  metadata_reemit_pending = true;
 }
 
 static void process_pps() {
@@ -349,13 +387,10 @@ static void process_pps() {
 
   // Re-emit startup metadata exactly once from the runtime path after startup
   // settles, so consumers can recover if the initial boot burst was missed.
+  // Keep this deterministic/minimal (CFG + HDR only) to avoid recovery noise.
   const bool startup_reemit_due =
       now_ms >= (uint32_t)Tunables::ppsConfigReemitDelayMsActive();
-  if (sts_pps_cfg_reemit_pending && startup_reemit_due) {
-    emitStatusPpsConfig();
-    sts_pps_cfg_reemit_pending = false;
-  }
-  if (metadata_reemit_pending && startup_reemit_due) {
+  if (startup_output_ready && metadata_reemit_pending && startup_reemit_due) {
     emitMetadataNow();
     metadata_reemit_pending = false;
   }
@@ -401,14 +436,16 @@ static void process_pps() {
     gDisciplinedTime.sync(gFreqDiscipliner, pps_valid);
 
 #if ENABLE_PPS_BASELINE_TELEMETRY
-    emit_pps_baseline_telemetry(++pps_base_seq,
-                                now_ms,
-                                pps_dt32_ticks,
-                                cls,
-                                pps_valid,
-                                gFreqDiscipliner,
-                                cap.latency16,
-                                cap.cap16);
+    if (startup_output_ready) {
+      emit_pps_baseline_telemetry(++pps_base_seq,
+                                  now_ms,
+                                  pps_dt32_ticks,
+                                  cls,
+                                  pps_valid,
+                                  gFreqDiscipliner,
+                                  cap.latency16,
+                                  cap.cap16);
+    }
 #endif
 
     pps_delta_inst = pps_dt32_ticks;
@@ -421,16 +458,18 @@ static void process_pps() {
     pps_J_ticks = gFreqDiscipliner.madTicks();
 
 #if PPS_TUNING_TELEMETRY
-    tune_push_sample(gFreqDiscipliner.state(), cls, pps_valid, gFreqDiscipliner);
-    const FreqDiscipliner::DiscState curr_disc_state = gFreqDiscipliner.state();
-    if (curr_disc_state != prev_disc_state) {
-      uint8_t streak = gFreqDiscipliner.transitionStreak();
-      if (streak == 0U) {
-        streak = (curr_disc_state == FreqDiscipliner::DiscState::DISCIPLINED) ?
-                 gFreqDiscipliner.lockStreak() :
-                 gFreqDiscipliner.unlockStreak();
+    if (startup_output_ready) {
+      tune_push_sample(gFreqDiscipliner.state(), cls, pps_valid, gFreqDiscipliner);
+      const FreqDiscipliner::DiscState curr_disc_state = gFreqDiscipliner.state();
+      if (curr_disc_state != prev_disc_state) {
+        uint8_t streak = gFreqDiscipliner.transitionStreak();
+        if (streak == 0U) {
+          streak = (curr_disc_state == FreqDiscipliner::DiscState::DISCIPLINED) ?
+                   gFreqDiscipliner.lockStreak() :
+                   gFreqDiscipliner.unlockStreak();
+        }
+        emit_tune_event(prev_disc_state, curr_disc_state, now_ms, gFreqDiscipliner, streak);
       }
-      emit_tune_event(prev_disc_state, curr_disc_state, now_ms, gFreqDiscipliner, streak);
     }
 #endif
 
@@ -444,6 +483,10 @@ static void process_pps() {
 }
 
 void pendulumLoop() {
+  const uint32_t now_ms = platformMillis();
+#if ENABLE_MEMORY_TELEMETRY_STS
+  memoryTelemetrySample();
+#endif
   processSerialCommands();
   process_pps();
   swingAssemblerProcessEdges();
@@ -454,12 +497,16 @@ void pendulumLoop() {
     PendulumSample sample{};
     sample.tick       = fs.tick;
     sample.tick_adj   = fs.tick_adj;
-    sample.tock       = fs.tock;
-    sample.tock_adj   = fs.tock_adj;
     sample.tick_block = fs.tick_block;
     sample.tick_block_adj = fs.tick_block_adj;
+    sample.tick_total_adj_direct = fs.tick_total_adj_direct;
+    sample.tick_total_adj_diag   = fs.tick_total_adj_diag;
+    sample.tock       = fs.tock;
+    sample.tock_adj   = fs.tock_adj;
     sample.tock_block = fs.tock_block;
     sample.tock_block_adj = fs.tock_block_adj;
+    sample.tock_total_adj_direct = fs.tock_total_adj_direct;
+    sample.tock_total_adj_diag   = fs.tock_total_adj_diag;
     sample.f_inst_hz      = pps_delta_inst ? pps_delta_inst : (uint32_t)MAIN_CLOCK_HZ;
     sample.f_hat_hz       = pps_delta_active ? (uint32_t)pps_delta_active : (uint32_t)MAIN_CLOCK_HZ;
     sample.holdover_age_ms = gFreqDiscipliner.holdoverAgeMs();
@@ -472,110 +519,24 @@ void pendulumLoop() {
     sample.pps_seq_row    = fs.pps_seq_row;
 #endif
 
+    if (!startup_output_ready) {
+      continue;
+    }
     sendSample(sample);
   }
+
+#if ENABLE_MEMORY_TELEMETRY_STS
+  if (startup_output_ready &&
+      (uint32_t)(now_ms - last_mem_telemetry_ms) >= (uint32_t)MEMORY_TELEMETRY_PERIOD_MS) {
+    last_mem_telemetry_ms = now_ms;
+    emitStatusMemoryTelemetry(true);
+  }
+#endif
 #if ENABLE_PERIODIC_FLUSH
   static uint32_t s_last_flush_ms = 0;
-  const uint32_t now_ms = platformMillis();
   if ((uint32_t)(now_ms - s_last_flush_ms) >= FLUSH_PERIOD_MS) {
     s_last_flush_ms = now_ms;
     DATA_SERIAL.flush();
   }
 #endif
 }
-
-/*
-About PPS_BASE field `l` (raw `latency16`) and why it sometimes shows structure
--------------------------------------------------------------------------------
-
-In the PPS capture ISR (`ISR(TCB2_INT_vect)`), we compute:
-
-    const uint16_t ccmp      = TCB2.CCMP;
-    const uint16_t now_cnt   = TCB2.CNT;
-    const uint32_t now32     = tcb0_now_coherent_isr();
-    const uint16_t latency16 = (uint16_t)(now_cnt - ccmp);
-    const uint32_t edge32    = now32 - (uint32_t)latency16;
-
-and `latency16` is later reported in `PPS_BASE` as field `l`.
-
-Meaning of `latency16` / `l`
-----------------------------
-
-`latency16` is the elapsed time, in TCB2 ticks, between:
-  1) the hardware-captured PPS edge time latched in `TCB2.CCMP`, and
-  2) the later point in the ISR when `TCB2.CNT` is sampled.
-
-So `l` is primarily an ISR service-latency diagnostic.
-It is NOT, by itself, a direct timestamp-error metric.
-
-Why `l` can show a quantized main mode plus a rare secondary bump
------------------------------------------------------------------
-
-In analysis, `l` usually has:
-  - a dominant mode at the normal PPS ISR service latency,
-  - 1-tick quantization (expected from timer granularity), and
-  - a rare higher-latency secondary mode.
-
-A likely explanation for the rare higher-latency mode is coincidence with
-`TCB0` wrap / overflow bookkeeping:
-
-  - `ISR(TCB2_INT_vect)` timestamps PPS edges onto the shared TCB0+overflow
-    32-bit timebase via `tcb0_now_coherent_isr()`.
-  - If the PPS edge arrives very close to a 16-bit wrap of TCB0, then
-    `ISR(TCB2_INT_vect)` can coincide with `ISR(TCB0_INT_vect)` or with the
-    coherent-read logic handling an overflow-adjacent sample.
-  - That can increase observed `latency16` without implying that `edge32`
-    reconstruction is wrong.
-
-Intuition:
-    latency16 ~= normal PPS ISR latency
-or, more rarely,
-    latency16 ~= normal PPS ISR latency + wrap/overflow coincidence overhead
-
-Why this is usually harmless
-----------------------------
-
-The PPS edge time used by the rest of the system is `edge32`, not `now32`.
-We explicitly backdate from `now32` by `latency16`:
-
-    edge32 = now32 - (uint32_t)latency16;
-
-So a larger `latency16` does NOT automatically mean a bad PPS timestamp.
-What matters is whether `edge32` is reconstructed correctly.
-
-In the analysed baseline runs:
-  - `l` / `latency16` showed real structure,
-  - but there was no evidence that this structure caused bad discipline,
-    unlocks, or obvious PPS timestamp failure.
-It appeared to be a harmless implementation fingerprint, especially near
-wrap-adjacent cases.
-
-Related observability
----------------------
-
-Useful nearby counters / variables:
-  - `pps_latency_last`
-  - `pps_latency_min`
-  - `pps_latency_max`
-  - `pps_latency_sum`
-  - `pps_latency_count`
-  - `g_pps_latency16_max`
-  - `g_pps_latency16_wrapRisk`
-
-`g_pps_latency16_wrapRisk` increments when `latency16 > 60000U`, i.e. when the
-raw 16-bit subtraction result lands suspiciously close to 65535. That is a
-useful flag for wrap-adjacent or pathological cases, but not every elevated
-`latency16` is pathological.
-
-When to care
-------------
-
-Investigate further only if one or more of the following start happening:
-  - elevated `latency16` events become frequent,
-  - `g_pps_latency16_wrapRisk` grows unexpectedly,
-  - `l` starts correlating with `r`, `j`, `en`, or lock-state changes,
-  - or there is evidence that `edge32` reconstruction is actually wrong.
-
-Until then, treat `l` as a useful ISR-timing diagnostic, not as a failure
-indicator by itself.
-*/

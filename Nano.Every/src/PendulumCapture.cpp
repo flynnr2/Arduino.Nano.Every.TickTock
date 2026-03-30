@@ -25,7 +25,9 @@ static volatile uint8_t ppsTail = 0;
 
 static bool captureHardwareInitialized = false;
 
-static_assert((CAPTURE_EDGE_BUFFER_SIZE & (CAPTURE_EDGE_BUFFER_SIZE - 1U)) == 0U, "CAPTURE_EDGE_BUFFER_SIZE must be power-of-two for mask arithmetic");
+static_assert(CAPTURE_EDGE_BUFFER_SIZE > 0U &&
+                  (CAPTURE_EDGE_BUFFER_SIZE & (CAPTURE_EDGE_BUFFER_SIZE - 1U)) == 0U,
+              "CAPTURE_EDGE_BUFFER_SIZE must be a non-zero power-of-two for mask arithmetic");
 static_assert((CAPTURE_PPS_RING_SIZE & (CAPTURE_PPS_RING_SIZE - 1U)) == 0U, "CAPTURE_PPS_RING_SIZE must be power-of-two for mask arithmetic");
 
 namespace {
@@ -85,7 +87,9 @@ static inline void ppsData_push_isr(uint32_t edge32,
   }
 }
 
-static inline uint32_t tcb0_now_coherent_isr() {
+// Usage contract: ISR context only; no ATOMIC_BLOCK here.
+// Callers in foreground/main-loop code must use tcb0NowCoherentMainLoop()/tcb0NowCoherent64().
+static inline uint32_t tcb0_now_coherent_isr_only() {
   uint16_t ovf = tcb0Ovf;
   uint16_t cnt2 = read_TCB0_CNT();
   uint8_t intflags2 = TCB0.INTFLAGS;
@@ -152,8 +156,12 @@ PpsCapture capturePopPps() {
   return capture;
 }
 
-uint32_t tcb0NowCoherent() {
-  return tcb0_now_coherent_isr();
+uint32_t tcb0NowCoherentMainLoop() {
+  uint32_t now32 = 0;
+  ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
+    now32 = tcb0_now_coherent_isr_only();
+  }
+  return now32;
 }
 
 uint64_t tcb0NowCoherent64() {
@@ -260,7 +268,7 @@ ISR timestamp capture rationale — why ISR(TCBn_INT_vect) beats reading TCBn.CC
 - Removes ISR latency/jitter: measure how late we are (d = TCBn.CNT - TCBn.CCMP) and backdate the
   timestamp into the TCB0 domain, making the result independent of interrupt latency or main-loop load.
 
-- Coherency & overflow safe: use tcb0_now_coherent_isr() to read TCB0’s 32-bit time without wrap glitches;
+- Coherency & overflow safe: use tcb0_now_coherent_isr_only() to read TCB0’s 32-bit time without wrap glitches;
   clear CAPT promptly to avoid the one-deep capture buffer being overwritten by the next PPS.
 
 - Avoids cross-domain drift: no need to track TCBn overflows or calibrate a fixed phase offset to TCB0.
@@ -272,7 +280,7 @@ Minimal math (inside ISR):
     uint16_t cnt  = TCB .CNT;
     TCBn.INTFLAGS = TCB_CAPT_bm;           // clear early to prevent overwrite
     uint16_t d16  = cnt - ccmp;            // ticks since the edge (same tick rate as TCB0)
-    uint32_t now  = tcb0_now_coherent_isr();   // race-free 32-bit read of TCB0 time
+    uint32_t now  = tcb0_now_coherent_isr_only();   // race-free 32-bit read of TCB0 time
     uint32_t ts32 = now - (uint32_t)d16;   // PPS timestamp in TCB0’s 32-bit timeline
 */
 
@@ -286,7 +294,7 @@ Minimal math (inside ISR):
 // | Read+clear `TCB1.INTFLAGS`         | ~4     | load flags + write-1-to-clear                   |
 // | Non-CAPT gate + branch             | ~3-6   | `flags & TCB_CAPT_bm` test and branch           |
 // | Read `TCB1.CCMP` + `TCB1.CNT`      | 8      | two 16-bit peripheral reads                     |
-// | `now32 = tcb0_now_coherent_isr()`  | ~20    | coherent overflow/CNT sample in TCB0 domain     |
+// | `now32 = tcb0_now_coherent_isr_only()`  | ~20    | coherent overflow/CNT sample in TCB0 domain     |
 // | `latency16` + `edge32` arithmetic  | ~6     | 16-bit sub + 32-bit backdate                    |
 // | Tick/tock branch logic             | ~2-4   | branch on `isTick`                              |
 // | `push_event(...)`                  | ~33    | ring index, stores, dropped-event guard         |
@@ -305,7 +313,7 @@ ISR(TCB1_INT_vect) {
   const uint16_t ccmp = TCB1.CCMP;
 
   // Coherent 32-bit "now" in TCB0 domain (t2)
-  const uint32_t now32 = tcb0_now_coherent_isr();
+  const uint32_t now32 = tcb0_now_coherent_isr_only();
 
   // Tightened: sample CNT as close as possible to now32 (also ~t2)
   const uint16_t cnt = TCB1.CNT;
@@ -350,7 +358,7 @@ ISR(TCB1_INT_vect) {
 // | Read+clear `TCB2.INTFLAGS`          | ~4     | load flags + write-1-to-clear                   |
 // | Non-CAPT gate + branch              | ~3-6   | `flags & TCB_CAPT_bm` test and branch           |
 // | Read `TCB2.CCMP` + `TCB2.CNT`       | 8      | two 16-bit peripheral reads                     |
-// | `now32 = tcb0_now_coherent_isr()`   | ~20    | coherent overflow/CNT sample in TCB0 domain     |
+// | `now32 = tcb0_now_coherent_isr_only()`   | ~20    | coherent overflow/CNT sample in TCB0 domain     |
 // | `latency16` + `edge32` arithmetic   | ~6     | 16-bit sub + 32-bit backdate                    |
 // | `pps_seen++`                        | ~10    | 32-bit increment                                |
 // | `ppsData_push_isr(...)`             | ~28    | ring-buffer index + payload stores              |
@@ -370,7 +378,7 @@ ISR(TCB2_INT_vect) {
   const uint16_t ccmp = TCB2.CCMP;
 
   // Coherent 32-bit "now" in TCB0 domain (t2)
-  const uint32_t now32 = tcb0_now_coherent_isr();
+  const uint32_t now32 = tcb0_now_coherent_isr_only();
 
   // Tightened: sample CNT as close as possible to now32 (also ~t2)
   const uint16_t cnt = TCB2.CNT;
@@ -384,3 +392,98 @@ ISR(TCB2_INT_vect) {
   pps_seen++;
   ppsData_push_isr(edge32, now32, tcb0Ovf, ccmp, cnt, latency16);
 }
+
+/*
+About PPS_BASE field `l` (raw `latency16`) and why it sometimes shows structure
+-------------------------------------------------------------------------------
+
+In the PPS capture ISR (`ISR(TCB2_INT_vect)`), we compute:
+
+    const uint16_t ccmp      = TCB2.CCMP;
+    const uint16_t now_cnt   = TCB2.CNT;
+    const uint32_t now32     = tcb0_now_coherent_isr_only();
+    const uint16_t latency16 = (uint16_t)(now_cnt - ccmp);
+    const uint32_t edge32    = now32 - (uint32_t)latency16;
+
+and `latency16` is later reported in `PPS_BASE` as field `l`.
+
+Meaning of `latency16` / `l`
+----------------------------
+
+`latency16` is the elapsed time, in TCB2 ticks, between:
+  1) the hardware-captured PPS edge time latched in `TCB2.CCMP`, and
+  2) the later point in the ISR when `TCB2.CNT` is sampled.
+
+So `l` is primarily an ISR service-latency diagnostic.
+It is NOT, by itself, a direct timestamp-error metric.
+
+Why `l` can show a quantized main mode plus a rare secondary bump
+-----------------------------------------------------------------
+
+In analysis, `l` usually has:
+  - a dominant mode at the normal PPS ISR service latency,
+  - 1-tick quantization (expected from timer granularity), and
+  - a rare higher-latency secondary mode.
+
+A likely explanation for the rare higher-latency mode is coincidence with
+`TCB0` wrap / overflow bookkeeping:
+
+  - `ISR(TCB2_INT_vect)` timestamps PPS edges onto the shared TCB0+overflow
+    32-bit timebase via `tcb0_now_coherent_isr_only()`.
+  - If the PPS edge arrives very close to a 16-bit wrap of TCB0, then
+    `ISR(TCB2_INT_vect)` can coincide with `ISR(TCB0_INT_vect)` or with the
+    coherent-read logic handling an overflow-adjacent sample.
+  - That can increase observed `latency16` without implying that `edge32`
+    reconstruction is wrong.
+
+Intuition:
+    latency16 ~= normal PPS ISR latency
+or, more rarely,
+    latency16 ~= normal PPS ISR latency + wrap/overflow coincidence overhead
+
+Why this is usually harmless
+----------------------------
+
+The PPS edge time used by the rest of the system is `edge32`, not `now32`.
+We explicitly backdate from `now32` by `latency16`:
+
+    edge32 = now32 - (uint32_t)latency16;
+
+So a larger `latency16` does NOT automatically mean a bad PPS timestamp.
+What matters is whether `edge32` is reconstructed correctly.
+
+In the analysed baseline runs:
+  - `l` / `latency16` showed real structure,
+  - but there was no evidence that this structure caused bad discipline,
+    unlocks, or obvious PPS timestamp failure.
+It appeared to be a harmless implementation fingerprint, especially near
+wrap-adjacent cases.
+
+Related observability
+---------------------
+
+Useful nearby, real fields/counters in the current codebase:
+  - `PPS_BASE` field `l`  -> this raw `latency16` value.
+  - `PPS_BASE` field `cp` -> raw captured `TCB2.CCMP` (`cap16`) for the same PPS sample.
+  - `PPS_BASE` fields `r`, `js`, `ja` -> discipliner output/error context in the
+    same line, useful when checking whether latency changes correlate with control behavior.
+  - `PPS_BASE` fields `lg`, `ub`, `s`, `v`, `c` -> lock/unlock/state/validity/class
+    context for the same PPS sample.
+  - `capturePpsSeen()` / `pps_seen` -> how many PPS captures reached the ring.
+  - `captureDroppedEvents()` / `droppedEvents` -> ring-pressure symptom that can
+    indirectly indicate service-load issues.
+  - `coherentOvfFlagSeenCount` and `coherentOvfAppliedCount` -> internal counters
+    in `tcb0_now_coherent_isr_only()` that track overflow-adjacent coherent reads.
+
+When to care
+------------
+
+Investigate further only if one or more of the following start happening:
+  - elevated `latency16` events become frequent,
+  - `l` starts correlating with `r` / `js` / `ja` or with `lg` / `ub` / `s` changes,
+  - `captureDroppedEvents()` rises during PPS activity,
+  - or there is evidence that `edge32` reconstruction is actually wrong.
+
+Until then, treat `l` as a useful ISR-timing diagnostic, not as a failure
+indicator by itself.
+*/

@@ -49,7 +49,7 @@ namespace {
 
   const char EMIT_name[]  PROGMEM = "emit";
   const char EMIT_syn[]   PROGMEM = "Emit runtime telemetry events";
-  const char EMIT_use[]   PROGMEM = "emit meta";
+  const char EMIT_use[]   PROGMEM = "emit meta|startup";
 
   // Registry for top-level commands.
   const CmdHelp HELP_REGISTRY[] PROGMEM = {
@@ -180,6 +180,7 @@ constexpr size_t CMD_BUFFER_SIZE = 64;      // serial command buffer length
 // Buffer for accumulating one incoming command line.
 static char cmdBuf[CMD_BUFFER_SIZE];
 static uint8_t cmdIdx = 0;
+static bool cmdOverflowed = false;
 static char lineBuf[CSV_LINE_MAX];
 static bool headerPending = false;
 
@@ -188,6 +189,13 @@ void processSerialCommands() {
     char c = CMD_SERIAL.read();
     if (c == '\r') continue;
     if (c == '\n') {
+      if (cmdOverflowed) {
+        CMD_SERIAL.println(F("ERROR: command too long"));
+        sendStatus(StatusCode::InvalidValue, "command too long");
+        cmdIdx = 0;
+        cmdOverflowed = false;
+        continue;
+      }
       cmdBuf[cmdIdx] = '\0';
       char *save;
       char *token = strtok_r(cmdBuf, " ", &save);
@@ -210,18 +218,24 @@ void processSerialCommands() {
           if (!sub) {
             CMD_SERIAL.println(F("ERROR: emit requires subcommand"));
             sendStatus(StatusCode::InvalidParam, "emit requires subcommand");
-          } else if (!equalsIgnoreCaseAscii(sub, CMD_EMIT_META)) {
+          } else if (!equalsIgnoreCaseAscii(sub, CMD_EMIT_META) &&
+                     !equalsIgnoreCaseAscii(sub, CMD_EMIT_STARTUP)) {
             CMD_SERIAL.print(F("ERROR: unknown emit subcommand: "));
             CMD_SERIAL.println(sub);
             sendStatus(StatusCode::UnknownCommand, sub);
           } else {
             char *extra = strtok_r(NULL, " ", &save);
             if (extra) {
-              CMD_SERIAL.println(F("ERROR: emit meta takes no arguments"));
-              sendStatus(StatusCode::InvalidParam, "emit meta takes no arguments");
+              CMD_SERIAL.println(F("ERROR: emit <meta|startup> takes no arguments"));
+              sendStatus(StatusCode::InvalidParam, "emit <meta|startup> takes no arguments");
             } else {
-              sendStatus(StatusCode::Ok, STS_EMIT_META);
-              emitMetadataNow();
+              sendStatus(StatusCode::Ok,
+                         equalsIgnoreCaseAscii(sub, CMD_EMIT_META) ? STS_EMIT_META : STS_EMIT_STARTUP);
+              if (equalsIgnoreCaseAscii(sub, CMD_EMIT_META)) {
+                emitMetadataNow();
+              } else {
+                emitStartupNow();
+              }
             }
           }
         } else {
@@ -230,8 +244,11 @@ void processSerialCommands() {
         }
       }
       cmdIdx = 0;
+      cmdOverflowed = false;
     } else if (cmdIdx < sizeof(cmdBuf)-1) {
       cmdBuf[cmdIdx++] = c;
+    } else {
+      cmdOverflowed = true;
     }
   }
 }
@@ -262,20 +279,13 @@ namespace {
 
 void queueCSVLine(const char* buf, int len) {
   if (len <= 0 || !buf) return;
+  if (len >= (int)CSV_LINE_MAX) return; // fail-closed: never emit truncated protocol lines
 
   static bool txInProgress = false;
   if (txInProgress) return;
   txInProgress = true;
 
-  int payloadLen = len;
-  if (payloadLen >= (int)CSV_LINE_MAX) {
-    payloadLen = (int)CSV_LINE_MAX - 1;
-  }
-
-  if (payloadLen < len) {
-    const size_t payloadLenBounded = strnlen(buf, (size_t)payloadLen);
-    payloadLen = (int)payloadLenBounded;
-  }
+  const int payloadLen = len;
 
   size_t writeLen = (size_t)payloadLen;
   size_t written = DATA_SERIAL.write((const uint8_t*)buf, writeLen);
@@ -310,6 +320,7 @@ void sendTaggedCsvLine(const char* tag, const char* text) {
   if (!text) text = "";
 
   int len = snprintf(lineBuf, CSV_LINE_MAX, "%s,%s\n", tag, text);
+  if (len <= 0 || len >= (int)CSV_LINE_MAX) return;
   queueCSVLine(lineBuf, len);
 }
 
@@ -341,16 +352,20 @@ void sendSample(const PendulumSample &s) {
 
 #if ENABLE_PENDULUM_ADJ_PROVENANCE
   int len = snprintf(lineBuf, CSV_LINE_MAX,
-    "%s,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%u,%lu,%lu,%lu,%u,%u,%lu\n",
+    "%s,%lu,%lu,%lu,%lu,%lu,%u,%lu,%lu,%lu,%lu,%lu,%u,%lu,%lu,%u,%lu,%lu,%lu,%u,%u,%lu\n",
     TAG_SMP,
     (unsigned long)s.tick,
     (unsigned long)s.tick_adj,
     (unsigned long)s.tick_block,
     (unsigned long)s.tick_block_adj,
+    (unsigned long)s.tick_total_adj_direct,
+    (unsigned int)s.tick_total_adj_diag,
     (unsigned long)s.tock,
     (unsigned long)s.tock_adj,
     (unsigned long)s.tock_block,
     (unsigned long)s.tock_block_adj,
+    (unsigned long)s.tock_total_adj_direct,
+    (unsigned int)s.tock_total_adj_diag,
     (unsigned long)s.f_inst_hz,
     (unsigned long)s.f_hat_hz,
     (unsigned int)s.gps_status,
@@ -362,16 +377,20 @@ void sendSample(const PendulumSample &s) {
     (unsigned long)s.pps_seq_row);
 #else
   int len = snprintf(lineBuf, CSV_LINE_MAX,
-    "%s,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%u,%lu,%lu,%lu,%u,%u\n",
+    "%s,%lu,%lu,%lu,%lu,%lu,%u,%lu,%lu,%lu,%lu,%lu,%u,%lu,%lu,%u,%lu,%lu,%lu,%u,%u\n",
     TAG_SMP,
     (unsigned long)s.tick,
     (unsigned long)s.tick_adj,
     (unsigned long)s.tick_block,
     (unsigned long)s.tick_block_adj,
+    (unsigned long)s.tick_total_adj_direct,
+    (unsigned int)s.tick_total_adj_diag,
     (unsigned long)s.tock,
     (unsigned long)s.tock_adj,
     (unsigned long)s.tock_block,
     (unsigned long)s.tock_block_adj,
+    (unsigned long)s.tock_total_adj_direct,
+    (unsigned int)s.tock_total_adj_diag,
     (unsigned long)s.f_inst_hz,
     (unsigned long)s.f_hat_hz,
     (unsigned int)s.gps_status,
@@ -381,5 +400,6 @@ void sendSample(const PendulumSample &s) {
     (unsigned int)s.dropped_events,
     (unsigned int)s.adj_diag);
 #endif
+  if (len <= 0 || len >= (int)CSV_LINE_MAX) return;
   queueCSVLine(lineBuf, len);
 }
