@@ -29,6 +29,8 @@ static_assert(CAPTURE_EDGE_BUFFER_SIZE > 0U &&
                   (CAPTURE_EDGE_BUFFER_SIZE & (CAPTURE_EDGE_BUFFER_SIZE - 1U)) == 0U,
               "CAPTURE_EDGE_BUFFER_SIZE must be a non-zero power-of-two for mask arithmetic");
 static_assert((CAPTURE_PPS_RING_SIZE & (CAPTURE_PPS_RING_SIZE - 1U)) == 0U, "CAPTURE_PPS_RING_SIZE must be power-of-two for mask arithmetic");
+static_assert(sizeof(evbuf) <= 512U, "Edge-event ring exceeds SRAM guardrail");
+static_assert(sizeof(ppsBuffer) <= 256U, "PPS ring exceeds SRAM guardrail");
 
 namespace {
 
@@ -470,8 +472,10 @@ Useful nearby, real fields/counters in the current codebase:
   - `PPS_BASE` fields `lg`, `ub`, `s`, `v`, `c` -> lock/unlock/state/validity/class
     context for the same PPS sample.
   - `capturePpsSeen()` / `pps_seen` -> how many PPS captures reached the ring.
-  - `captureDroppedEvents()` / `droppedEvents` -> ring-pressure symptom that can
-    indirectly indicate service-load issues.
+  - `captureDroppedEvents()` / `droppedEvents` -> capture-ring pressure symptom.
+    This does not include formatter/emit-side drops; correlate with serial STS
+    counters (`serial_diag`: `fmt_acq_fail`, `queue_reject`, `tx_reentry_drop`)
+    to separate capture loss from outbound telemetry congestion.
   - `coherentOvfFlagSeenCount` and `coherentOvfAppliedCount` -> internal counters
     in `tcb0_now_coherent_isr_only()` that track overflow-adjacent coherent reads.
 

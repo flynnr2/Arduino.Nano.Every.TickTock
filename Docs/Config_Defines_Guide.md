@@ -32,11 +32,21 @@ Constraints enforced by `Config.h`:
 
 ## Optional telemetry / diagnostics surface
 
+### `ENABLE_PROFILING` (default: `1`)
+Performance/telemetry profile selector:
+- `1`: diagnostics-first profile (richer optional telemetry defaults)
+- `0`: lower-overhead profile (leaner optional telemetry defaults)
+
 ### `PPS_TUNING_TELEMETRY` (default: `1`)
 Enables optional tuning telemetry record families:
 - `TUNE_CFG`
 - `TUNE_WIN`
 - `TUNE_EVT`
+
+Default is profile-dependent: `0` when `ENABLE_PROFILING=0`, else `1`.
+
+### `PPS_TUNE_WIN_SIZE` (default: `24U`)
+Window length used by PPS tuning telemetry workspace/ring statistics.
 
 ### `ENABLE_PPS_BASELINE_TELEMETRY` (default: `1`)
 Enables optional compact PPS-only baseline telemetry (`PPS_BASE`).
@@ -44,14 +54,21 @@ Enables optional compact PPS-only baseline telemetry (`PPS_BASE`).
 ### `ENABLE_CLOCK_DIAG_STS` (default: `1`)
 Enables optional boot clock-diagnostic `STS` records.
 
-### `ENABLE_PENDULUM_ADJ_PROVENANCE` (default: `1`)
-Adds compact PPS-adjustment provenance in sample output (`pps_seq_row` in `HDR`/`SMP`).
-
 ### `ENABLE_MEMORY_LOW_WATER_WARN_STS` (default: `1`)
 Enables one-time low-SRAM warning telemetry (`mem_warn`) when free SRAM drops below threshold.
 
 ### `ENABLE_MEMORY_TELEMETRY_STS` (default: `1`)
 Enables periodic and boot memory telemetry (`mem`) and low-water tracking.
+
+Default is profile-dependent: `0` when `ENABLE_PROFILING=0`, else `1`.
+
+### `SAMPLE_DIAGNOSTIC_DETAIL` (default: `2` when profiling on / `1` when profiling off)
+Sample emission detail policy:
+- `2` (`full`): emit all per-row provenance fields
+- `1` (`reduced`): preserve schema width but zero higher-cost/low-frequency provenance fields
+
+Implementation note:
+- Sample formatting must avoid `%llu`/`printf`-style 64-bit specifier dependence on AVR toolchains; use explicit integer-to-decimal rendering for `uint64_t` fields in `SMP` output paths.
 
 ### `MEMORY_LOW_WATER_WARN_BYTES` (default: `256U`)
 Low-SRAM threshold (bytes) used by `ENABLE_MEMORY_LOW_WATER_WARN_STS`.
@@ -59,13 +76,26 @@ Low-SRAM threshold (bytes) used by `ENABLE_MEMORY_LOW_WATER_WARN_STS`.
 ### `MEMORY_TELEMETRY_PERIOD_MS` (default: `5000UL`)
 Periodic memory telemetry emission cadence in milliseconds.
 
+Default is profile-dependent: `10000UL` when `ENABLE_PROFILING=0`, else `5000UL`.
+
 ## Serial/IO behavior
+
+### `CLI_ALLOW_MUTATIONS` (default: `1`)
+Controls mutating CLI commands:
+- `1`: `set` and `reset defaults` are enabled
+- `0`: command surface is read-only for mutation operations (`help`, `get`, and `emit` remain available)
 
 ### `ENABLE_PERIODIC_FLUSH` (default: `0`)
 If enabled, main loop periodically flushes `DATA_SERIAL`.
 
 ### `FLUSH_PERIOD_MS` (default: `250UL`)
 Flush interval in milliseconds when periodic flush is enabled.
+
+### `ENABLE_PERIODIC_SERIAL_DIAG_STS` (default: `0`)
+Enables periodic serial diagnostics summary records.
+
+### `SERIAL_DIAG_PERIOD_MS` (default: `5000UL`)
+Periodic cadence for serial diagnostics when `ENABLE_PERIODIC_SERIAL_DIAG_STS=1`.
 
 ### `LED_ACTIVITY_ENABLE` (default: `1`)
 Enables onboard LED activity indication after successful serial writes.
@@ -76,12 +106,30 @@ Power-of-two divider for LED activity toggling frequency.
 ### `STARTUP_SERIAL_SETTLE_MS` (default: `1200UL`)
 Startup delay (ms) after setup to let serial consumers attach before startup emission.
 
+## Foreground scheduling / fairness
+
+### `PPS_PROCESS_BUDGET_PER_LOOP` (default: `4U`)
+Maximum queued PPS captures processed per main-loop pass.
+Used to prevent PPS burst draining from starving other loop work.
+
+### `SWING_PROCESS_BUDGET_PER_LOOP` (default: `2U`)
+Maximum queued swing records processed per main-loop pass.
+Used to keep loop fairness under bursty edge-capture conditions.
+
 ## Build identity define
+
+### `FW_VERSION` (default: `"0.0.0-dev"`)
+Human-facing firmware release/version string emitted as `fw` in boot metadata (`STS build`) and configuration metadata (`STS cfg` + `CFG`).
 
 ### `GIT_SHA` (default: `"unknown"`)
 Build identity string injected into telemetry when not overridden by build tooling.
 
 ---
+
+## Versioning semantics
+
+- `fw` is for human release labeling and operational traceability.
+- `protocol_version`, `STS_SCHEMA_VERSION`, and `sample_schema` define wire-contract compatibility and parser expectations.
 
 ## Notes
 

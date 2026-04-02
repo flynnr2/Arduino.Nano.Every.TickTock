@@ -17,13 +17,13 @@ public:
   };
 
   struct SeedDiagnostics {
-    uint8_t startup_phase = 0;
-    uint8_t seed_count = 0;
-    uint32_t seed_candidate_ticks = 0;
+    uint32_t seed_candidate_ticks = 0; // [0, ~16,000,000] nominal PPS interval ticks
     uint16_t startup_near1x = 0;
     uint16_t startup_near2x = 0;
     uint16_t startup_resets = 0;
     uint16_t recovery_reseeds = 0;
+    uint8_t startup_phase = 0;         // [0, 1] startup seeding inactive/active
+    uint8_t seed_count = 0;            // [0, 255] bounded by startup/recovery seed policy
     RefSeedSource source = RefSeedSource::NONE;
   };
 

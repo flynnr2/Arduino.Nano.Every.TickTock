@@ -29,6 +29,26 @@ enum AdjDiagBits : uint8_t {
   ADJ_DIAG_MULTI_BOUNDARY      = 1U << 6,
 };
 
+// Per-component degradation packing for adj_comp_diag (12-bit payload in uint16_t):
+// component slot order: tick, tick_block, tock, tock_block.
+// each slot uses 3 bits:
+//   bit0: missing PPS scale
+//   bit1: degraded fallback used
+//   bit2: crossed more than one PPS boundary
+enum AdjComponentIndex : uint8_t {
+  ADJ_COMPONENT_TICK = 0,
+  ADJ_COMPONENT_TICK_BLOCK = 1,
+  ADJ_COMPONENT_TOCK = 2,
+  ADJ_COMPONENT_TOCK_BLOCK = 3,
+};
+
+static constexpr uint8_t ADJ_COMPONENT_DIAG_BITS_PER_COMPONENT = 3U;
+
+static inline uint16_t adjComponentDiagBit(uint8_t component_index, uint8_t bit_in_component) {
+  return static_cast<uint16_t>(1U)
+      << (component_index * ADJ_COMPONENT_DIAG_BITS_PER_COMPONENT + bit_in_component);
+}
+
 // Compact diagnostics for direct-composite half-swing adjustments:
 // tick_total_adj_direct / tock_total_adj_direct.
 enum DirectAdjDiagBits : uint8_t {
@@ -46,6 +66,7 @@ void ppsAdjustOnPpsFinalized(uint32_t prev_edge32,
                              uint32_t next_active_hz);
 
 bool ppsAdjustTagTick(uint32_t edge32, PpsTaggedStamp* out);
+bool ppsAdjustLookupSeq(uint32_t seq, uint32_t* span_ticks, uint32_t* applied_hz);
 bool ppsAdjustIntervalToNominal16Mhz(const PpsTaggedStamp& start,
                                      const PpsTaggedStamp& end,
                                      uint32_t raw_ticks,

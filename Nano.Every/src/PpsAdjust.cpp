@@ -6,6 +6,7 @@ struct PpsSpanEntry {
   uint32_t pps_seq;
   uint32_t start_tick32;
   uint32_t span_ticks;
+  uint32_t applied_hz;
   uint64_t scale_q32;
   uint8_t valid;
 };
@@ -25,6 +26,7 @@ uint32_t s_nominal_hz = (uint32_t)MAIN_CLOCK_HZ;
 uint32_t s_current_seq = 0;
 uint32_t s_current_start32 = 0;
 uint64_t s_current_scale_q32 = 0;
+uint32_t s_current_applied_hz = (uint32_t)MAIN_CLOCK_HZ;
 
 static inline uint8_t span_mask(uint8_t v) {
   return (uint8_t)(v & (kPpsSpanRingSize - 1U));
@@ -97,6 +99,20 @@ static bool span_ticks_for_seq(uint32_t seq, uint32_t* span_ticks) {
   return true;
 }
 
+static bool applied_hz_for_seq(uint32_t seq, uint32_t* applied_hz) {
+  if (seq == s_current_seq && s_primed) {
+    if (!applied_hz) return false;
+    *applied_hz = s_current_applied_hz;
+    return true;
+  }
+
+  PpsSpanEntry e{};
+  if (!find_span_by_seq(seq, &e)) return false;
+  if (!applied_hz) return false;
+  *applied_hz = e.applied_hz;
+  return true;
+}
+
 }  // namespace
 
 void ppsAdjustReset(uint32_t nominal_hz) {
@@ -107,6 +123,7 @@ void ppsAdjustReset(uint32_t nominal_hz) {
   s_current_seq = 0;
   s_current_start32 = 0;
   s_current_scale_q32 = hz_to_scale_q32(s_nominal_hz);
+  s_current_applied_hz = s_nominal_hz;
   for (uint8_t i = 0; i < kPpsSpanRingSize; ++i) {
     s_span_ring[i].valid = 0;
   }
@@ -116,7 +133,8 @@ void ppsAdjustOnPpsPrimed(uint32_t first_edge32, uint32_t active_hz) {
   s_primed = true;
   s_current_seq = 0;
   s_current_start32 = first_edge32;
-  s_current_scale_q32 = hz_to_scale_q32(active_hz);
+  s_current_applied_hz = active_hz ? active_hz : s_nominal_hz;
+  s_current_scale_q32 = hz_to_scale_q32(s_current_applied_hz);
 }
 
 void ppsAdjustOnPpsFinalized(uint32_t prev_edge32,
@@ -131,6 +149,7 @@ void ppsAdjustOnPpsFinalized(uint32_t prev_edge32,
   slot.pps_seq = s_current_seq;
   slot.start_tick32 = prev_edge32;
   slot.span_ticks = elapsed32(curr_edge32, prev_edge32);
+  slot.applied_hz = applied_hz_for_completed_second ? applied_hz_for_completed_second : s_nominal_hz;
   slot.scale_q32 = hz_to_scale_q32(applied_hz_for_completed_second);
   slot.valid = 1U;
   s_span_head = span_mask((uint8_t)(s_span_head + 1U));
@@ -138,12 +157,31 @@ void ppsAdjustOnPpsFinalized(uint32_t prev_edge32,
 
   s_current_seq++;
   s_current_start32 = curr_edge32;
-  s_current_scale_q32 = hz_to_scale_q32(next_active_hz);
+  s_current_applied_hz = next_active_hz ? next_active_hz : s_nominal_hz;
+  s_current_scale_q32 = hz_to_scale_q32(s_current_applied_hz);
 }
 
 bool ppsAdjustTagTick(uint32_t edge32, PpsTaggedStamp* out) {
   if (!out) return false;
   return find_span_by_tick(edge32, out);
+}
+
+bool ppsAdjustLookupSeq(uint32_t seq, uint32_t* span_ticks, uint32_t* applied_hz) {
+  bool any = false;
+  if (span_ticks) {
+    if (span_ticks_for_seq(seq, span_ticks)) {
+      any = true;
+    } else {
+      return false;
+    }
+  }
+  if (applied_hz) {
+    uint32_t hz = 0U;
+    if (!applied_hz_for_seq(seq, &hz)) return false;
+    *applied_hz = hz;
+    any = true;
+  }
+  return any;
 }
 
 bool ppsAdjustIntervalToNominal16Mhz(const PpsTaggedStamp& start,

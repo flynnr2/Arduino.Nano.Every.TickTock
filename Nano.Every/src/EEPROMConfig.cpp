@@ -46,9 +46,9 @@ static uint32_t newerSeqCounter(uint32_t a, uint32_t b) {
   return isSeqCounterNewer(b, a) ? b : a;
 }
 
-static bool readConfigAt(int addr, TunableConfig& out, bool& valid) {
+static bool readConfigAt(uint8_t addr, TunableConfig& out, bool& valid) {
   TunableConfig cfg = {};
-  EEPROM.get(addr, cfg);
+  EEPROM.get(static_cast<int>(addr), cfg);
   valid = (crcConfig(cfg) == cfg.crc16) && (configVersion(cfg) == EEPROM_CONFIG_VERSION_CURRENT);
   if (valid) {
     out = cfg;
@@ -107,7 +107,7 @@ void saveConfig(TunableConfig cfg) {
   static bool toggle = false;
   cfg.seq = packConfigSeq(++currentSeq, EEPROM_CONFIG_VERSION_CURRENT);
   cfg.crc16 = crcConfig(cfg);
-  int addr = toggle ? EEPROM_SLOT_NANO_A_ADDR : EEPROM_SLOT_NANO_B_ADDR;
-  EEPROM.put(addr, cfg);
+  const uint8_t addr = toggle ? EEPROM_SLOT_NANO_A_ADDR : EEPROM_SLOT_NANO_B_ADDR; // [0, 255] byte address in Nano Every EEPROM map.
+  EEPROM.put(static_cast<int>(addr), cfg);
   toggle = !toggle;
 }

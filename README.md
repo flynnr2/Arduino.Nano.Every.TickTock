@@ -43,7 +43,7 @@ Nano.Every/
     FreqDiscipliner.*    -> fast/slow estimates plus FREE_RUN/ACQUIRE/DISCIPLINED/HOLDOVER state
     DisciplinedTime.*    -> active ticks-per-second estimate used by host-side conversion
     PendulumCore.*       -> top-level orchestration and sample packaging
-    SerialParser.*       -> command parsing plus HDR/sample/STS emission
+    SerialParser.*       -> command parsing plus HDR_PART/sample/STS emission
     TunableRegistry.*    -> authoritative tunable metadata, parsing, validation, and EEPROM mapping
     TunableCommands.*    -> get/set/reset handlers built on the tunable registry
     TunablesRuntime.cpp  -> live tunable storage plus normalization helpers
@@ -62,7 +62,24 @@ Nano.Every/
 2. Select **Arduino Nano Every** as the board.
 3. Build and flash the sketch.
 4. Open the serial port at **115200 baud**.
-5. On boot the firmware emits boot metadata (`STS,...` plus `CFG,...`) and one `HDR,...` sample header line.
+5. On boot the firmware emits boot metadata (`STS,...` plus `CFG,...`) and a segmented sample header declaration (`HDR_PART,...` sequence).
+
+### Raw serial capture and schema-width verification
+
+Use raw file logging (not an interactive serial monitor) when validating long CSV rows:
+
+```bash
+python3 scripts/capture_serial_raw.py --port /dev/ttyACM0 --baud 115200 --output logs/session.raw --tee-text
+```
+
+Then verify the latest complete `HDR_PART` sequence and enforce exact `SMP` field count with a minimum consecutive run before analysis:
+
+```bash
+python3 scripts/verify_smp_schema.py logs/session.raw --min-consecutive-smp 1000
+```
+
+The verifier rejects runs where `SMP` rows are shorter (or otherwise different width) than the schema declared by the latest complete `HDR_PART` sequence.
+
 6. Type `help` to inspect the retained CLI surface.
 
 ## Reproducible Build / Test Notes
@@ -79,13 +96,14 @@ arduino-cli compile \
 Suggested verification workflow after a firmware change:
 
 1. Run the compile command above and archive the emitted binary plus a short boot log.
-2. Verify the runtime CLI still responds as expected (`help`, representative `get`, representative `set`, and `reset defaults` when appropriate).
-3. If hardware is attached, confirm the boot log contains the retained `STS` records, one `CFG` line, one `HDR` line, and raw-cycle sample rows.
-4. When changing the operator-facing serial contract, update this README and `Docs/IMPLEMENTATION.md` in the same change.
+2. Run `python3 scripts/check_protocol_docs.py` to ensure protocol docs still match the wire-contract constants.
+3. Verify the runtime CLI still responds as expected (`help`, representative `get`, representative `set`, and `reset defaults` when appropriate).
+4. If hardware is attached, confirm the boot log contains the retained `STS` records, one `CFG` line, one complete `HDR_PART` sequence, and raw-cycle sample rows.
+5. When changing the operator-facing serial contract, update this README and `Docs/IMPLEMENTATION.md` in the same change.
 
 For the dedicated external-main-clock validation workflow, see `Docs/external_clock_test_plan.md`.
 
-For a field-by-field guide to `CFG`/`HDR`/`SMP` records and analysis interpretation, see `Docs/Pendulum_Data_Record_Guide.md`.
+For a field-by-field guide to `CFG`/`HDR_PART`/`SMP` records and analysis interpretation, see `Docs/Pendulum_Data_Record_Guide.md`.
 
 ---
 
@@ -94,8 +112,8 @@ For a field-by-field guide to `CFG`/`HDR`/`SMP` records and analysis interpretat
 The firmware uses one serial stream for four line families:
 
 - `CFG` - session/config metadata for host recovery
-- `HDR` - names the sample columns currently emitted by the device
-- `SMP` - raw-cycle sample rows matching the latest `HDR`
+- `HDR_PART` - segmented declaration of sample columns currently emitted by the device
+- `SMP` - raw-cycle sample rows matching the latest complete `HDR_PART` sequence
 - `STS` - compact boot, configuration, and optional PPS telemetry
 
 ### Retained CLI Surface
@@ -108,14 +126,15 @@ The command parser exposes the core tuning commands:
 - `get <param>` - print the current value of one tunable
 - `set <param> <value>` - update a tunable, normalize dependent values, emit optional tuning telemetry, and save to EEPROM
 - `reset defaults` - restore the firmware's compiled defaults to the live tunables, reset runtime PPS state, and rewrite EEPROM without consulting the old EEPROM contents
-- `emit meta` - emit `STS` metadata snapshots plus `CFG`/`HDR` immediately on demand
+- `emit meta` - emit `STS` metadata snapshots plus `CFG` and the segmented header declaration (`HDR_PART`) immediately on demand
+- `emit startup` - replay startup boot/config records (`STS`, `CFG`, and header declaration) without rebooting
 
 ### Retained STS Records
 
 The reduced firmware keeps these `STS,PROGRESS_UPDATE,...` payload families:
 
 - `rstfr` - reset-cause snapshot from `RSTCTRL.RSTFR`
-- `build` - build identity (`git`, dirty bit, UTC, board, MCU, clock, baud)
+- `build` - build identity (`git`, dirty bit, UTC, `fw`, board, MCU, clock, baud)
 - `schema` - serial contract versions (`sts`, sample schema, EEPROM schema)
 - `flags` - supported compile-time runtime modes compiled into the image
 - `mem` - SRAM telemetry (`free_now`, retained `free_min`, `phase=boot|periodic`), with `free_min` tracked from continuous loop sampling and emitted at boot + periodic cadence
@@ -123,7 +142,7 @@ The reduced firmware keeps these `STS,PROGRESS_UPDATE,...` payload families:
   - line 1: `ppsFastShift`, `ppsSlowShift`, `ppsBlendLoPpm`, `ppsBlendHiPpm`, `ppsLockRppm`
   - line 2: `ppsLockMadTicks`, `ppsUnlockRppm`, `ppsUnlockMadTicks`, `ppsLockCount`, `ppsUnlockCount`
   - line 3: `ppsHoldoverMs`, `ppsStaleMs`, `ppsIsrStaleMs`, `ppsCfgReemitDelayMs`, `ppsAcquireMinMs`
-- `cfg` - explicit sample-stream metadata (`nominal_hz`, `sample_tag`, `sample_schema`)
+- `cfg` - explicit sample-stream metadata (`protocol_version`, `nominal_hz`, `sample_tag`, `sample_schema`, `adj_semantics_version`, `hdr_mode`, `fw`)
 - `pps_cfg` - PPS validator/reference thresholds
 - `pps_freshness` - names the two stale-PPS freshness tunables (`ppsStaleMs`, `ppsIsrStaleMs`)
 
@@ -135,19 +154,25 @@ Optional families remain available behind intentional compile-time flags:
 
 ### Raw-Cycle-Only Sample Format
 
-The Nano emits a single raw-cycle sample schema:
+The Nano emits one active raw-cycle sample schema (`raw_cycles_hz_v6`).
+The wire-contract source of truth is `Nano.Every/src/PendulumProtocol.h`:
+- `SAMPLE_SCHEMA_ID` defines the active schema id.
+- `SAMPLE_SCHEMA` defines the authoritative reconstructed sample field order.
+- `ADJ_SEMANTICS_VERSION` defines adjusted-field interpretation/versioning.
 
 | Tag family | Fields |
 |------------|--------|
-| `CFG`      | `nominal_hz=<ticks/sec>,sample_tag=SMP,sample_schema=raw_cycles_hz_v4` |
-| `HDR`      | `tick`, `tick_adj`, `tick_block`, `tick_block_adj`, `tick_total_adj_direct`, `tick_total_adj_diag`, `tock`, `tock_adj`, `tock_block`, `tock_block_adj`, `tock_total_adj_direct`, `tock_total_adj_diag`, `f_inst_hz`, `f_hat_hz`, `gps_status`, `holdover_age_ms`, `r_ppm`, `j_ticks`, `dropped`, `adj_diag` (plus optional `pps_seq_row`) |
-| `SMP`      | values for the fields named by the latest `HDR` line |
+| `CFG`      | `protocol_version=1,nominal_hz=<ticks/sec>,sample_tag=SMP,sample_schema=raw_cycles_hz_v6,adj_semantics_version=2,hdr_mode=segmented_v1,fw=<human_version>` |
+| `HDR_PART` | segmented literal columns from `SAMPLE_SCHEMA_HDR_PARTS` in `PendulumProtocol.h` |
+| `SMP`      | values for the fields named by the latest complete `HDR_PART` sequence |
+
+Parser rule of thumb: `HDR_PART` is transport/readability segmentation, while canonical `SMP` field serialization is defined by `SAMPLE_SCHEMA` / `CsvField` in `PendulumProtocol.h`. Persist `sample_schema`, `adj_semantics_version`, and `hdr_mode` with each run so host logic can apply version-correct interpretation.
 
 Field meanings:
 
 - `tick` / `tock` - unblocked pendulum half-swing durations in raw TCB0 cycles
 - `tick_block` / `tock_block` - beam-block durations in raw TCB0 cycles
-- `tick_adj` / `tock_adj` / `tick_block_adj` / `tock_block_adj` - authoritative PPS-adjusted durations in nominal 16 MHz-equivalent ticks, computed by splitting each interval by PPS-second segments touched
+- `tick_adj` / `tock_adj` / `tick_block_adj` / `tock_block_adj` - authoritative PPS-adjusted component/sub-interval durations in nominal-clock-equivalent ticks (`nominal_hz` from `CFG`)
 - `tick_total_adj_direct` / `tock_total_adj_direct` - authoritative direct PPS-adjusted full half-swing intervals (preferred period-level observables)
 - `tick_total_adj_diag` / `tock_total_adj_diag` - direct-composite diagnostics bitmask (`bit0=crossed PPS`, `bit1=missing PPS scale`, `bit2=degraded fallback`, `bit3=crossed >1 PPS boundary`)
 - `f_inst_hz` - latest PPS interval estimate in ticks per second
@@ -158,19 +183,22 @@ Field meanings:
 - `j_ticks` - robust jitter metric as MAD residual ticks
 - `dropped` - cumulative lost IR/PPS events due to ring overflow
 - `adj_diag` - compact adjustment diagnostics bitmask (`bit0=tick crossed PPS`, `bit1=tick_block crossed`, `bit2=tock crossed`, `bit3=tock_block crossed`, `bit4=missing PPS scale`, `bit5=degraded fallback`, `bit6=crossed >1 PPS boundary`)
-- `pps_seq_row` (when `ENABLE_PENDULUM_ADJ_PROVENANCE=1`) - PPS sequence for the row’s final interval closure (`ENABLE_PENDULUM_ADJ_PROVENANCE` defaults to `0` in constrained-memory builds)
+- `adj_comp_diag` - packed per-component degradation flags for `tick`, `tick_block`, `tock`, `tock_block` (3 bits per slot: missing/degraded/multi-boundary)
+- `pps_seq_row` - PPS sequence for the row’s final interval closure
 
 Example:
 
 ```text
-STS,PROGRESS_UPDATE,schema,sts=1,sample=raw_cycles_hz_v4,eeprom=4
-STS,PROGRESS_UPDATE,cfg,nominal_hz=16000000,sample_tag=SMP,sample_schema=raw_cycles_hz_v4
-CFG,nominal_hz=16000000,sample_tag=SMP,sample_schema=raw_cycles_hz_v4
-HDR,tick,tick_adj,tick_block,tick_block_adj,tick_total_adj_direct,tick_total_adj_diag,tock,tock_adj,tock_block,tock_block_adj,tock_total_adj_direct,tock_total_adj_diag,f_inst_hz,f_hat_hz,gps_status,holdover_age_ms,r_ppm,j_ticks,dropped,adj_diag,pps_seq_row
-SMP,7872371,7872380,20105,20106,7892486,0,7871904,7871914,19968,19969,7891883,0,15999978,15999984,2,0,3,1,0,0,12345
+STS,PROGRESS_UPDATE,schema,sts=4,sample=raw_cycles_hz_v6,eeprom=4,adj_semantics_version=2,hdr_mode=segmented_v1
+STS,PROGRESS_UPDATE,cfg,protocol_version=1,nominal_hz=16000000,sample_tag=SMP,sample_schema=raw_cycles_hz_v6,adj_semantics_version=2,hdr_mode=segmented_v1,fw=0.0.0-dev
+CFG,protocol_version=1,nominal_hz=16000000,sample_tag=SMP,sample_schema=raw_cycles_hz_v6,adj_semantics_version=2,hdr_mode=segmented_v1,fw=0.0.0-dev
+HDR_PART,1,4,tick,tick_start_tag,tick_end_tag,tick_block,tick_block_start_tag,tick_block_end_tag,tock,tock_start_tag,tock_end_tag,tock_block,tock_block_start_tag,tock_block_end_tag
+HDR_PART,2,4,tick_adj,tick_block_adj,tock_adj,tock_block_adj
+HDR_PART,3,4,tick_total_adj_direct,tick_total_adj_diag,tick_total_start_tag,tick_total_end_tag,tock_total_adj_direct,tock_total_adj_diag,tock_total_start_tag,tock_total_end_tag
+HDR_PART,4,4,f_inst_hz,f_hat_hz,gps_status,holdover_age_ms,r_ppm,j_ticks,dropped,adj_diag,adj_comp_diag,pps_seq_row
 ```
 
-Raw fields remain capture source truth. Adjusted `*_adj` fields are the authoritative best-available PPS-corrected intervals for end-user analysis; `f_hat_hz` remains row context/diagnostics.
+Raw fields remain capture source truth. Component `*_adj` fields are authoritative for sub-interval analysis, while `*_total_adj_direct` fields are authoritative for full half-swing/period analysis (`adj_semantics_version` declares this split); `f_hat_hz` remains row context/diagnostics.
 
 ---
 
@@ -225,6 +253,8 @@ EEPROM note: schema version 4 persists only the active PPS tunables. Older saved
 
 The supported compile-time flags are:
 
+For a define-by-define reference (defaults, constraints, and behavior), see `Docs/Config_Defines_Guide.md`.
+
 - `MAIN_CLOCK_HZ` - semantic firmware main clock rate used by runtime math and telemetry; must match `F_CPU`
 - `USE_EXTCLK_MAIN` - on ATmega4809/Nano Every, perform a one-shot boot-time handoff to driven `EXTCLK` on **D2 / PA0**
 - `USE_ARDUINO_TIMEBASE` - switch `PlatformTime` to Arduino `millis()` / `delay()` instead of the TCB0-derived clock
@@ -236,6 +266,11 @@ The supported compile-time flags are:
 - `ENABLE_MEMORY_LOW_WATER_WARN_STS` / `MEMORY_LOW_WATER_WARN_BYTES` - optional one-time `mem_warn` low-SRAM warning controls
 - `ENABLE_PERIODIC_FLUSH` / `FLUSH_PERIOD_MS` - enable and tune periodic serial flushing
 - `LED_ACTIVITY_ENABLE` / `LED_ACTIVITY_DIV` - toggle the onboard LED after successful serial writes
+- `FW_VERSION` - human-oriented firmware release/version string emitted as `fw` metadata in `STS build` and `STS/CFG cfg`
+
+Versioning semantics:
+- `fw` is a human release identifier for operators/tooling logs
+- `protocol_version`, `STS_SCHEMA_VERSION`, and `sample_schema` remain wire-contract compatibility identifiers
 - `GIT_SHA`, `BUILD_UTC`, `BUILD_DIRTY` - build metadata injected into boot telemetry
 
 ### External main clock (`USE_EXTCLK_MAIN`)

@@ -13,6 +13,7 @@ void emitStatusTunables();
 void emitStatusPpsConfig();
 void emitStatusSampleConfig();
 void emitStatusClockDiagnostics();
+void emitStatusSerialDiagnostics();
 void emitPpsTuningConfigSnapshot();
 void setBootSequenceForTelemetry(uint16_t bootSeq);
 uint16_t getBootSequenceForTelemetry();

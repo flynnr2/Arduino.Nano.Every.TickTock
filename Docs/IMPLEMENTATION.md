@@ -27,7 +27,7 @@ Those four values are assembled into `FullSwing` records on the same 32-bit TCB0
 
 ### Runtime control, telemetry, and persistence
 
-- **`SerialParser.*`** owns command tokenization, `HDR` emission, raw-cycle sample emission, and generic `STS` framing.
+- **`SerialParser.*`** owns command tokenization, segmented `HDR_PART` emission, raw-cycle sample emission, and generic `STS` framing.
 - **`TunableRegistry.*`** is the single source of truth for tunable names, parsing, validation, EEPROM mapping, and runtime help text.
 - **`TunableCommands.*`** wires `get` / `set` / `reset defaults` commands to the registry.
 - **`TunablesRuntime.cpp`** stores live tunable values and normalizes dependent settings.
@@ -112,11 +112,15 @@ In the main loop, `PendulumCore::process_pps()` then:
 
 The retained sample contract is:
 
-- `CFG,nominal_hz=<ticks/sec>,sample_tag=SMP,sample_schema=raw_cycles_hz_v4`
-- `HDR,tick,tick_adj,tick_block,tick_block_adj,tick_total_adj_direct,tick_total_adj_diag,tock,tock_adj,tock_block,tock_block_adj,tock_total_adj_direct,tock_total_adj_diag,f_inst_hz,f_hat_hz,gps_status,holdover_age_ms,r_ppm,j_ticks,dropped,adj_diag[,pps_seq_row]`
+- `CFG,protocol_version=1,nominal_hz=<ticks/sec>,sample_tag=SMP,sample_schema=raw_cycles_hz_v6,adj_semantics_version=<n>,fw=<version>`
+- `HDR_PART,<part_index>,<part_count>,...` segmented schema declaration (always enabled)
 - `SMP,...` rows carrying values for exactly those columns
 
 Raw fields remain capture source truth. Component `*_adj` fields are authoritative PPS-aware sub-interval corrections. `*_total_adj_direct` fields are authoritative PPS-aware full half-swing corrections. `f_hat_hz` remains row-level context and must not be interpreted as a universal per-interval correction factor when exact adjusted fields are present.
+
+`adj_semantics_version` is the explicit wire contract for that authority split and diagnostic-family interpretation.
+
+Parser compatibility rule: `HDR_PART` payloads are segmented readability groups, but canonical `SMP` serialization order is `SAMPLE_SCHEMA` / `CsvField` in `PendulumProtocol.h`. Persist `sample_schema`, `adj_semantics_version`, and `hdr_mode` from `cfg`/`CFG` metadata before interpreting row values.
 
 ## Serial Commands and Telemetry
 
@@ -130,8 +134,13 @@ Raw fields remain capture source truth. Component `*_adj` fields are authoritati
 - `set <param> <value>`
 - `reset defaults`
 - `emit meta`
+- `emit startup`
 
 There is no separate metrics/debug command surface in the reduced firmware.
+
+When `CLI_ALLOW_MUTATIONS=0`, the parser remains readable but mutating commands are blocked:
+- allowed: `help`, `get`, `emit`
+- blocked: `set`, `reset defaults` (returns explicit invalid-param status)
 
 ### Tunable handling
 
@@ -171,10 +180,24 @@ Optional families compiled in only when explicitly enabled:
 - `flags` advertises which intentional compile-time runtime modes were compiled in
 - `mem` reports `free_now`, retained low-water `free_min`, and `phase` (`boot` at startup, `periodic` thereafter at `MEMORY_TELEMETRY_PERIOD_MS`); sampling updates continuously in `pendulumLoop()` to preserve a runtime watermark between emissions
 - the three tunables snapshot lines summarize retained tunables as `param,value` pairs
-- `cfg` publishes `nominal_hz`, the active sample row tag, and the sample schema name for host recovery
-- `CFG` mirrors that sample-stream metadata as a top-level line-tagged record for host recovery
+- `schema` also publishes `adj_semantics_version` so host parsers can bind adjusted-field meaning before row parsing
+- `cfg` publishes `nominal_hz`, the active sample row tag, the sample schema name, and `adj_semantics_version` for host recovery
+- `CFG` mirrors that sample-stream metadata as a top-level line-tagged record for host recovery, including `adj_semantics_version`
 - `pps_cfg` publishes PPS validator acceptance windows and seeding thresholds
 - `pps_freshness` documents the meaning of `ppsStaleMs` vs `ppsIsrStaleMs`
+- `serial_diag` (when emitted) includes both aggregate and required-only emission-drop counters (`fmt_acq_fail_required`, `required_drop`) to make best-effort vs required telemetry loss visible
+
+### Adjusted semantics authority and bump policy
+
+- Authority split:
+  - component `*_adj` fields are authoritative for component/sub-interval analysis
+  - direct-total `*_total_adj_direct` fields are authoritative for full half-swing/period analysis
+- Diagnostic split:
+  - `adj_diag` applies to component adjusted fields only
+  - `adj_comp_diag` encodes per-component degradation (`missing/degraded/multi`) for `tick`, `tick_block`, `tock`, `tock_block`
+  - `*_total_adj_diag` applies to direct-total adjusted fields only
+- Versioning rule:
+  - increment `adj_semantics_version` whenever authority meaning or diagnostic interpretation changes, even if all field names stay the same.
 
 ## Configuration and Persistence
 
@@ -186,6 +209,7 @@ Optional families compiled in only when explicitly enabled:
 - optional telemetry (`PPS_TUNING_TELEMETRY`, `ENABLE_PPS_BASELINE_TELEMETRY`)
 - memory telemetry controls (`ENABLE_MEMORY_TELEMETRY_STS`, `MEMORY_TELEMETRY_PERIOD_MS`, optional `ENABLE_MEMORY_LOW_WATER_WARN_STS` / `MEMORY_LOW_WATER_WARN_BYTES`)
 - serial behavior (`ENABLE_PERIODIC_FLUSH`, `FLUSH_PERIOD_MS`, `LED_ACTIVITY_ENABLE`, `LED_ACTIVITY_DIV`)
+- command mutability (`CLI_ALLOW_MUTATIONS`, where `0` locks `set`/`reset defaults`)
 - build metadata (`GIT_SHA`, `BUILD_UTC`, `BUILD_DIRTY`)
 
 Historical compile-time leftovers for deleted coherent-now checks and unused fixed-point conversion paths have been removed.

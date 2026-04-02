@@ -6,11 +6,8 @@
 
 // Short-term roadmap items are tracked in Docs/TODO.md.
 
-#include "src/EEPROMConfig.h"
 #include "src/ClockSource.h"
-#include "src/PendulumProtocol.h"
 #include "src/PendulumCore.h"
-#include "src/SerialParser.h"
 #include "src/PlatformTime.h"
 
 void setup() {

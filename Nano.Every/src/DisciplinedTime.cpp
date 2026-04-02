@@ -37,13 +37,21 @@ uint32_t DisciplinedTime::ticksPerSecond() const {
   return f_hat_ ? f_hat_ : f_cpu_nominal_;
 }
 
-double DisciplinedTime::ticksToSeconds(uint32_t dt_ticks) const {
-  return (double)dt_ticks / (double)ticksPerSecond();
+uint32_t DisciplinedTime::ticksToMillis(uint32_t dt_ticks) const {
+  const uint32_t tps = ticksPerSecond();
+  if (tps == 0U) return 0U;
+  const uint64_t scaled = (uint64_t)dt_ticks * 1000ULL;
+  return (uint32_t)((scaled + (uint64_t)(tps / 2U)) / (uint64_t)tps);
 }
 
-double DisciplinedTime::ticksToPpm(uint32_t dt_ticks, double nominal_period_s) const {
-  const double sec = ticksToSeconds(dt_ticks);
-  return 1000000.0 * ((sec / nominal_period_s) - 1.0);
+int32_t DisciplinedTime::ticksToPpmX1000(uint32_t dt_ticks, uint32_t nominal_period_ticks) const {
+  if (nominal_period_ticks == 0U) return 0;
+  const int64_t delta_ticks = (int64_t)dt_ticks - (int64_t)nominal_period_ticks;
+  const int64_t scaled = delta_ticks * 1000000000LL;
+  const int64_t ppm_x1000 = scaled / (int64_t)nominal_period_ticks;
+  if (ppm_x1000 > INT32_MAX) return INT32_MAX;
+  if (ppm_x1000 < INT32_MIN) return INT32_MIN;
+  return (int32_t)ppm_x1000;
 }
 
 DisciplinedTime::Quality DisciplinedTime::timeQuality() const {

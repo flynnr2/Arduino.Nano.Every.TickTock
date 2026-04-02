@@ -7,7 +7,6 @@
 
 enum class TunableCliType : uint8_t {
   Unsigned,
-  Float,
   Enum,
 };
 

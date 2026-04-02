@@ -2,6 +2,8 @@
 
 #include <Arduino.h>
 
+/******************************************************************************/
+// Timebase configuration
 #ifndef USE_ARDUINO_TIMEBASE
 #define USE_ARDUINO_TIMEBASE 0
 #endif
@@ -42,37 +44,78 @@ static_assert(static_cast<uint32_t>(MAIN_CLOCK_HZ) == static_cast<uint32_t>(F_CP
 #if (USE_ARDUINO_TIMEBASE == 1) && (DISABLE_ARDUINO_TCB3_TIMEBASE == 1)
 #error "Cannot disable Arduino TCB3 timebase while USE_ARDUINO_TIMEBASE=1"
 #endif
+/******************************************************************************/
+
+/******************************************************************************/
+// Performance profile:
+// - 0: off (lower periodic overhead, lower optional telemetry volume)
+// - 1: on (diagnostics-first, richer telemetry)
+#ifndef ENABLE_PROFILING
+#define ENABLE_PROFILING 1
+#endif
+
+#if ((ENABLE_PROFILING) != 0) && ((ENABLE_PROFILING) != 1)
+#error "ENABLE_PROFILING must be 0 (off) or 1 (on)"
+#endif
 
 #ifndef PPS_TUNING_TELEMETRY
-#define PPS_TUNING_TELEMETRY 1 // emit optional TUNE_CFG/TUNE_WIN/TUNE_EVT STS records
+#define PPS_TUNING_TELEMETRY ((ENABLE_PROFILING == 0) ? 0 : 1) // emit optional TUNE_CFG/TUNE_WIN/TUNE_EVT STS records
+#endif
+
+#ifndef PPS_TUNE_WIN_SIZE
+#define PPS_TUNE_WIN_SIZE 24U // measured minimum PPS tuning window that keeps p95 telemetry stable while limiting static SRAM use
 #endif
 
 #ifndef ENABLE_PPS_BASELINE_TELEMETRY
-#define ENABLE_PPS_BASELINE_TELEMETRY 1 // emit optional PPS_BASE records for PPS-only characterization
+#define ENABLE_PPS_BASELINE_TELEMETRY ((ENABLE_PROFILING == 0) ? 0 : 1) // emit optional PPS_BASE records for PPS-only characterization
 #endif
+
+#ifndef ENABLE_MEMORY_TELEMETRY_STS
+#define ENABLE_MEMORY_TELEMETRY_STS ((ENABLE_PROFILING == 0) ? 0 : 1) // emit mem STS telemetry and maintain SRAM low-water tracking
+#endif
+
+#ifndef MEMORY_TELEMETRY_PERIOD_MS
+#define MEMORY_TELEMETRY_PERIOD_MS ((ENABLE_PROFILING == 0) ? 10000UL : 5000UL) // periodic memory-telemetry emission cadence
+#endif
+
+// Sample emission detail:
+// - 2 (full): emit full per-row provenance fields (all timestamp tags)
+// - 1 (reduced): preserve schema width but zero low-frequency/high-cost provenance fields
+//                to reduce formatting overhead in tight-loop deployments.
+#ifndef SAMPLE_DIAGNOSTIC_DETAIL
+#define SAMPLE_DIAGNOSTIC_DETAIL ((ENABLE_PROFILING == 0) ? 1 : 2)
+#endif
+
+#if ((SAMPLE_DIAGNOSTIC_DETAIL) != 1) && ((SAMPLE_DIAGNOSTIC_DETAIL) != 2)
+#error "SAMPLE_DIAGNOSTIC_DETAIL must be 1 (reduced) or 2 (full)"
+#endif
+/******************************************************************************/
 
 #ifndef ENABLE_CLOCK_DIAG_STS
 #define ENABLE_CLOCK_DIAG_STS 1 // emit optional STS clock-diagnostic records at boot
 #endif
 
-#ifndef ENABLE_PENDULUM_ADJ_PROVENANCE
-#define ENABLE_PENDULUM_ADJ_PROVENANCE 1 // include compact PPS-adjustment provenance fields in SMP/HDR rows
-#endif
-
+/******************************************************************************/
+// Memory warnings
 #ifndef ENABLE_MEMORY_LOW_WATER_WARN_STS
 #define ENABLE_MEMORY_LOW_WATER_WARN_STS 1 // emit one-time mem_warn STS when free SRAM crosses low-water threshold
-#endif
-
-#ifndef ENABLE_MEMORY_TELEMETRY_STS
-#define ENABLE_MEMORY_TELEMETRY_STS 1 // emit mem STS telemetry and maintain SRAM low-water tracking
 #endif
 
 #ifndef MEMORY_LOW_WATER_WARN_BYTES
 #define MEMORY_LOW_WATER_WARN_BYTES 256U // one-time warning threshold for low free SRAM
 #endif
 
-#ifndef MEMORY_TELEMETRY_PERIOD_MS
-#define MEMORY_TELEMETRY_PERIOD_MS 5000UL // periodic memory-telemetry emission cadence
+#ifndef ENABLE_PERIODIC_SERIAL_DIAG_STS
+#define ENABLE_PERIODIC_SERIAL_DIAG_STS 0 // emit periodic STS serial diagnostic counter summaries
+#endif
+
+#ifndef SERIAL_DIAG_PERIOD_MS
+#define SERIAL_DIAG_PERIOD_MS 5000UL // periodic serial diagnostics cadence when ENABLE_PERIODIC_SERIAL_DIAG_STS=1
+#endif
+/******************************************************************************/
+
+#ifndef CLI_ALLOW_MUTATIONS
+#define CLI_ALLOW_MUTATIONS 1 // 1=allow set/reset CLI commands, 0=read-only command surface
 #endif
 
 #ifndef ENABLE_PERIODIC_FLUSH
@@ -95,11 +138,28 @@ static_assert(static_cast<uint32_t>(MAIN_CLOCK_HZ) == static_cast<uint32_t>(F_CP
 #define STARTUP_SERIAL_SETTLE_MS 1200UL // delay after setup init to let serial consumers attach before startup emission
 #endif
 
+/******************************************************************************/
+// Foreground fairness budgets: cap burst draining per loop pass to avoid starving
+// command handling and periodic housekeeping when capture bursts occur.
+#ifndef PPS_PROCESS_BUDGET_PER_LOOP
+#define PPS_PROCESS_BUDGET_PER_LOOP 4U
+#endif
+
+#ifndef SWING_PROCESS_BUDGET_PER_LOOP
+#define SWING_PROCESS_BUDGET_PER_LOOP 2U
+#endif
+/******************************************************************************/
+
+#ifndef FW_VERSION
+#define FW_VERSION "0.0.0-dev"
+#endif
+
 #ifndef GIT_SHA
 #define GIT_SHA "unknown"
 #endif
 
-const int ledPin = LED_BUILTIN;
+// Pin IDs on Nano Every stay in [0, 255]; keep this 8-bit unless board mapping changes.
+const uint8_t ledPin = static_cast<uint8_t>(LED_BUILTIN);
 
 // Ring-depth defaults (all must remain power-of-two for mask arithmetic).
 constexpr uint8_t  RING_SIZE_SWING_ROWS             = 8;       // completed full-swing row ring depth (slower-rate queue than edge capture)
@@ -125,6 +185,12 @@ constexpr uint16_t PPS_STALE_MS_DEFAULT             = 2200;    // PPS freshness 
 constexpr uint16_t PPS_ISR_STALE_MS_DEFAULT         = 2200;    // PPS freshness timeout for ISR edge/counter activity
 constexpr uint16_t PPS_CFG_REEMIT_DELAY_MS_DEFAULT  = 2000;    // delay before re-emitting PPS config after boot
 constexpr uint16_t PPS_ACQUIRE_MIN_MS_DEFAULT       = 60000;   // minimum ACQUIRE dwell before DISCIPLINED
+
+// SRAM budget guardrail table (ATmega4809 has tight SRAM constraints):
+// - swing rows: sizeof(FullSwing) * RING_SIZE_SWING_ROWS   (asserted in SwingAssembler.cpp)
+// - edge queue: sizeof(EdgeEvent) * RING_SIZE_IR_SENSOR    (asserted in PendulumCapture.cpp)
+// - PPS queue:  sizeof(PpsCapture) * RING_SIZE_PPS         (asserted in PendulumCapture.cpp)
+// - tune workspace: 3 * PPS_TUNE_WIN_SIZE * sizeof(uint32_t) + counters (asserted in PendulumTelemetry.cpp)
 
 namespace Tunables {
   extern uint8_t   ppsFastShift;           // fast PPS EWMA shift

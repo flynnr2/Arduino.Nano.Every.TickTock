@@ -1,6 +1,7 @@
 #include "Config.h"
 
 #include <Arduino.h>
+#include <stdio.h>
 #include "PendulumProtocol.h"
 #include "SerialParser.h"
 #include "EEPROMConfig.h"
@@ -16,12 +17,59 @@
 #include "PpsFreshness.h"
 #include "PpsAdjust.h"
 #include "MemoryTelemetry.h"
+#include "PendulumTelemetry.h"
 
 static_assert(sizeof(uint16_t) == 2, "Expected 16-bit capture modulo domain");
 static_assert(sizeof(uint32_t) == 4, "Expected 32-bit PPS tick domain");
 
 static inline uint32_t elapsed32(uint32_t now, uint32_t then) {
   return (uint32_t)(now - then);
+}
+
+static inline uint16_t sub16(uint16_t a, uint16_t b) {
+  return (uint16_t)(a - b);
+}
+
+static uint32_t dominantAppliedHzForTotalInterval(uint64_t start_tag, uint64_t end_tag) {
+  if (!ppsTagIsValid(start_tag) || !ppsTagIsValid(end_tag)) {
+    return (uint32_t)MAIN_CLOCK_HZ;
+  }
+
+  const uint32_t start_seq = ppsTagSeq(start_tag);
+  const uint32_t end_seq = ppsTagSeq(end_tag);
+  if (end_seq < start_seq) {
+    return (uint32_t)MAIN_CLOCK_HZ;
+  }
+
+  const uint32_t start_ticks = ppsTagTicksIntoSec(start_tag);
+  const uint32_t end_ticks = ppsTagTicksIntoSec(end_tag);
+  const uint32_t seq_delta = end_seq - start_seq;
+
+  if (seq_delta == 0U) {
+    uint32_t hz = 0U;
+    return ppsAdjustLookupSeq(start_seq, nullptr, &hz) ? hz : (uint32_t)MAIN_CLOCK_HZ;
+  }
+
+  if (seq_delta == 1U) {
+    uint32_t start_span = 0U;
+    uint32_t start_hz = 0U;
+    uint32_t end_hz = 0U;
+    if (!ppsAdjustLookupSeq(start_seq, &start_span, &start_hz)) {
+      return (uint32_t)MAIN_CLOCK_HZ;
+    }
+    if (!ppsAdjustLookupSeq(end_seq, nullptr, &end_hz)) {
+      return (uint32_t)MAIN_CLOCK_HZ;
+    }
+    if (start_ticks > start_span) {
+      return (uint32_t)MAIN_CLOCK_HZ;
+    }
+
+    const uint32_t start_share = start_span - start_ticks;
+    const uint32_t end_share = end_ticks;
+    return (start_share >= end_share) ? start_hz : end_hz;
+  }
+
+  return (uint32_t)MAIN_CLOCK_HZ;
 }
 
 volatile uint32_t lastPpsCapture             = 0;        // last PPS capture tick count
@@ -31,8 +79,6 @@ GpsStatus gpsStatus = GpsStatus::NO_PPS;
 static PpsValidator gPpsValidator;
 static FreqDiscipliner gFreqDiscipliner;
 static DisciplinedTime gDisciplinedTime;
-
-static uint32_t pps_delta_inst = (uint32_t)MAIN_CLOCK_HZ;
 // Cached active PPS interval used by shared fast/slow consumers.
 static uint64_t pps_delta_active = (uint32_t)MAIN_CLOCK_HZ;
 
@@ -40,210 +86,9 @@ static uint64_t pps_delta_active = (uint32_t)MAIN_CLOCK_HZ;
 static uint32_t pps_R_ppm = 0;   // |fast - slow| / slow in ppm
 static uint32_t pps_J_ticks = 0; // robust jitter metric as MAD residual ticks
 
-#if ENABLE_PPS_BASELINE_TELEMETRY
-static inline uint8_t pps_class_compact_code(PpsValidator::SampleClass cls) {
-  switch (cls) {
-    case PpsValidator::SampleClass::OK: return 0;
-    case PpsValidator::SampleClass::GAP: return 1;
-    case PpsValidator::SampleClass::DUP: return 2;
-    case PpsValidator::SampleClass::HARD_GLITCH: return 3;
-    default: return 2;
-  }
-}
+// Telemetry/window formatting is isolated in PendulumTelemetry.cpp for
+// clearer module boundaries and lower PendulumCore churn.
 
-static void emit_pps_baseline_telemetry(uint32_t seq,
-                                        uint32_t now_ms,
-                                        uint32_t dt32_ticks,
-                                        PpsValidator::SampleClass cls,
-                                        bool pps_valid,
-                                        const FreqDiscipliner& discipliner,
-                                        uint16_t latency16,
-                                        uint16_t cap16) {
-  // Compact baseline PPS schema for long PPS-only runs (telemetry-only; compile-time gated):
-  // PPS_BASE,q,m,d,ef,es,eh,pf,ps,pa,c,v,s,r,js,ja,lg,ub,l,cp
-  // (all integer key=value fields).
-  // Keep comfortably below STS payload limits; skip send if the formatted payload exceeds this guard.
-  static constexpr uint16_t PPS_BASELINE_SAFE_PAYLOAD_MAX = 220;
-
-  char line[CSV_PAYLOAD_MAX];
-  const int n = snprintf(line,
-                         sizeof(line),
-                         "PPS_BASE,q=%lu,m=%lu,d=%lu,ef=%ld,es=%ld,eh=%ld,pf=%lu,ps=%lu,pa=%lu,c=%u,v=%u,s=%u,r=%lu,js=%lu,ja=%lu,lg=%u,ub=%u,l=%u,cp=%u",
-                         (unsigned long)seq,
-                         (unsigned long)now_ms,
-                         (unsigned long)dt32_ticks,
-                         (long)discipliner.fastErrTicks(),
-                         (long)discipliner.slowErrTicks(),
-                         (long)discipliner.appliedErrTicks(),
-                         (unsigned long)discipliner.fastErrPpm(),
-                         (unsigned long)discipliner.slowErrPpm(),
-                         (unsigned long)discipliner.appliedErrPpm(),
-                         (unsigned int)pps_class_compact_code(cls),
-                         (unsigned int)(pps_valid ? 1U : 0U),
-                         (unsigned int)discipliner.state(),
-                         (unsigned long)discipliner.rPpm(),
-                         (unsigned long)discipliner.slowMadTicks(),
-                         (unsigned long)discipliner.appliedMadTicks(),
-                         (unsigned int)discipliner.lockPassMask(),
-                         (unsigned int)discipliner.unlockBreachMask(),
-                         (unsigned int)latency16,
-                         (unsigned int)cap16);
-  if (n > 0 && n <= (int)PPS_BASELINE_SAFE_PAYLOAD_MAX) {
-    sendStatus(StatusCode::ProgressUpdate, line);
-  }
-}
-#endif
-
-
-// 16-bit wrap-safe subtract
-static inline uint16_t sub16(uint16_t a, uint16_t b) { return (uint16_t)(a - b); }
-
-
-#if PPS_TUNING_TELEMETRY
-static constexpr uint8_t TUNE_WIN_SIZE = 32;
-static uint32_t tune_r_samples[TUNE_WIN_SIZE] = {};
-static uint32_t tune_js_samples[TUNE_WIN_SIZE] = {};
-static uint32_t tune_ja_samples[TUNE_WIN_SIZE] = {};
-// Keep sort scratch buffers off AVR stack to preserve headroom in telemetry paths.
-static uint32_t tune_r_sorted[TUNE_WIN_SIZE];
-static uint32_t tune_js_sorted[TUNE_WIN_SIZE];
-static uint32_t tune_ja_sorted[TUNE_WIN_SIZE];
-static uint8_t tune_win_fill = 0;
-static uint8_t tune_ok_count = 0;
-static uint8_t tune_val_count = 0;
-static uint8_t tune_lock_pass_count = 0;
-static uint8_t tune_unlock_breach_count = 0;
-
-static inline const char* tune_state_name(FreqDiscipliner::DiscState s) {
-  switch (s) {
-    case FreqDiscipliner::DiscState::ACQUIRE: return "ACQUIRE";
-    case FreqDiscipliner::DiscState::DISCIPLINED: return "DISCIPLINED";
-    case FreqDiscipliner::DiscState::HOLDOVER: return "HOLDOVER";
-    default: return "FREE_RUN";
-  }
-}
-
-static uint32_t percentile_u32(uint32_t* values, uint8_t n, uint8_t percentile) {
-  for (uint8_t i = 1; i < n; i++) {
-    const uint32_t v = values[i];
-    uint8_t j = i;
-    while (j > 0 && values[j - 1] > v) {
-      values[j] = values[j - 1];
-      j--;
-    }
-    values[j] = v;
-  }
-  const uint8_t idx = (uint8_t)(((uint16_t)(n - 1U) * percentile + 99U) / 100U);
-  return values[idx];
-}
-
-static void emit_tune_window(FreqDiscipliner::DiscState state) {
-  if (tune_win_fill == 0U) return;
-
-  uint32_t r_max = tune_r_samples[0];
-  uint32_t js_max = tune_js_samples[0];
-  uint32_t ja_max = tune_ja_samples[0];
-
-  for (uint8_t i = 0; i < tune_win_fill; ++i) {
-    const uint32_t rv = tune_r_samples[i];
-    const uint32_t jsv = tune_js_samples[i];
-    const uint32_t jav = tune_ja_samples[i];
-    tune_r_sorted[i] = rv;
-    tune_js_sorted[i] = jsv;
-    tune_ja_sorted[i] = jav;
-    if (rv > r_max) r_max = rv;
-    if (jsv > js_max) js_max = jsv;
-    if (jav > ja_max) ja_max = jav;
-  }
-
-  const uint32_t r95 = percentile_u32(tune_r_sorted, tune_win_fill, 95U);
-  const uint32_t js95 = percentile_u32(tune_js_sorted, tune_win_fill, 95U);
-  const uint32_t ja95 = percentile_u32(tune_ja_sorted, tune_win_fill, 95U);
-
-  char line[CSV_PAYLOAD_MAX];
-  const int n = snprintf(line,
-                         sizeof(line),
-                         "TUNE_WIN,state=%s,win=%u,ok=%u,val=%u,R95=%lu,Rmax=%lu,JS95=%lu,JSmax=%lu,JA95=%lu,JAmax=%lu,LP=%u,UB=%u",
-                         tune_state_name(state),
-                         (unsigned int)tune_win_fill,
-                         (unsigned int)tune_ok_count,
-                         (unsigned int)tune_val_count,
-                         (unsigned long)r95,
-                         (unsigned long)r_max,
-                         (unsigned long)js95,
-                         (unsigned long)js_max,
-                         (unsigned long)ja95,
-                         (unsigned long)ja_max,
-                         (unsigned int)tune_lock_pass_count,
-                         (unsigned int)tune_unlock_breach_count);
-  if (n > 0) sendStatus(StatusCode::ProgressUpdate, line);
-
-  tune_win_fill = 0;
-  tune_ok_count = 0;
-  tune_val_count = 0;
-  tune_lock_pass_count = 0;
-  tune_unlock_breach_count = 0;
-}
-
-static void tune_push_sample(FreqDiscipliner::DiscState state,
-                             PpsValidator::SampleClass cls,
-                             bool pps_valid,
-                             const FreqDiscipliner& discipliner) {
-  const uint32_t r_ppm = discipliner.rPpm();
-  tune_r_samples[tune_win_fill] = r_ppm;
-  tune_js_samples[tune_win_fill] = discipliner.slowMadTicks();
-  tune_ja_samples[tune_win_fill] = discipliner.appliedMadTicks();
-  tune_win_fill++;
-
-  if (cls == PpsValidator::SampleClass::OK) tune_ok_count++;
-  if (pps_valid) tune_val_count++;
-
-  const bool lock_pass =
-      ((discipliner.lockPassMask() & FreqDiscipliner::lockPassRequiredMask()) ==
-       FreqDiscipliner::lockPassRequiredMask()) &&
-      (discipliner.madTicks() < FreqDiscipliner::lockMadThresholdTicks());
-  if (lock_pass) tune_lock_pass_count++;
-
-  const bool unlock_breach = (discipliner.unlockBreachMask() != 0U);
-  if (unlock_breach) tune_unlock_breach_count++;
-
-  if (tune_win_fill >= TUNE_WIN_SIZE) emit_tune_window(state);
-}
-
-static void emit_tune_event(FreqDiscipliner::DiscState from,
-                            FreqDiscipliner::DiscState to,
-                            uint32_t now_ms,
-                            const FreqDiscipliner& discipliner,
-                            uint8_t streak) {
-  const uint8_t lock_mask = discipliner.lockPassMask();
-  const uint8_t unlock_mask = discipliner.unlockBreachMask();
-  char line[CSV_PAYLOAD_MAX];
-  const int n = snprintf(line,
-                         sizeof(line),
-                         "TUNE_EVT,from=%s,to=%s,t=%lu,R=%lu,es=%ld,ea=%ld,ps=%lu,pa=%lu,js=%lu,ja=%lu,lfg=%u,lse=%u,lsm=%u,lae=%u,lam=%u,lan=%u,uae=%u,uam=%u,uan=%u,streak=%u",
-                         tune_state_name(from),
-                         tune_state_name(to),
-                         (unsigned long)(now_ms / 1000UL),
-                         (unsigned long)discipliner.rPpm(),
-                         (long)discipliner.slowErrTicks(),
-                         (long)discipliner.appliedErrTicks(),
-                         (unsigned long)discipliner.slowErrPpm(),
-                         (unsigned long)discipliner.appliedErrPpm(),
-                         (unsigned long)discipliner.slowMadTicks(),
-                         (unsigned long)discipliner.appliedMadTicks(),
-                         (unsigned int)((lock_mask & (1U << 4)) ? 1U : 0U),
-                         (unsigned int)((lock_mask & (1U << 2)) ? 1U : 0U),
-                         (unsigned int)((lock_mask & (1U << 3)) ? 1U : 0U),
-                         (unsigned int)((lock_mask & (1U << 0)) ? 1U : 0U),
-                         (unsigned int)((lock_mask & (1U << 1)) ? 1U : 0U),
-                         (unsigned int)((lock_mask & (1U << 5)) ? 1U : 0U),
-                         (unsigned int)((unlock_mask & (1U << 0)) ? 1U : 0U),
-                         (unsigned int)((unlock_mask & (1U << 1)) ? 1U : 0U),
-                         (unsigned int)((unlock_mask & (1U << 5)) ? 1U : 0U),
-                         (unsigned int)streak);
-  if (n > 0) sendStatus(StatusCode::ProgressUpdate, line);
-}
-#endif
 
 static bool metadata_reemit_pending = false;
 static bool startup_output_ready = false;
@@ -254,6 +99,9 @@ static uint32_t last_pps_processed_ms = 0;
 static uint32_t pps_last_edge32 = 0;
 static uint16_t lastPpsCap16 = 0;
 static uint32_t last_mem_telemetry_ms = 0;
+#if ENABLE_PERIODIC_SERIAL_DIAG_STS
+static uint32_t last_serial_diag_telemetry_ms = 0;
+#endif
 #if ENABLE_PPS_BASELINE_TELEMETRY
 static uint32_t pps_base_seq = 0;
 #endif
@@ -264,7 +112,6 @@ void resetRuntimeStateAfterTunablesChange() {
   gPpsValidator.reset();
   gFreqDiscipliner.reset((uint32_t)MAIN_CLOCK_HZ);
   gDisciplinedTime.begin((uint32_t)MAIN_CLOCK_HZ);
-  pps_delta_inst = (uint32_t)MAIN_CLOCK_HZ;
   pps_delta_active = (uint32_t)MAIN_CLOCK_HZ;
   pps_R_ppm = 0;
   pps_J_ticks = 0;
@@ -277,6 +124,9 @@ void resetRuntimeStateAfterTunablesChange() {
   lastPpsCap16 = 0;
   startup_output_ready = false;
   last_mem_telemetry_ms = 0;
+#if ENABLE_PERIODIC_SERIAL_DIAG_STS
+  last_serial_diag_telemetry_ms = 0;
+#endif
   ppsAdjustReset((uint32_t)MAIN_CLOCK_HZ);
 #if ENABLE_PPS_BASELINE_TELEMETRY
   pps_base_seq = 0;
@@ -292,7 +142,7 @@ void emitMetadataNow() {
   // Recovery/startup metadata must be deterministic and minimal for parser lock.
   // Emit only the startup contract in strict order:
   //   1) CFG metadata row
-  //   2) HDR literal sample schema
+  //   2) HDR_PART segmented sample schema declaration
   emitStatusSampleConfig();
   printCsvHeader();
 }
@@ -359,7 +209,7 @@ void pendulumSetup() {
   metadata_reemit_pending = true;
 }
 
-static void process_pps() {
+static void process_pps(uint8_t budget_remaining) {
   const uint32_t now_ms = platformMillis();
   const uint32_t pps_seen_now = capturePpsSeen();
   if (pps_seen_now != pps_seen_prev) {
@@ -387,7 +237,7 @@ static void process_pps() {
 
   // Re-emit startup metadata exactly once from the runtime path after startup
   // settles, so consumers can recover if the initial boot burst was missed.
-  // Keep this deterministic/minimal (CFG + HDR only) to avoid recovery noise.
+  // Keep this deterministic/minimal (CFG + HDR_PART only) to avoid recovery noise.
   const bool startup_reemit_due =
       now_ms >= (uint32_t)Tunables::ppsConfigReemitDelayMsActive();
   if (startup_output_ready && metadata_reemit_pending && startup_reemit_due) {
@@ -395,7 +245,8 @@ static void process_pps() {
     metadata_reemit_pending = false;
   }
 
-  while (capturePpsAvailable()) {
+  while (budget_remaining > 0U && capturePpsAvailable()) {
+    budget_remaining--;
     PpsCapture cap = capturePopPps();
     uint32_t t = cap.edge32;
 
@@ -448,7 +299,6 @@ static void process_pps() {
     }
 #endif
 
-    pps_delta_inst = pps_dt32_ticks;
     pps_delta_active = gDisciplinedTime.ticksPerSecond();
     ppsAdjustOnPpsFinalized(prev_edge32,
                             t,
@@ -488,36 +338,51 @@ void pendulumLoop() {
   memoryTelemetrySample();
 #endif
   processSerialCommands();
-  process_pps();
+  process_pps(PPS_PROCESS_BUDGET_PER_LOOP);
   swingAssemblerProcessEdges();
 
-  while (swingAssemblerAvailable()) {
+  uint8_t swing_budget = SWING_PROCESS_BUDGET_PER_LOOP;
+  while (swing_budget > 0U && swingAssemblerAvailable()) {
+    swing_budget--;
     FullSwing fs = swingAssemblerPop();
 
     PendulumSample sample{};
     sample.tick       = fs.tick;
     sample.tick_adj   = fs.tick_adj;
+    sample.tick_start_tag = fs.tick_start_tag;
+    sample.tick_end_tag = fs.tick_end_tag;
     sample.tick_block = fs.tick_block;
     sample.tick_block_adj = fs.tick_block_adj;
+    sample.tick_block_start_tag = fs.tick_block_start_tag;
+    sample.tick_block_end_tag = fs.tick_block_end_tag;
     sample.tick_total_adj_direct = fs.tick_total_adj_direct;
     sample.tick_total_adj_diag   = fs.tick_total_adj_diag;
+    sample.tick_total_start_tag = fs.tick_total_start_tag;
+    sample.tick_total_end_tag = fs.tick_total_end_tag;
     sample.tock       = fs.tock;
     sample.tock_adj   = fs.tock_adj;
+    sample.tock_start_tag = fs.tock_start_tag;
+    sample.tock_end_tag = fs.tock_end_tag;
     sample.tock_block = fs.tock_block;
     sample.tock_block_adj = fs.tock_block_adj;
+    sample.tock_block_start_tag = fs.tock_block_start_tag;
+    sample.tock_block_end_tag = fs.tock_block_end_tag;
     sample.tock_total_adj_direct = fs.tock_total_adj_direct;
     sample.tock_total_adj_diag   = fs.tock_total_adj_diag;
-    sample.f_inst_hz      = pps_delta_inst ? pps_delta_inst : (uint32_t)MAIN_CLOCK_HZ;
-    sample.f_hat_hz       = pps_delta_active ? (uint32_t)pps_delta_active : (uint32_t)MAIN_CLOCK_HZ;
+    sample.tock_total_start_tag = fs.tock_total_start_tag;
+    sample.tock_total_end_tag = fs.tock_total_end_tag;
+    sample.tick_total_f_hat_hz = dominantAppliedHzForTotalInterval(fs.tick_total_start_tag,
+                                                                    fs.tick_total_end_tag);
+    sample.tock_total_f_hat_hz = dominantAppliedHzForTotalInterval(fs.tock_total_start_tag,
+                                                                    fs.tock_total_end_tag);
     sample.holdover_age_ms = gFreqDiscipliner.holdoverAgeMs();
     sample.r_ppm          = pps_R_ppm;
     sample.j_ticks        = pps_J_ticks;
     sample.gps_status     = gpsStatus;
     sample.dropped_events = captureDroppedEvents();
     sample.adj_diag       = fs.adj_diag;
-#if ENABLE_PENDULUM_ADJ_PROVENANCE
+    sample.adj_comp_diag  = fs.adj_comp_diag;
     sample.pps_seq_row    = fs.pps_seq_row;
-#endif
 
     if (!startup_output_ready) {
       continue;
@@ -530,6 +395,13 @@ void pendulumLoop() {
       (uint32_t)(now_ms - last_mem_telemetry_ms) >= (uint32_t)MEMORY_TELEMETRY_PERIOD_MS) {
     last_mem_telemetry_ms = now_ms;
     emitStatusMemoryTelemetry(true);
+  }
+#endif
+#if ENABLE_PERIODIC_SERIAL_DIAG_STS
+  if (startup_output_ready &&
+      (uint32_t)(now_ms - last_serial_diag_telemetry_ms) >= (uint32_t)SERIAL_DIAG_PERIOD_MS) {
+    last_serial_diag_telemetry_ms = now_ms;
+    emitStatusSerialDiagnostics();
   }
 #endif
 #if ENABLE_PERIODIC_FLUSH

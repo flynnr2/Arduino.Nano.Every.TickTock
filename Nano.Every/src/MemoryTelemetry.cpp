@@ -17,7 +17,19 @@ namespace {
 uint16_t g_last_free_sram_bytes = 0;
 uint16_t g_min_free_sram_bytes = 0xFFFFu;
 bool g_low_water_warned = false;
-char g_mem_status_line[CSV_PAYLOAD_MAX];
+// MemoryTelemetry formatting concurrency contract:
+// - Non-ISR, main-loop memory telemetry only.
+// - May run interleaved with SerialParser (owner 1), StatusTelemetry (owner 2),
+//   and PendulumCore (owner 3) formatters.
+// - This module uses owner id 4 (FormatBufferOwner::MemoryTelemetry).
+
+char* acquireMemoryStatusLineBuf() {
+  return tryAcquireFormatBuffer(FormatBufferOwner::MemoryTelemetry);
+}
+
+void releaseMemoryStatusLineBuf() {
+  releaseFormatBuffer(FormatBufferOwner::MemoryTelemetry);
+}
 
 uint16_t computeFreeSramBytesNow() {
 #if defined(__AVR__)
@@ -52,25 +64,32 @@ uint16_t memoryTelemetryMinFreeBytes() {
 void emitStatusMemoryTelemetry(bool periodic) {
   const uint16_t free_now = g_last_free_sram_bytes;
   const uint16_t free_min = memoryTelemetryMinFreeBytes();
+  char* line = acquireMemoryStatusLineBuf();
+  if (!line) return;
 
-  const int n = snprintf(g_mem_status_line,
-                         sizeof(g_mem_status_line),
+  const int n = snprintf(line,
+                         CSV_PAYLOAD_MAX,
                          "mem,free_now=%u,free_min=%u,phase=%s",
                          (unsigned int)free_now,
                          (unsigned int)free_min,
                          periodic ? "periodic" : "boot");
-  if (n > 0) sendStatus(StatusCode::ProgressUpdate, g_mem_status_line);
+  if (n > 0) {
+    sendStatusFromOwnedBuffer(FormatBufferOwner::MemoryTelemetry, StatusCode::ProgressUpdate, line);
+  }
 
 #if ENABLE_MEMORY_LOW_WATER_WARN_STS
   if (!g_low_water_warned && free_now <= MEMORY_LOW_WATER_WARN_BYTES) {
     g_low_water_warned = true;
-    const int warn_n = snprintf(g_mem_status_line,
-                                sizeof(g_mem_status_line),
+    const int warn_n = snprintf(line,
+                                CSV_PAYLOAD_MAX,
                                 "mem_warn,free_now=%u,free_min=%u,threshold=%u",
                                 (unsigned int)free_now,
                                 (unsigned int)free_min,
                                 (unsigned int)MEMORY_LOW_WATER_WARN_BYTES);
-    if (warn_n > 0) sendStatus(StatusCode::ProgressUpdate, g_mem_status_line);
+    if (warn_n > 0) {
+      sendStatusFromOwnedBuffer(FormatBufferOwner::MemoryTelemetry, StatusCode::ProgressUpdate, line);
+    }
   }
 #endif
+  releaseMemoryStatusLineBuf();
 }

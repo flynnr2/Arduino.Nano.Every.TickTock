@@ -7,18 +7,18 @@
 class DisciplinedTime {
 public:
   struct Quality {
-    FreqDiscipliner::DiscState disc_state;
-    bool pps_valid;
-    uint8_t confidence;
-    uint32_t holdover_age_ms;
+    uint32_t holdover_age_ms;               // [0, 2^32-1] monotonic ms age while in HOLDOVER.
+    FreqDiscipliner::DiscState disc_state;  // [0, 3] discipliner state enum.
+    uint8_t confidence;                     // [0, 100] coarse quality score for telemetry.
+    bool pps_valid;                         // [0, 1] validator lock indicator.
   };
 
   void begin(uint32_t f_cpu_nominal);
   void sync(const FreqDiscipliner& discipliner, bool pps_valid);
 
   uint32_t ticksPerSecond() const;
-  double ticksToSeconds(uint32_t dt_ticks) const;
-  double ticksToPpm(uint32_t dt_ticks, double nominal_period_s) const;
+  uint32_t ticksToMillis(uint32_t dt_ticks) const;
+  int32_t ticksToPpmX1000(uint32_t dt_ticks, uint32_t nominal_period_ticks) const;
   Quality timeQuality() const;
 
 private:
