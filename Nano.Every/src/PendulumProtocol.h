@@ -13,20 +13,77 @@ static constexpr char TAG_CFG[] = "CFG";     // session/config metadata (include
 static constexpr char TAG_HDR_PART[] = "HDR_PART"; // segmented sample header part: "<part_index>,<part_count>,<csv_fields>"
 static constexpr char TAG_STS[] = "STS";     // structured boot/status telemetry
 static constexpr char TAG_SMP[] = "SMP";     // raw-cycle sample rows
+static constexpr char TAG_CSW[] = "CSW";     // canonical swing rows (absolute shared-timeline boundaries)
+static constexpr char TAG_CPS[] = "CPS";     // canonical PPS rows (absolute shared-timeline boundaries)
+static constexpr char TAG_SCH[] = "SCH";     // schema declaration rows ("<tag>,<schema_id>,<csv_fields>")
 
 // Shared wire-contract identifiers (Nano <-> Uno).
 static constexpr uint8_t PROTOCOL_VERSION = 1;
 static constexpr uint8_t STS_SCHEMA_VERSION = 4;
-static constexpr char SAMPLE_SCHEMA_ID[] = "raw_cycles_hz_v6";
+static constexpr char SAMPLE_SCHEMA_ID[] = "raw_cycles_hz_v7";
+static constexpr char CANONICAL_SWING_SCHEMA_ID[] = "canonical_swing_v1";
+static constexpr char CANONICAL_PPS_SCHEMA_ID[] = "canonical_pps_v1";
 static constexpr uint8_t ADJ_SEMANTICS_VERSION = 2;
+// Optional PPS tuning telemetry semantics (`TUNE_CFG`/`TUNE_WIN`/`TUNE_EVT`).
+// v2: `TUNE_EVT` exports dedicated unlock-breach columns for all active
+// unlock mask bits (0..5): uae/uam/use/usm/urg/uan.
+static constexpr uint8_t PPS_TUNING_SEMANTICS_VERSION = 2;
 
 // CFG key names emitted on the wire and consumed by host parsers.
+// Compact keys reduce flash and wire bytes while preserving field semantics.
+#ifndef COMPACT_CFG_KEYS
+#define COMPACT_CFG_KEYS 1
+#endif
+
+#if COMPACT_CFG_KEYS
+static constexpr char CFG_KEY_PROTOCOL_VERSION[] = "pv";
+static constexpr char CFG_KEY_NOMINAL_HZ[] = "nhz";
+static constexpr char CFG_KEY_SAMPLE_TAG[] = "st";
+static constexpr char CFG_KEY_SAMPLE_SCHEMA[] = "ss";
+static constexpr char CFG_KEY_ADJ_SEMANTICS_VERSION[] = "asv";
+static constexpr char CFG_KEY_HDR_MODE[] = "hm";
+static constexpr char CFG_KEY_EMIT_MODE[] = "em";
+static constexpr char CFG_KEY_CANONICAL_SWING_TAG[] = "cst";
+static constexpr char CFG_KEY_CANONICAL_SWING_SCHEMA[] = "css";
+static constexpr char CFG_KEY_CANONICAL_PPS_TAG[] = "cpt";
+static constexpr char CFG_KEY_CANONICAL_PPS_SCHEMA[] = "cps";
+#else
 static constexpr char CFG_KEY_PROTOCOL_VERSION[] = "protocol_version";
 static constexpr char CFG_KEY_NOMINAL_HZ[] = "nominal_hz";
 static constexpr char CFG_KEY_SAMPLE_TAG[] = "sample_tag";
 static constexpr char CFG_KEY_SAMPLE_SCHEMA[] = "sample_schema";
 static constexpr char CFG_KEY_ADJ_SEMANTICS_VERSION[] = "adj_semantics_version";
 static constexpr char CFG_KEY_HDR_MODE[] = "hdr_mode";
+static constexpr char CFG_KEY_EMIT_MODE[] = "emit_mode";
+static constexpr char CFG_KEY_CANONICAL_SWING_TAG[] = "canonical_swing_tag";
+static constexpr char CFG_KEY_CANONICAL_SWING_SCHEMA[] = "canonical_swing_schema";
+static constexpr char CFG_KEY_CANONICAL_PPS_TAG[] = "canonical_pps_tag";
+static constexpr char CFG_KEY_CANONICAL_PPS_SCHEMA[] = "canonical_pps_schema";
+#endif
+
+enum class EmitMode : uint8_t {
+  UNKNOWN = 0,
+  CANONICAL = 1,
+  DERIVED = 2,
+};
+
+static constexpr EmitMode EMIT_MODE_DERIVED = EmitMode::DERIVED;
+static constexpr EmitMode EMIT_MODE_CANONICAL = EmitMode::CANONICAL;
+
+#ifndef PENDULUM_EMIT_MODE
+#define PENDULUM_EMIT_MODE EMIT_MODE_DERIVED
+#endif
+
+static constexpr EmitMode ACTIVE_EMIT_MODE = PENDULUM_EMIT_MODE;
+
+inline const char* emitModeToStr(EmitMode mode) {
+  switch (mode) {
+    case EmitMode::UNKNOWN:   return "UNKNOWN";
+    case EmitMode::CANONICAL: return "CANONICAL";
+    case EmitMode::DERIVED:   return "DERIVED";
+    default:                  return "UNKNOWN";
+  }
+}
 
 static constexpr char HDR_MODE_SEGMENTED_V1[] = "segmented_v1";
 static constexpr uint8_t HDR_SEGMENTED_PART_COUNT = 4;
@@ -35,6 +92,11 @@ static_assert(HDR_SEGMENTED_PART_COUNT <= HDR_SEGMENTED_MAX_PARTS,
               "HDR segmented part count exceeds transport maximum");
 
 static constexpr const char* HDR_MODE_ACTIVE = HDR_MODE_SEGMENTED_V1;
+
+static const char CANONICAL_SWING_SCHEMA[] PROGMEM =
+    "seq,edge0_tcb0,edge1_tcb0,edge2_tcb0,edge3_tcb0,edge4_tcb0,drop_ir,drop_pps,drop_swing,adj_diag,adj_comp_diag";
+static const char CANONICAL_PPS_SCHEMA[] PROGMEM =
+    "seq,edge_tcb0,gps_status,holdover_age_ms,cap16,latency16,now32,drop_pps";
 
 // STS payload family identifiers that are part of the wire contract.
 static constexpr char STS_FAMILY_SCHEMA[] = "schema";
@@ -67,7 +129,7 @@ inline constexpr uint32_t ppsTagTicksIntoSec(uint64_t tag) {
 }
 
 static const char SAMPLE_SCHEMA[] PROGMEM =
-    "tick,tick_adj,tick_start_tag,tick_end_tag,tick_block,tick_block_adj,tick_block_start_tag,tick_block_end_tag,tick_total_adj_direct,tick_total_adj_diag,tick_total_start_tag,tick_total_end_tag,tock,tock_adj,tock_start_tag,tock_end_tag,tock_block,tock_block_adj,tock_block_start_tag,tock_block_end_tag,tock_total_adj_direct,tock_total_adj_diag,tock_total_start_tag,tock_total_end_tag,tick_total_f_hat_hz,tock_total_f_hat_hz,gps_status,holdover_age_ms,r_ppm,j_ticks,dropped,adj_diag,adj_comp_diag,pps_seq_row";
+    "tick,tick_adj,tick_block,tick_block_adj,tick_total_adj_direct,tick_total_adj_diag,tock,tock_adj,tock_block,tock_block_adj,tock_total_adj_direct,tock_total_adj_diag,tick_total_f_hat_hz,tock_total_f_hat_hz,gps_status,holdover_age_ms,dropped,adj_diag,adj_comp_diag,pps_seq_row";
 // Wire contract note:
 // - SAMPLE_SCHEMA and enum CsvField define canonical SMP row field order.
 // - SAMPLE_SCHEMA_HDR_PARTS are segmented HDR_PART transport/readability chunks only
@@ -78,15 +140,13 @@ static const char SAMPLE_SCHEMA[] PROGMEM =
 
 // Segmented HDR payload groups for readability (raw, adjusted/component, aggregate totals, diagnostics/meta).
 static const char SAMPLE_SCHEMA_HDR_PART_1_RAW[] PROGMEM =
-    "tick,tick_start_tag,tick_end_tag,tick_block,tick_block_start_tag,tick_block_end_tag,"
-    "tock,tock_start_tag,tock_end_tag,tock_block,tock_block_start_tag,tock_block_end_tag";
+    "tick,tick_block,tock,tock_block";
 static const char SAMPLE_SCHEMA_HDR_PART_2_ADJUSTED_COMPONENT[] PROGMEM =
     "tick_adj,tick_block_adj,tock_adj,tock_block_adj";
 static const char SAMPLE_SCHEMA_HDR_PART_3_AGGREGATE_TOTALS[] PROGMEM =
-    "tick_total_adj_direct,tick_total_adj_diag,tick_total_start_tag,tick_total_end_tag,"
-    "tock_total_adj_direct,tock_total_adj_diag,tock_total_start_tag,tock_total_end_tag";
+    "tick_total_adj_direct,tick_total_adj_diag,tock_total_adj_direct,tock_total_adj_diag";
 static const char SAMPLE_SCHEMA_HDR_PART_4_DIAGNOSTICS_META[] PROGMEM =
-    "tick_total_f_hat_hz,tock_total_f_hat_hz,gps_status,holdover_age_ms,r_ppm,j_ticks,dropped,adj_diag,adj_comp_diag,pps_seq_row";
+    "tick_total_f_hat_hz,tock_total_f_hat_hz,gps_status,holdover_age_ms,dropped,adj_diag,adj_comp_diag,pps_seq_row";
 
 static const char* const SAMPLE_SCHEMA_HDR_PARTS[HDR_SEGMENTED_PART_COUNT] PROGMEM = {
   SAMPLE_SCHEMA_HDR_PART_1_RAW,
@@ -136,34 +196,20 @@ inline const char* statusCodeToStr(StatusCode code) {
 enum CsvField {
   CF_TICK = 0,
   CF_TICK_ADJ,
-  CF_TICK_START_TAG,
-  CF_TICK_END_TAG,
   CF_TICK_BLOCK,
   CF_TICK_BLOCK_ADJ,
-  CF_TICK_BLOCK_START_TAG,
-  CF_TICK_BLOCK_END_TAG,
   CF_TICK_TOTAL_ADJ_DIRECT,
   CF_TICK_TOTAL_ADJ_DIAG,
-  CF_TICK_TOTAL_START_TAG,
-  CF_TICK_TOTAL_END_TAG,
   CF_TOCK,
   CF_TOCK_ADJ,
-  CF_TOCK_START_TAG,
-  CF_TOCK_END_TAG,
   CF_TOCK_BLOCK,
   CF_TOCK_BLOCK_ADJ,
-  CF_TOCK_BLOCK_START_TAG,
-  CF_TOCK_BLOCK_END_TAG,
   CF_TOCK_TOTAL_ADJ_DIRECT,
   CF_TOCK_TOTAL_ADJ_DIAG,
-  CF_TOCK_TOTAL_START_TAG,
-  CF_TOCK_TOTAL_END_TAG,
   CF_TICK_TOTAL_F_HAT_HZ,
   CF_TOCK_TOTAL_F_HAT_HZ,
   CF_GPS_STATUS,
   CF_HOLDOVER_AGE_MS,
-  CF_R_PPM,
-  CF_J_TICKS,
   CF_DROPPED,
   CF_ADJ_DIAG,
   CF_ADJ_COMP_DIAG,
@@ -175,38 +221,24 @@ static constexpr uint8_t CF_REQUIRED_COUNT = CF_COUNT;
 
 static const char CSV_FIELD_NAME_00[] PROGMEM = "tick";
 static const char CSV_FIELD_NAME_01[] PROGMEM = "tick_adj";
-static const char CSV_FIELD_NAME_02[] PROGMEM = "tick_start_tag";
-static const char CSV_FIELD_NAME_03[] PROGMEM = "tick_end_tag";
-static const char CSV_FIELD_NAME_04[] PROGMEM = "tick_block";
-static const char CSV_FIELD_NAME_05[] PROGMEM = "tick_block_adj";
-static const char CSV_FIELD_NAME_06[] PROGMEM = "tick_block_start_tag";
-static const char CSV_FIELD_NAME_07[] PROGMEM = "tick_block_end_tag";
-static const char CSV_FIELD_NAME_08[] PROGMEM = "tick_total_adj_direct";
-static const char CSV_FIELD_NAME_09[] PROGMEM = "tick_total_adj_diag";
-static const char CSV_FIELD_NAME_10[] PROGMEM = "tick_total_start_tag";
-static const char CSV_FIELD_NAME_11[] PROGMEM = "tick_total_end_tag";
-static const char CSV_FIELD_NAME_12[] PROGMEM = "tock";
-static const char CSV_FIELD_NAME_13[] PROGMEM = "tock_adj";
-static const char CSV_FIELD_NAME_14[] PROGMEM = "tock_start_tag";
-static const char CSV_FIELD_NAME_15[] PROGMEM = "tock_end_tag";
-static const char CSV_FIELD_NAME_16[] PROGMEM = "tock_block";
-static const char CSV_FIELD_NAME_17[] PROGMEM = "tock_block_adj";
-static const char CSV_FIELD_NAME_18[] PROGMEM = "tock_block_start_tag";
-static const char CSV_FIELD_NAME_19[] PROGMEM = "tock_block_end_tag";
-static const char CSV_FIELD_NAME_20[] PROGMEM = "tock_total_adj_direct";
-static const char CSV_FIELD_NAME_21[] PROGMEM = "tock_total_adj_diag";
-static const char CSV_FIELD_NAME_22[] PROGMEM = "tock_total_start_tag";
-static const char CSV_FIELD_NAME_23[] PROGMEM = "tock_total_end_tag";
-static const char CSV_FIELD_NAME_24[] PROGMEM = "tick_total_f_hat_hz";
-static const char CSV_FIELD_NAME_25[] PROGMEM = "tock_total_f_hat_hz";
-static const char CSV_FIELD_NAME_26[] PROGMEM = "gps_status";
-static const char CSV_FIELD_NAME_27[] PROGMEM = "holdover_age_ms";
-static const char CSV_FIELD_NAME_28[] PROGMEM = "r_ppm";
-static const char CSV_FIELD_NAME_29[] PROGMEM = "j_ticks";
-static const char CSV_FIELD_NAME_30[] PROGMEM = "dropped";
-static const char CSV_FIELD_NAME_31[] PROGMEM = "adj_diag";
-static const char CSV_FIELD_NAME_32[] PROGMEM = "adj_comp_diag";
-static const char CSV_FIELD_NAME_33[] PROGMEM = "pps_seq_row";
+static const char CSV_FIELD_NAME_02[] PROGMEM = "tick_block";
+static const char CSV_FIELD_NAME_03[] PROGMEM = "tick_block_adj";
+static const char CSV_FIELD_NAME_04[] PROGMEM = "tick_total_adj_direct";
+static const char CSV_FIELD_NAME_05[] PROGMEM = "tick_total_adj_diag";
+static const char CSV_FIELD_NAME_06[] PROGMEM = "tock";
+static const char CSV_FIELD_NAME_07[] PROGMEM = "tock_adj";
+static const char CSV_FIELD_NAME_08[] PROGMEM = "tock_block";
+static const char CSV_FIELD_NAME_09[] PROGMEM = "tock_block_adj";
+static const char CSV_FIELD_NAME_10[] PROGMEM = "tock_total_adj_direct";
+static const char CSV_FIELD_NAME_11[] PROGMEM = "tock_total_adj_diag";
+static const char CSV_FIELD_NAME_12[] PROGMEM = "tick_total_f_hat_hz";
+static const char CSV_FIELD_NAME_13[] PROGMEM = "tock_total_f_hat_hz";
+static const char CSV_FIELD_NAME_14[] PROGMEM = "gps_status";
+static const char CSV_FIELD_NAME_15[] PROGMEM = "holdover_age_ms";
+static const char CSV_FIELD_NAME_16[] PROGMEM = "dropped";
+static const char CSV_FIELD_NAME_17[] PROGMEM = "adj_diag";
+static const char CSV_FIELD_NAME_18[] PROGMEM = "adj_comp_diag";
+static const char CSV_FIELD_NAME_19[] PROGMEM = "pps_seq_row";
 
 static const char* const CSV_FIELD_NAMES[CF_COUNT] PROGMEM = {
   CSV_FIELD_NAME_00,
@@ -229,20 +261,6 @@ static const char* const CSV_FIELD_NAMES[CF_COUNT] PROGMEM = {
   CSV_FIELD_NAME_17,
   CSV_FIELD_NAME_18,
   CSV_FIELD_NAME_19,
-  CSV_FIELD_NAME_20,
-  CSV_FIELD_NAME_21,
-  CSV_FIELD_NAME_22,
-  CSV_FIELD_NAME_23,
-  CSV_FIELD_NAME_24,
-  CSV_FIELD_NAME_25,
-  CSV_FIELD_NAME_26,
-  CSV_FIELD_NAME_27,
-  CSV_FIELD_NAME_28,
-  CSV_FIELD_NAME_29,
-  CSV_FIELD_NAME_30,
-  CSV_FIELD_NAME_31,
-  CSV_FIELD_NAME_32,
-  CSV_FIELD_NAME_33,
 };
 
 inline const char* flashStrAt(const char* const* table, uint8_t index) {
@@ -401,7 +419,12 @@ inline bool isProtocolOwnedCfgKey(const char* key) {
          strcmp(key, CFG_KEY_SAMPLE_SCHEMA) == 0 ||
          strcmp(key, CFG_KEY_SAMPLE_TAG) == 0 ||
          strcmp(key, CFG_KEY_ADJ_SEMANTICS_VERSION) == 0 ||
-         strcmp(key, CFG_KEY_HDR_MODE) == 0;
+         strcmp(key, CFG_KEY_HDR_MODE) == 0 ||
+         strcmp(key, CFG_KEY_EMIT_MODE) == 0 ||
+         strcmp(key, CFG_KEY_CANONICAL_SWING_TAG) == 0 ||
+         strcmp(key, CFG_KEY_CANONICAL_SWING_SCHEMA) == 0 ||
+         strcmp(key, CFG_KEY_CANONICAL_PPS_TAG) == 0 ||
+         strcmp(key, CFG_KEY_CANONICAL_PPS_SCHEMA) == 0;
 }
 
 inline bool parseUint32Dec(const char* text, uint32_t& valueOut) {
@@ -452,6 +475,32 @@ inline CfgValidationResult validateProtocolCfgValue(const char* key, const char*
   }
   if (strcmp(key, CFG_KEY_HDR_MODE) == 0) {
     return strcmp(value, HDR_MODE_SEGMENTED_V1) == 0
+             ? CfgValidationResult::Ok
+             : CfgValidationResult::InvalidValue;
+  }
+  if (strcmp(key, CFG_KEY_EMIT_MODE) == 0) {
+    return (strcmp(value, emitModeToStr(EMIT_MODE_DERIVED)) == 0 ||
+            strcmp(value, emitModeToStr(EMIT_MODE_CANONICAL)) == 0)
+             ? CfgValidationResult::Ok
+             : CfgValidationResult::InvalidValue;
+  }
+  if (strcmp(key, CFG_KEY_CANONICAL_SWING_TAG) == 0) {
+    return strcmp(value, TAG_CSW) == 0
+             ? CfgValidationResult::Ok
+             : CfgValidationResult::InvalidValue;
+  }
+  if (strcmp(key, CFG_KEY_CANONICAL_SWING_SCHEMA) == 0) {
+    return strcmp(value, CANONICAL_SWING_SCHEMA_ID) == 0
+             ? CfgValidationResult::Ok
+             : CfgValidationResult::InvalidValue;
+  }
+  if (strcmp(key, CFG_KEY_CANONICAL_PPS_TAG) == 0) {
+    return strcmp(value, TAG_CPS) == 0
+             ? CfgValidationResult::Ok
+             : CfgValidationResult::InvalidValue;
+  }
+  if (strcmp(key, CFG_KEY_CANONICAL_PPS_SCHEMA) == 0) {
+    return strcmp(value, CANONICAL_PPS_SCHEMA_ID) == 0
              ? CfgValidationResult::Ok
              : CfgValidationResult::InvalidValue;
   }
@@ -748,40 +797,27 @@ static constexpr char PARAM_PPS_STALE_MS[]     = "ppsStaleMs";
 static constexpr char PARAM_PPS_ISR_STALE_MS[] = "ppsIsrStaleMs";
 static constexpr char PARAM_PPS_CFG_REEMIT_DELAY_MS[] = "ppsCfgReemitDelayMs";
 static constexpr char PARAM_PPS_ACQUIRE_MIN_MS[] = "ppsAcquireMinMs";
+static constexpr char PARAM_PPS_METROLOGY_GRACE_MS[] = "ppsMetrologyGraceMs";
 
 struct PendulumSample {
   uint32_t tick;
   uint32_t tick_adj;
-  uint64_t tick_start_tag;
-  uint64_t tick_end_tag;
   uint32_t tick_block;
   uint32_t tick_block_adj;
-  uint64_t tick_block_start_tag;
-  uint64_t tick_block_end_tag;
   uint32_t tick_total_adj_direct;
   // DirectAdjDiagBits for tick_total_adj_direct (direct full half-swing).
   uint8_t tick_total_adj_diag;
-  uint64_t tick_total_start_tag;
-  uint64_t tick_total_end_tag;
   uint32_t tock;
   uint32_t tock_adj;
-  uint64_t tock_start_tag;
-  uint64_t tock_end_tag;
   uint32_t tock_block;
   uint32_t tock_block_adj;
-  uint64_t tock_block_start_tag;
-  uint64_t tock_block_end_tag;
   uint32_t tock_total_adj_direct;
   // DirectAdjDiagBits for tock_total_adj_direct (direct full half-swing).
   uint8_t tock_total_adj_diag;
-  uint64_t tock_total_start_tag;
-  uint64_t tock_total_end_tag;
   // Half-swing applied-scale provenance for tick/tock total intervals.
   uint32_t tick_total_f_hat_hz;
   uint32_t tock_total_f_hat_hz;
   uint32_t holdover_age_ms;
-  uint32_t r_ppm;
-  uint32_t j_ticks;
   // Trailing wire field with PPS sequence provenance for final interval closure.
   uint32_t pps_seq_row;
   uint16_t dropped_events;    // [0, 65535] dropped-edge counter snapshot.
@@ -789,6 +825,31 @@ struct PendulumSample {
   GpsStatus gps_status;       // [0, 3] GpsStatus enum.
   // AdjDiagBits for component intervals (tick/tick_block/tock/tock_block).
   uint8_t adj_diag;           // [0, 127] bitfield.
+};
+
+struct CanonicalSwingSample {
+  uint32_t seq;
+  uint32_t edge0_tcb0;
+  uint32_t edge1_tcb0;
+  uint32_t edge2_tcb0;
+  uint32_t edge3_tcb0;
+  uint32_t edge4_tcb0;
+  uint32_t drop_ir;
+  uint32_t drop_pps;
+  uint32_t drop_swing;
+  uint16_t adj_comp_diag;
+  uint8_t adj_diag;
+};
+
+struct CanonicalPpsSample {
+  uint32_t seq;
+  uint32_t edge_tcb0;
+  uint32_t now32;
+  uint16_t cap16;
+  uint16_t latency16;
+  uint32_t holdover_age_ms;
+  uint32_t drop_pps;
+  GpsStatus gps_status;
 };
 
 #define SERIAL_BAUD_NANO 115200

@@ -17,6 +17,7 @@ namespace Tunables {
   uint16_t  ppsIsrStaleMs        = PPS_ISR_STALE_MS_DEFAULT;
   uint16_t  ppsConfigReemitDelayMs = PPS_CFG_REEMIT_DELAY_MS_DEFAULT;
   uint16_t  ppsAcquireMinMs      = PPS_ACQUIRE_MIN_MS_DEFAULT;
+  uint32_t  ppsMetrologyGraceMs  = PPS_METROLOGY_GRACE_MS_DEFAULT;
 
 
   uint8_t ppsFastShiftActive() {
@@ -82,6 +83,10 @@ namespace Tunables {
     return (ppsAcquireMinMs == 0U) ? 1U : ppsAcquireMinMs;
   }
 
+  uint32_t ppsMetrologyGraceMsActive() {
+    return (ppsMetrologyGraceMs == 0UL) ? 1UL : ppsMetrologyGraceMs;
+  }
+
   void normalizePpsTunables() {
     ppsFastShift = ppsFastShiftActive();
     ppsSlowShift = ppsSlowShiftActive();
@@ -92,6 +97,7 @@ namespace Tunables {
     ppsStaleMs = ppsStaleMsActive();
     ppsIsrStaleMs = ppsIsrStaleMsActive();
     ppsAcquireMinMs = ppsAcquireMinMsActive();
+    ppsMetrologyGraceMs = ppsMetrologyGraceMsActive();
   }
 
   void restoreDefaults() {
@@ -110,6 +116,7 @@ namespace Tunables {
     ppsIsrStaleMs = PPS_ISR_STALE_MS_DEFAULT;
     ppsConfigReemitDelayMs = PPS_CFG_REEMIT_DELAY_MS_DEFAULT;
     ppsAcquireMinMs = PPS_ACQUIRE_MIN_MS_DEFAULT;
+    ppsMetrologyGraceMs = PPS_METROLOGY_GRACE_MS_DEFAULT;
     normalizePpsTunables();
   }
 }

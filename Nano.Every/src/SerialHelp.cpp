@@ -24,23 +24,23 @@ const char CAT_core[]     PROGMEM = "core";
 const char CAT_tunables[] PROGMEM = "tunables";
 
 const char H_name[]     PROGMEM = "help";
-const char H_syn[]      PROGMEM = "Show help for commands or tunables";
+const char H_syn[]      PROGMEM = "Show help";
 const char H_use[]      PROGMEM = "help [<command>|tunables]";
 
 const char G_name[]     PROGMEM = "get";
-const char G_syn[]      PROGMEM = "Read a tunable";
+const char G_syn[]      PROGMEM = "Read value";
 const char G_use[]      PROGMEM = "get <param>";
 
 const char SET_name[]   PROGMEM = "set";
-const char SET_syn[]    PROGMEM = "Set a tunable";
+const char SET_syn[]    PROGMEM = "Set value";
 const char SET_use[]    PROGMEM = "set <param> <value>";
 
 const char RESET_name[] PROGMEM = "reset";
-const char RESET_syn[]  PROGMEM = "Reset firmware defaults into live config and EEPROM";
+const char RESET_syn[]  PROGMEM = "Restore defaults";
 const char RESET_use[]  PROGMEM = "reset defaults";
 
 const char EMIT_name[]  PROGMEM = "emit";
-const char EMIT_syn[]   PROGMEM = "Emit runtime telemetry events";
+const char EMIT_syn[]   PROGMEM = "Emit telemetry";
 const char EMIT_use[]   PROGMEM = "emit meta|startup";
 
 const CmdHelp HELP_REGISTRY[] PROGMEM = {
@@ -84,7 +84,7 @@ bool starts_with_ci_P(const char* ram, const char* pgm) {
 void read_entry(uint8_t i, CmdHelp& out) { memcpy_P(&out, &HELP_REGISTRY[i], sizeof(out)); }
 
 void list_commands() {
-  CMD_SERIAL.println(F("Commands: name – synopsis"));
+  CMD_SERIAL.println(F("Commands:"));
   for (uint8_t i = 0; i < HELP_N; ++i) {
     CmdHelp e;
     read_entry(i, e);
@@ -93,7 +93,7 @@ void list_commands() {
     CMD_SERIAL.print(F(" – "));
     println_P(e.synopsis_P);
   }
-  CMD_SERIAL.println(F("Tip: 'help <command>' or 'help tunables'"));
+  CMD_SERIAL.println(F("Tip: help <command> | help tunables"));
 }
 
 bool detail_for(const char* name) {
@@ -131,7 +131,7 @@ void suggest_similar(const char* name) {
 }
 
 void show_tunables() {
-  CMD_SERIAL.println(F("Tunables (current / example usage)"));
+  CMD_SERIAL.println(F("Tunables (current)"));
   for (const TunableDescriptor* it = tunableRegistryBegin(); it != tunableRegistryEnd(); ++it) {
     CMD_SERIAL.print(F("  "));
     CMD_SERIAL.print(it->cliName);
@@ -139,9 +139,9 @@ void show_tunables() {
     CMD_SERIAL.print(tunableTypeName(it->type));
     CMD_SERIAL.print(F("]: "));
     it->printCurrent(CMD_SERIAL);
-    CMD_SERIAL.print(F("    e.g. `"));
-    CMD_SERIAL.print(it->exampleText);
-    CMD_SERIAL.print(F("`"));
+    CMD_SERIAL.print(F("    e.g. `set "));
+    CMD_SERIAL.print(it->cliName);
+    CMD_SERIAL.print(F(" <value>`"));
     if (it->helpText && *it->helpText) {
       CMD_SERIAL.print(F(" ("));
       CMD_SERIAL.print(it->helpText);

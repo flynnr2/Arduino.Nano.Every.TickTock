@@ -1,9 +1,15 @@
 #pragma once
 #include <stddef.h>
+#include <stdint.h>
 
 void latchResetCauseOnceAtBoot();
 uint8_t getLatchedResetCause();
+uint8_t getLateObservedResetCause();
+bool latchedResetCauseUsesEarlyCapture();
+bool latchedResetCauseEarlyValid();
+bool latchedResetCauseMismatch();
 void formatLatchedResetFlags(char* out, size_t outLen);
+void formatResetFlagsFromRaw(uint8_t rstfr, char* out, size_t outLen);
 bool shouldResetBootSeqFromLatchedCause();
 uint16_t advanceBootSequenceForBoot();
 void emitResetCause();

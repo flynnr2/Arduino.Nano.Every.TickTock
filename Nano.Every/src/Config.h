@@ -19,11 +19,29 @@
 // External main clock mode is a boot-time-only option for Nano Every /
 // ATmega4809 EXTCLK use and must match the board build's F_CPU.
 #ifndef USE_EXTCLK_MAIN
-#define USE_EXTCLK_MAIN 0
+#define USE_EXTCLK_MAIN 1
 #endif
 
 #if ((USE_EXTCLK_MAIN) != 0) && ((USE_EXTCLK_MAIN) != 1)
 #error "USE_EXTCLK_MAIN must be 0 or 1"
+#endif
+
+#ifndef EXTCLK_PRESWITCH_DELAY_MS
+#define EXTCLK_PRESWITCH_DELAY_MS 25U
+#endif
+
+// Bounded boot-time poll iterations for MCLKSTATUS.SOSC to clear after selecting
+// EXTCLK. This is a deterministic loop bound (no millis()/timer dependency).
+#ifndef EXTCLK_SOSC_CLEAR_POLL_ITERATIONS
+#define EXTCLK_SOSC_CLEAR_POLL_ITERATIONS 60000U
+#endif
+
+#ifndef ENABLE_EXTCLK_HANDOFF_DIAG_STS
+#define ENABLE_EXTCLK_HANDOFF_DIAG_STS 1 // emit optional EXTCLK handoff snapshot in STS clock diagnostics
+#endif
+
+#if ((ENABLE_EXTCLK_HANDOFF_DIAG_STS) != 0) && ((ENABLE_EXTCLK_HANDOFF_DIAG_STS) != 1)
+#error "ENABLE_EXTCLK_HANDOFF_DIAG_STS must be 0 or 1"
 #endif
 
 #ifndef MAIN_CLOCK_HZ
@@ -43,6 +61,22 @@ static_assert(static_cast<uint32_t>(MAIN_CLOCK_HZ) == static_cast<uint32_t>(F_CP
 
 #if (USE_ARDUINO_TIMEBASE == 1) && (DISABLE_ARDUINO_TCB3_TIMEBASE == 1)
 #error "Cannot disable Arduino TCB3 timebase while USE_ARDUINO_TIMEBASE=1"
+#endif
+/******************************************************************************/
+
+/******************************************************************************/
+// DUAL_PPS_EDGE note:
+// delta_ccmp = tcb1_ccmp - tcb2_ccmp in different local TCB domains,
+// so it includes true path delay + fixed TCB1/TCB2 counter phase offset.
+// delta_ext = tcb1_ext - tcb2_ext after both are reconstructed into the
+// shared TCB0 timeline, so it is the more meaningful cross-path edge delta.
+// Neither value is PPS disciplining correction.
+#ifndef DUAL_PPS_PROFILING
+#define DUAL_PPS_PROFILING 1
+#endif
+
+#if ((DUAL_PPS_PROFILING) != 0) && ((DUAL_PPS_PROFILING) != 1)
+#error "DUAL_PPS_PROFILING must be 0 (off) or 1 (on)"
 #endif
 /******************************************************************************/
 
@@ -138,6 +172,10 @@ static_assert(static_cast<uint32_t>(MAIN_CLOCK_HZ) == static_cast<uint32_t>(F_CP
 #define STARTUP_SERIAL_SETTLE_MS 1200UL // delay after setup init to let serial consumers attach before startup emission
 #endif
 
+#ifndef STARTUP_FULL_REPLAY_RETRY_DELAY_MS
+#define STARTUP_FULL_REPLAY_RETRY_DELAY_MS 3000UL // bounded one-shot full startup replay backup delay after initial startup contract
+#endif
+
 /******************************************************************************/
 // Foreground fairness budgets: cap burst draining per loop pass to avoid starving
 // command handling and periodic housekeeping when capture bursts occur.
@@ -185,6 +223,7 @@ constexpr uint16_t PPS_STALE_MS_DEFAULT             = 2200;    // PPS freshness 
 constexpr uint16_t PPS_ISR_STALE_MS_DEFAULT         = 2200;    // PPS freshness timeout for ISR edge/counter activity
 constexpr uint16_t PPS_CFG_REEMIT_DELAY_MS_DEFAULT  = 2000;    // delay before re-emitting PPS config after boot
 constexpr uint16_t PPS_ACQUIRE_MIN_MS_DEFAULT       = 60000;   // minimum ACQUIRE dwell before DISCIPLINED
+constexpr uint32_t PPS_METROLOGY_GRACE_MS_DEFAULT   = 120000UL; // metrology export grace after mild DISCIPLINED->ACQUIRE unlock
 
 // SRAM budget guardrail table (ATmega4809 has tight SRAM constraints):
 // - swing rows: sizeof(FullSwing) * RING_SIZE_SWING_ROWS   (asserted in SwingAssembler.cpp)
@@ -208,6 +247,7 @@ namespace Tunables {
   extern uint16_t  ppsIsrStaleMs;          // PPS freshness timeout for ISR edge/count changes
   extern uint16_t  ppsConfigReemitDelayMs; // startup delay before re-emitting PPS config
   extern uint16_t  ppsAcquireMinMs;        // minimum ACQUIRE dwell before DISCIPLINED
+  extern uint32_t  ppsMetrologyGraceMs;    // hold last-good slow export briefly after mild unlock
 
   uint8_t ppsFastShiftActive();
   uint8_t ppsSlowShiftActive();
@@ -224,6 +264,7 @@ namespace Tunables {
   uint16_t ppsIsrStaleMsActive();
   uint16_t ppsConfigReemitDelayMsActive();
   uint16_t ppsAcquireMinMsActive();
+  uint32_t ppsMetrologyGraceMsActive();
   void normalizePpsTunables();
   void restoreDefaults();
 }
@@ -242,6 +283,7 @@ struct TunableConfig {
   uint16_t  ppsIsrStaleMs;
   uint16_t  ppsConfigReemitDelayMs;
   uint16_t  ppsAcquireMinMs;
+  uint32_t  ppsMetrologyGraceMs;
   uint16_t  crc16;
 
   uint8_t   ppsFastShift;

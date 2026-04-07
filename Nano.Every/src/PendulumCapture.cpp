@@ -7,6 +7,9 @@
 
 static volatile uint32_t pps_seen = 0;
 static volatile uint32_t droppedEvents = 0;
+static volatile uint32_t droppedIrEvents = 0;
+static volatile uint32_t droppedPpsEvents = 0;
+static volatile uint32_t droppedSwingRows = 0;
 
 static volatile uint16_t tcb0Ovf = 0;
 static volatile uint32_t tcb0WrapDetected = 0;
@@ -22,6 +25,13 @@ static volatile uint8_t ev_tail = 0;
 static PpsCapture ppsBuffer[CAPTURE_PPS_RING_SIZE];
 static volatile uint8_t ppsHead = 0;
 static volatile uint8_t ppsTail = 0;
+
+#if ENABLE_PROFILING && DUAL_PPS_PROFILING
+static volatile uint32_t dual_tcb1_rising_seq = 0;
+static volatile uint32_t dual_tcb2_rising_seq = 0;
+static volatile uint16_t dual_tcb1_rising_cap16 = 0;
+static volatile uint32_t dual_tcb1_rising_edge32 = 0;
+#endif
 
 static bool captureHardwareInitialized = false;
 
@@ -48,6 +58,9 @@ constexpr uint8_t EVCTRL_PPS_CAPTURE = TCB_CAPTEI_bm;
 static inline void resetCaptureSoftwareState() {
   pps_seen = 0;
   droppedEvents = 0;
+  droppedIrEvents = 0;
+  droppedPpsEvents = 0;
+  droppedSwingRows = 0;
   tcb0Ovf = 0;
   tcb0WrapDetected = 0;
   coherentOvfFlagSeenCount = 0;
@@ -58,6 +71,12 @@ static inline void resetCaptureSoftwareState() {
   ev_tail = 0;
   ppsHead = 0;
   ppsTail = 0;
+#if ENABLE_PROFILING && DUAL_PPS_PROFILING
+  dual_tcb1_rising_seq = 0;
+  dual_tcb2_rising_seq = 0;
+  dual_tcb1_rising_cap16 = 0;
+  dual_tcb1_rising_edge32 = 0;
+#endif
 }
 
 }  // namespace
@@ -66,26 +85,42 @@ static inline uint16_t read_TCB0_CNT() { return TCB0.CNT; }
 static inline uint16_t sub16(uint16_t a, uint16_t b) { return (uint16_t)(a - b); }
 
 static inline uint8_t pps_mask(uint8_t v) { return v & (CAPTURE_PPS_RING_SIZE - 1); }
-static inline void droppedEvents_inc_isr() { droppedEvents++; }
+static inline void droppedIrEvents_inc_isr() {
+  droppedEvents++;
+  droppedIrEvents++;
+}
+static inline void droppedPpsEvents_inc_isr() {
+  droppedEvents++;
+  droppedPpsEvents++;
+}
 
-static inline void ppsData_push_isr(uint32_t edge32,
+static inline void ppsData_push_isr(uint32_t seq,
+                                    uint32_t edge32,
                                     uint32_t now32,
                                     uint16_t ovf,
                                     uint16_t cap16,
                                     uint16_t cnt,
-                                    uint16_t latency16) {
+                                    uint16_t latency16
+#if ENABLE_PROFILING && DUAL_PPS_PROFILING
+                                    , uint32_t rise_seq
+#endif
+                                    ) {
   uint8_t n = pps_mask(ppsHead + 1);
   if (n != ppsTail) {
     PpsCapture &slot = ppsBuffer[ppsHead];
+    slot.seq = seq;
     slot.edge32 = edge32;
     slot.now32 = now32;
     slot.ovf = ovf;
     slot.cap16 = cap16;
     slot.cnt = cnt;
     slot.latency16 = latency16;
+#if ENABLE_PROFILING && DUAL_PPS_PROFILING
+    slot.rise_seq = rise_seq;
+#endif
     ppsHead = n;
   } else {
-    droppedEvents_inc_isr();
+    droppedPpsEvents_inc_isr();
   }
 }
 
@@ -127,6 +162,59 @@ void captureRecordDroppedEvent() {
     droppedEvents++;
   }
 }
+
+void captureRecordSwingRowDrop() {
+  ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
+    droppedEvents++;
+    droppedSwingRows++;
+  }
+}
+
+uint32_t captureDroppedIrEvents() {
+  uint32_t dropped = 0;
+  ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
+    dropped = droppedIrEvents;
+  }
+  return dropped;
+}
+
+uint32_t captureDroppedPpsEvents() {
+  uint32_t dropped = 0;
+  ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
+    dropped = droppedPpsEvents;
+  }
+  return dropped;
+}
+
+uint32_t captureDroppedSwingRows() {
+  uint32_t dropped = 0;
+  ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
+    dropped = droppedSwingRows;
+  }
+  return dropped;
+}
+
+#if ENABLE_PROFILING && DUAL_PPS_PROFILING
+bool captureReadDualPpsTcb1RisingSnapshot(DualPpsTcb1RisingSnapshot& out) {
+  bool valid = false;
+  ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
+    if (dual_tcb1_rising_seq != 0U) {
+      out.rise_seq = dual_tcb1_rising_seq;
+      out.edge32 = dual_tcb1_rising_edge32;
+      out.cap16 = dual_tcb1_rising_cap16;
+      valid = true;
+    }
+  }
+  return valid;
+}
+
+void captureReadDualPpsSeenCounters(DualPpsProfilingCounters& out) {
+  ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
+    out.tcb1_rising_seen = dual_tcb1_rising_seq;
+    out.tcb2_rising_seen = dual_tcb2_rising_seq;
+  }
+}
+#endif
 
 bool captureEdgeAvailable() {
   return ev_tail != ev_head;
@@ -327,13 +415,18 @@ ISR(TCB1_INT_vect) {
   const uint32_t edge32 = now32 - (uint32_t)latency16;
 
   if (isTick) {
+#if ENABLE_PROFILING && DUAL_PPS_PROFILING
+    dual_tcb1_rising_seq++;
+    dual_tcb1_rising_cap16 = ccmp;
+    dual_tcb1_rising_edge32 = edge32;
+#endif
     uint8_t next = (uint8_t)(ev_head + 1) & (CAPTURE_EDGE_BUFFER_SIZE - 1);
     if (next != ev_tail) {
       evbuf[ev_head].ticks = edge32;
       evbuf[ev_head].type  = 0;
       ev_head = next;
     } else {
-      droppedEvents_inc_isr();
+      droppedIrEvents_inc_isr();
     }
     TCB1.EVCTRL = EVCTRL_CAPTURE_EDGE_HIGH_TO_LOW;
     isTick = false;
@@ -344,7 +437,7 @@ ISR(TCB1_INT_vect) {
       evbuf[ev_head].type  = 1;
       ev_head = next;
     } else {
-      droppedEvents_inc_isr();
+      droppedIrEvents_inc_isr();
     }
     TCB1.EVCTRL = EVCTRL_CAPTURE_EDGE_LOW_TO_HIGH;
     isTick = true;
@@ -392,7 +485,12 @@ ISR(TCB2_INT_vect) {
   const uint32_t edge32 = now32 - (uint32_t)latency16;
 
   pps_seen++;
-  ppsData_push_isr(edge32, now32, tcb0Ovf, ccmp, cnt, latency16);
+#if ENABLE_PROFILING && DUAL_PPS_PROFILING
+  dual_tcb2_rising_seq++;
+  ppsData_push_isr(pps_seen, edge32, now32, tcb0Ovf, ccmp, cnt, latency16, dual_tcb2_rising_seq);
+#else
+  ppsData_push_isr(pps_seen, edge32, now32, tcb0Ovf, ccmp, cnt, latency16);
+#endif
 }
 
 /*

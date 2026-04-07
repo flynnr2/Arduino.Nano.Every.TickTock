@@ -14,7 +14,7 @@ constexpr uint8_t  EEPROM_SLOT_NANO_A_ADDR = 0;       // [0, 255] EEPROM base by
 constexpr uint8_t  EEPROM_SLOT_NANO_B_ADDR = 64;      // [0, 255] EEPROM base byte for 2nd copy
 constexpr uint16_t EEPROM_SLOT_SIZE        = (uint16_t)(EEPROM_SLOT_NANO_B_ADDR - EEPROM_SLOT_NANO_A_ADDR);
 
-constexpr uint8_t  EEPROM_CONFIG_VERSION_ACTIVE_PPS_ONLY      = 4; // removes obsolete compatibility-only tunables from persisted config
+constexpr uint8_t  EEPROM_CONFIG_VERSION_ACTIVE_PPS_ONLY      = 5; // adds ppsMetrologyGraceMs tunable to persisted config
 constexpr uint8_t  EEPROM_CONFIG_VERSION_CURRENT               = EEPROM_CONFIG_VERSION_ACTIVE_PPS_ONLY;
 
 static_assert(sizeof(TunableConfig) <= EEPROM_SLOT_SIZE,

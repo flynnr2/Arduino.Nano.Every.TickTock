@@ -1,5 +1,20 @@
 # Implementation Guide
 
+Companion subsystem docs:
+- `Docs/adr/0001-memory-and-telemetry-budget.md` (memory/telemetry tradeoffs)
+- `Docs/Capture_Timebase_Architecture.md` (EVSYS/TCB and shared-timeline projection)
+- `Docs/Config_Defines_Guide.md` (src/Config.h #defines)
+- `Docs/Emit_Mode_Guide.md` (CANONICAL vs DERIVED behavior)
+- `Docs/Pendulum_CSV_Requirements_and_Semantics_Draft.md` (DERIVED mode emission reference)
+- `Docs/Pendulum_Data_Record_Guide.md` (Guide to emitted pendulum data fields)
+- `Docs/PPS_Discipliner_Guide.md` (EWMA model, state machine, tuning workflow)
+
+## Document status
+
+This document is **implementation-oriented** and should be kept. It describes module ownership and pipeline behavior that are still current, but some stream-contract details below describe DERIVED (`HDR_PART`/`SMP`) output as if it were always active.
+
+Current firmware defaults to **CANONICAL emit mode** (`SCH`/`CSW`/`CPS`) via `ACTIVE_EMIT_MODE` in `PendulumProtocol.h`; use `Docs/Emit_Mode_Guide.md` plus `PendulumProtocol.h` as the normative source for output mode and wire tags.
+
 ## Scope & Terminology
 
 This document describes the current Nano Every firmware after the reduced-surface cleanup. The runtime now exposes one raw-cycle sample schema, one small tuning CLI, and a compact `STS` contract focused on boot/config/PPS state.
@@ -105,18 +120,25 @@ In the main loop, `PendulumCore::process_pps()` then:
 3. process queued IR captures via `SwingAssembler`
 4. pop completed `FullSwing` records
 5. copy raw swing fields and per-interval PPS-adjusted `*_adj` fields
-6. attach row-level context/diagnostics (`f_inst_hz`, `f_hat_hz`, `gps_status`, `holdover_age_ms`, `r_ppm`, `j_ticks`, `dropped`, and adjustment diagnostics)
+6. attach row-level context/diagnostics (`tick_total_f_hat_hz`, `tock_total_f_hat_hz`, `gps_status`, `holdover_age_ms`, `dropped`, and adjustment diagnostics)
 7. emit the sample through `SerialParser`
 
-### Raw-cycle sample contract
+### Raw-cycle sample contract (DERIVED mode)
 
-The retained sample contract is:
+When DERIVED mode is selected, the retained sample contract is:
 
-- `CFG,protocol_version=1,nominal_hz=<ticks/sec>,sample_tag=SMP,sample_schema=raw_cycles_hz_v6,adj_semantics_version=<n>,fw=<version>`
+- `CFG,protocol_version=1,nominal_hz=<ticks/sec>,sample_tag=SMP,sample_schema=raw_cycles_hz_v7,adj_semantics_version=<n>,fw=<version>`
 - `HDR_PART,<part_index>,<part_count>,...` segmented schema declaration (always enabled)
 - `SMP,...` rows carrying values for exactly those columns
 
-Raw fields remain capture source truth. Component `*_adj` fields are authoritative PPS-aware sub-interval corrections. `*_total_adj_direct` fields are authoritative PPS-aware full half-swing corrections. `f_hat_hz` remains row-level context and must not be interpreted as a universal per-interval correction factor when exact adjusted fields are present.
+When CANONICAL mode is selected (the current default), the stream contract is:
+
+- `CFG,...` / `STS,...` metadata including emit-mode/schema keys
+- `SCH,<tag>,<schema_id>,<csv_fields>` declarations
+- `CSW,...` canonical swing rows
+- `CPS,...` canonical PPS rows
+
+Raw fields remain capture source truth. Component `*_adj` fields are authoritative PPS-aware sub-interval corrections. `*_total_adj_direct` fields are authoritative PPS-aware full half-swing corrections. `tick_total_f_hat_hz/tock_total_f_hat_hz` remains row-level context and must not be interpreted as a universal per-interval correction factor when exact adjusted fields are present.
 
 `adj_semantics_version` is the explicit wire contract for that authority split and diagnostic-family interpretation.
 

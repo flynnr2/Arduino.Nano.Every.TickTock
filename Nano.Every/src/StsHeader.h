@@ -3,7 +3,7 @@
 #include "EEPROMConfig.h"
 
 #ifndef BUILD_UTC
-#define BUILD_UTC "unknown"
+#define BUILD_UTC __DATE__ " " __TIME__
 #endif
 
 #ifndef BUILD_DIRTY

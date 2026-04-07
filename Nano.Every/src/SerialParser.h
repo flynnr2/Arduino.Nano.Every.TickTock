@@ -59,6 +59,8 @@ bool queueCSVLine(const char* buf, int len,
                   EmissionReliability reliability = EmissionReliability::BestEffort);
 void sendTaggedCsvLine(const char* tag, const char* text);
 void sendSample(const PendulumSample &s);
+void sendCanonicalSwingSample(const CanonicalSwingSample& s);
+void sendCanonicalPpsSample(const CanonicalPpsSample& s);
 void sendStatus(StatusCode code, const char* text,
                 EmissionReliability reliability = EmissionReliability::BestEffort);
 void printCsvHeader();

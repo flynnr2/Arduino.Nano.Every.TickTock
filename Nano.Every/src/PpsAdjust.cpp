@@ -38,7 +38,8 @@ static inline uint32_t elapsed32(uint32_t now, uint32_t then) {
 
 static uint64_t hz_to_scale_q32(uint32_t hz) {
   if (hz == 0U) hz = s_nominal_hz ? s_nominal_hz : 1U;
-  const uint64_t numerator = (16000000ULL << 32);
+  const uint64_t nominal_hz = s_nominal_hz ? (uint64_t)s_nominal_hz : 1ULL;
+  const uint64_t numerator = (nominal_hz << 32);
   return (numerator + ((uint64_t)hz / 2ULL)) / (uint64_t)hz;
 }
 
@@ -184,7 +185,7 @@ bool ppsAdjustLookupSeq(uint32_t seq, uint32_t* span_ticks, uint32_t* applied_hz
   return any;
 }
 
-bool ppsAdjustIntervalToNominal16Mhz(const PpsTaggedStamp& start,
+bool ppsAdjustIntervalToNominalTicks(const PpsTaggedStamp& start,
                                      const PpsTaggedStamp& end,
                                      uint32_t raw_ticks,
                                      uint32_t* adjusted_ticks,
@@ -254,6 +255,15 @@ bool ppsAdjustIntervalToNominal16Mhz(const PpsTaggedStamp& start,
   *adjusted_ticks = (uint32_t)adj_total;
   *diag_bits |= diag;
   return true;
+}
+
+bool ppsAdjustIntervalToNominal16Mhz(const PpsTaggedStamp& start,
+                                     const PpsTaggedStamp& end,
+                                     uint32_t raw_ticks,
+                                     uint32_t* adjusted_ticks,
+                                     uint8_t* diag_bits,
+                                     uint8_t crossed_bit) {
+  return ppsAdjustIntervalToNominalTicks(start, end, raw_ticks, adjusted_ticks, diag_bits, crossed_bit);
 }
 
 uint32_t ppsAdjustCurrentSeq() {

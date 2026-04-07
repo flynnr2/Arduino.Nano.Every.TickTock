@@ -246,7 +246,7 @@ void emit_tune_event(FreqDiscipliner::DiscState from,
   if (!line) return;
   const int n = snprintf(line,
                          CSV_PAYLOAD_MAX,
-                         "TUNE_EVT,from=%s,to=%s,t=%lu,R=%lu,es=%ld,ea=%ld,ps=%lu,pa=%lu,js=%lu,ja=%lu,lfg=%u,lse=%u,lsm=%u,lae=%u,lam=%u,lan=%u,uae=%u,uam=%u,uan=%u,streak=%u",
+                         "TUNE_EVT,from=%s,to=%s,t=%lu,R=%lu,es=%ld,ea=%ld,ps=%lu,pa=%lu,js=%lu,ja=%lu,lfg=%u,lse=%u,lsm=%u,lae=%u,lam=%u,lan=%u,uae=%u,uam=%u,use=%u,usm=%u,urg=%u,uan=%u,streak=%u",
                          tune_state_name(from),
                          tune_state_name(to),
                          (unsigned long)(now_ms / 1000UL),
@@ -265,6 +265,9 @@ void emit_tune_event(FreqDiscipliner::DiscState from,
                          (unsigned int)((lock_mask & (1U << 5)) ? 1U : 0U),
                          (unsigned int)((unlock_mask & (1U << 0)) ? 1U : 0U),
                          (unsigned int)((unlock_mask & (1U << 1)) ? 1U : 0U),
+                         (unsigned int)((unlock_mask & (1U << 2)) ? 1U : 0U),
+                         (unsigned int)((unlock_mask & (1U << 3)) ? 1U : 0U),
+                         (unsigned int)((unlock_mask & (1U << 4)) ? 1U : 0U),
                          (unsigned int)((unlock_mask & (1U << 5)) ? 1U : 0U),
                          (unsigned int)streak);
   if (n > 0) {
@@ -279,3 +282,62 @@ void emit_tune_event(FreqDiscipliner::DiscState from,
   (void)streak;
 #endif
 }
+
+void emit_metrology_mode_event(DisciplinedTime::ExportMode from,
+                               DisciplinedTime::ExportMode to,
+                               FreqDiscipliner::DiscState trust_state,
+                               uint32_t now_ms,
+                               uint32_t f_hat_hz,
+                               uint32_t anchor_hz) {
+#if PPS_TUNING_TELEMETRY
+  char* line = telemetryEmitLineBuf();
+  if (!line) return;
+  const int n = snprintf(line,
+                         CSV_PAYLOAD_MAX,
+                         "METRO_MODE_EVT,from=%s,to=%s,trust=%s,t=%lu,f_hat=%lu,anchor=%lu",
+                         DisciplinedTime::exportModeName(from),
+                         DisciplinedTime::exportModeName(to),
+                         tune_state_name(trust_state),
+                         (unsigned long)(now_ms / 1000UL),
+                         (unsigned long)f_hat_hz,
+                         (unsigned long)anchor_hz);
+  if (n > 0) {
+    sendStatusFromOwnedBuffer(FormatBufferOwner::PendulumCore, StatusCode::ProgressUpdate, line);
+  }
+  telemetryReleaseLineBuf();
+#else
+  (void)from;
+  (void)to;
+  (void)trust_state;
+  (void)now_ms;
+  (void)f_hat_hz;
+  (void)anchor_hz;
+#endif
+}
+
+#if ENABLE_PROFILING && DUAL_PPS_PROFILING
+void emit_dual_pps_edge_telemetry(uint32_t q,
+                                  uint16_t tcb2_ccmp,
+                                  uint16_t tcb1_ccmp,
+                                  int32_t delta_ccmp,
+                                  uint32_t tcb2_ext,
+                                  uint32_t tcb1_ext,
+                                  int32_t delta_ext) {
+  char* line = telemetryEmitLineBuf();
+  if (!line) return;
+  const int n = snprintf(line,
+                         CSV_PAYLOAD_MAX,
+                         "DUAL_PPS_EDGE,q=%lu,tcb2_ccmp=%u,tcb1_ccmp=%u,delta_ccmp=%ld,tcb2_ext=%lu,tcb1_ext=%lu,delta_ext=%ld",
+                         (unsigned long)q,
+                         (unsigned int)tcb2_ccmp,
+                         (unsigned int)tcb1_ccmp,
+                         (long)delta_ccmp,
+                         (unsigned long)tcb2_ext,
+                         (unsigned long)tcb1_ext,
+                         (long)delta_ext);
+  if (n > 0) {
+    sendStatusFromOwnedBuffer(FormatBufferOwner::PendulumCore, StatusCode::ProgressUpdate, line);
+  }
+  telemetryReleaseLineBuf();
+}
+#endif

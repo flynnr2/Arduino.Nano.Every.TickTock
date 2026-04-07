@@ -19,10 +19,11 @@ static_assert((SWING_RING_SIZE & (SWING_RING_SIZE - 1U)) == 0U, "SWING_RING_SIZE
 FullSwing swing_buf[SWING_RING_SIZE];
 volatile uint8_t swing_head = 0;
 volatile uint8_t swing_tail = 0;
+uint32_t swing_seq = 0;
 
 // SRAM guardrails: rows are produced at pendulum cadence (much slower than edge ISR
 // cadence), so this queue should stay compact on ATmega4809.
-static_assert(sizeof(FullSwing) <= 160U, "FullSwing grew unexpectedly; revisit SRAM budget");
+static_assert(sizeof(FullSwing) <= 192U, "FullSwing grew unexpectedly; revisit SRAM budget");
 static_assert(sizeof(swing_buf) <= 2048U, "Swing row ring exceeds SRAM budget");
 
 static inline uint8_t swing_mask(uint8_t v) { return v & (SWING_RING_SIZE - 1); }
@@ -33,7 +34,7 @@ static inline void swing_push(const FullSwing &s) {
     swing_buf[swing_head] = s;
     swing_head = n;
   } else {
-    captureRecordDroppedEvent();
+    captureRecordSwingRowDrop();
   }
 }
 
@@ -69,7 +70,7 @@ static void adjust_interval_or_fallback(uint32_t start_tick32,
 
   uint32_t adjusted = raw_ticks;
   uint8_t component_diag = 0U;
-  if (!ppsAdjustIntervalToNominal16Mhz(start, end, raw_ticks, &adjusted, &component_diag, crossed_bit)) {
+  if (!ppsAdjustIntervalToNominalTicks(start, end, raw_ticks, &adjusted, &component_diag, crossed_bit)) {
     *adj_out = raw_ticks;
     *diag_bits |= component_diag;
     if (component_diag_out) *component_diag_out = component_diag;
@@ -171,6 +172,8 @@ void swingAssemblerProcessEdges() {
     switch (swing_state) {
       case 0:
         if (e.type == 0) {
+          curr.swing_seq = ++swing_seq;
+          curr.edge0_tcb0 = e.ticks;
           last_ts = e.ticks;
           tick_half_start_ts = e.ticks;
           curr.adj_diag = 0U;
@@ -183,6 +186,7 @@ void swingAssemblerProcessEdges() {
         break;
       case 1:
         if (e.type == 1) {
+          curr.edge1_tcb0 = e.ticks;
           curr.tick_block = elapsed32(e.ticks, last_ts);
           stamp_interval_provenance(last_ts, e.ticks, &curr.tick_block_start_tag, &curr.tick_block_end_tag);
           adjust_interval_or_fallback(last_ts,
@@ -199,6 +203,7 @@ void swingAssemblerProcessEdges() {
         break;
       case 2:
         if (e.type == 0) {
+          curr.edge2_tcb0 = e.ticks;
           curr.tick = elapsed32(e.ticks, last_ts);
           stamp_interval_provenance(last_ts, e.ticks, &curr.tick_start_tag, &curr.tick_end_tag);
           adjust_interval_or_fallback(last_ts,
@@ -231,6 +236,7 @@ void swingAssemblerProcessEdges() {
         break;
       case 3:
         if (e.type == 1) {
+          curr.edge3_tcb0 = e.ticks;
           curr.tock_block = elapsed32(e.ticks, last_ts);
           stamp_interval_provenance(last_ts, e.ticks, &curr.tock_block_start_tag, &curr.tock_block_end_tag);
           adjust_interval_or_fallback(last_ts,
@@ -247,6 +253,7 @@ void swingAssemblerProcessEdges() {
         break;
       case 4:
         if (e.type == 0) {
+          curr.edge4_tcb0 = e.ticks;
           curr.tock = elapsed32(e.ticks, last_ts);
           stamp_interval_provenance(last_ts, e.ticks, &curr.tock_start_tag, &curr.tock_end_tag);
           adjust_interval_or_fallback(last_ts,
@@ -271,6 +278,10 @@ void swingAssemblerProcessEdges() {
           PpsTaggedStamp row_stamp{};
           curr.pps_seq_row = ppsAdjustTagTick(e.ticks, &row_stamp) ? row_stamp.pps_seq : ppsAdjustCurrentSeq();
           swing_push(curr);
+          // Seed the next overlapping window from this terminal edge so seq/edge0
+          // roll forward while state continues in the post-edge0 phase.
+          curr.swing_seq = ++swing_seq;
+          curr.edge0_tcb0 = e.ticks;
           last_ts = e.ticks;
           tick_half_start_ts = e.ticks;
           curr.adj_diag = 0U;

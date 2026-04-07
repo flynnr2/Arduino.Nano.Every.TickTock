@@ -139,6 +139,7 @@ void processSerialCommands() {
       char *save;
       char *token = strtok_r(cmdBuf, " ", &save);
       if (token) {
+        noteSerialCommandActivity();
         bool stopProcessingCommand = false;
         auto rejectExtraArgs = [&](const __FlashStringHelper* message, const char* statusDetail) {
           if (strtok_r(NULL, " ", &save)) {
@@ -223,6 +224,7 @@ void processSerialCommands() {
               if (equalsIgnoreCaseAscii(sub, CMD_EMIT_META)) {
                 emitMetadataNow();
               } else {
+                noteExplicitStartupReplayRequest();
                 emitStartupNow();
               }
             }
@@ -458,40 +460,70 @@ void printCsvHeader() {
   }
   if (!lineBuf) return;
 
-  // HDR_PART emission contract:
-  // - emission order is deterministic by SAMPLE_SCHEMA_HDR_PARTS index (1..N on wire)
-  // - payloads are semantic/readability groups, not canonical SMP serialization order
-  // - hosts should reassemble/validate HDR_PART fields, then treat SAMPLE_SCHEMA
-  //   as the only authoritative canonical ordering
-  char schemaPartBuf[HDR_PART_MAX_PAYLOAD_LEN + 1U];
-  for (uint8_t i = 0; i < HDR_SEGMENTED_PART_COUNT; ++i) {
-    const char* schemaPart = flashStrAt(SAMPLE_SCHEMA_HDR_PARTS, i);
-    const size_t schemaPartLen = flashStrLen(schemaPart);
-    if (schemaPartLen == 0 || schemaPartLen >= sizeof(schemaPartBuf)) {
-      releaseFormatBuffer(FormatBufferOwner::SerialParser);
-      return;
-    }
-    copyFlashToRam(schemaPartBuf, schemaPart, schemaPartLen);
-    schemaPartBuf[schemaPartLen] = '\0';
+  if (ACTIVE_EMIT_MODE == EmitMode::DERIVED) {
+    // HDR_PART emission contract:
+    // - emission order is deterministic by SAMPLE_SCHEMA_HDR_PARTS index (1..N on wire)
+    // - payloads are semantic/readability groups, not canonical SMP serialization order
+    // - hosts should reassemble/validate HDR_PART fields, then treat SAMPLE_SCHEMA
+    //   as the only authoritative canonical ordering
+    char schemaPartBuf[HDR_PART_MAX_PAYLOAD_LEN + 1U];
+    for (uint8_t i = 0; i < HDR_SEGMENTED_PART_COUNT; ++i) {
+      const char* schemaPart = flashStrAt(SAMPLE_SCHEMA_HDR_PARTS, i);
+      const size_t schemaPartLen = flashStrLen(schemaPart);
+      if (schemaPartLen == 0 || schemaPartLen >= sizeof(schemaPartBuf)) {
+        releaseFormatBuffer(FormatBufferOwner::SerialParser);
+        return;
+      }
+      copyFlashToRam(schemaPartBuf, schemaPart, schemaPartLen);
+      schemaPartBuf[schemaPartLen] = '\0';
 
+      int len = snprintf(lineBuf,
+                         CSV_LINE_MAX,
+                         "%s,%u,%u,%s\n",
+                         TAG_HDR_PART,
+                         static_cast<unsigned int>(i + 1U),
+                         static_cast<unsigned int>(HDR_SEGMENTED_PART_COUNT),
+                         schemaPartBuf);
+      if (len <= 0 || len >= static_cast<int>(CSV_LINE_MAX)) {
+        releaseFormatBuffer(FormatBufferOwner::SerialParser);
+        return;
+      }
+      queueCSVLine(lineBuf, len, EmissionReliability::Required);
+    }
+  } else {
+    char canonicalSwingSchema[sizeof(CANONICAL_SWING_SCHEMA)];
+    char canonicalPpsSchema[sizeof(CANONICAL_PPS_SCHEMA)];
+    copyFlashToRam(canonicalSwingSchema, CANONICAL_SWING_SCHEMA, sizeof(CANONICAL_SWING_SCHEMA));
+    copyFlashToRam(canonicalPpsSchema, CANONICAL_PPS_SCHEMA, sizeof(CANONICAL_PPS_SCHEMA));
     int len = snprintf(lineBuf,
                        CSV_LINE_MAX,
-                       "%s,%u,%u,%s\n",
-                       TAG_HDR_PART,
-                       static_cast<unsigned int>(i + 1U),
-                       static_cast<unsigned int>(HDR_SEGMENTED_PART_COUNT),
-                       schemaPartBuf);
-    if (len <= 0 || len >= static_cast<int>(CSV_LINE_MAX)) {
-      releaseFormatBuffer(FormatBufferOwner::SerialParser);
-      return;
+                       "%s,%s,%s,%s\n",
+                       TAG_SCH,
+                       TAG_CSW,
+                       CANONICAL_SWING_SCHEMA_ID,
+                       canonicalSwingSchema);
+    if (len > 0 && len < static_cast<int>(CSV_LINE_MAX)) {
+      queueCSVLine(lineBuf, len, EmissionReliability::Required);
     }
-    queueCSVLine(lineBuf, len, EmissionReliability::Required);
+    len = snprintf(lineBuf,
+                   CSV_LINE_MAX,
+                   "%s,%s,%s,%s\n",
+                   TAG_SCH,
+                   TAG_CPS,
+                   CANONICAL_PPS_SCHEMA_ID,
+                   canonicalPpsSchema);
+    if (len > 0 && len < static_cast<int>(CSV_LINE_MAX)) {
+      queueCSVLine(lineBuf, len, EmissionReliability::Required);
+    }
   }
   headerPending = false;
   releaseFormatBuffer(FormatBufferOwner::SerialParser);
 }
 
 void sendSample(const PendulumSample &s) {
+  if (ACTIVE_EMIT_MODE != EmitMode::DERIVED) {
+    return;
+  }
   if (headerPending) {
     printCsvHeader();
   }
@@ -509,60 +541,30 @@ void sendSample(const PendulumSample &s) {
     ok = ok && fieldOk;
     if (fieldOk) ++emittedFieldCount;
   };
-  auto appendU64Field = [&](uint64_t v) {
-    const bool fieldOk = appendFieldSep(lineBuf, CSV_LINE_MAX, pos) &&
-                         appendU64(lineBuf, CSV_LINE_MAX, pos, v);
-    ok = ok && fieldOk;
-    if (fieldOk) ++emittedFieldCount;
-  };
-  auto appendMaybeTagField = [&](uint64_t tag) {
-#if SAMPLE_DIAGNOSTIC_DETAIL == 1
-    // Reduced detail profile: keep canonical schema width/positions stable by
-    // zero-filling provenance tag columns.
-    appendU64Field(0);
-#else
-    appendU64Field(tag);
-#endif
-  };
-
   // SMP rows must follow canonical SAMPLE_SCHEMA / CsvField order exactly.
-  static_assert(CF_COUNT == 34, "Update sendSample() ordering for schema changes");
+  static_assert(CF_COUNT == 20, "Update sendSample() ordering for schema changes");
 
-  // CF_TICK .. CF_TICK_TOTAL_END_TAG
+  // CF_TICK .. CF_TICK_TOTAL_ADJ_DIAG
   appendU32Field(s.tick);
   appendU32Field(s.tick_adj);
-  appendMaybeTagField(s.tick_start_tag);
-  appendMaybeTagField(s.tick_end_tag);
   appendU32Field(s.tick_block);
   appendU32Field(s.tick_block_adj);
-  appendMaybeTagField(s.tick_block_start_tag);
-  appendMaybeTagField(s.tick_block_end_tag);
   appendU32Field(s.tick_total_adj_direct);
   appendU32Field(s.tick_total_adj_diag);
-  appendMaybeTagField(s.tick_total_start_tag);
-  appendMaybeTagField(s.tick_total_end_tag);
 
-  // CF_TOCK .. CF_TOCK_TOTAL_END_TAG
+  // CF_TOCK .. CF_TOCK_TOTAL_ADJ_DIAG
   appendU32Field(s.tock);
   appendU32Field(s.tock_adj);
-  appendMaybeTagField(s.tock_start_tag);
-  appendMaybeTagField(s.tock_end_tag);
   appendU32Field(s.tock_block);
   appendU32Field(s.tock_block_adj);
-  appendMaybeTagField(s.tock_block_start_tag);
-  appendMaybeTagField(s.tock_block_end_tag);
   appendU32Field(s.tock_total_adj_direct);
   appendU32Field(s.tock_total_adj_diag);
-  appendMaybeTagField(s.tock_total_start_tag);
-  appendMaybeTagField(s.tock_total_end_tag);
 
   // CF_TICK_TOTAL_F_HAT_HZ .. CF_PPS_SEQ_ROW.
   appendU32Field(s.tick_total_f_hat_hz);
   appendU32Field(s.tock_total_f_hat_hz);
   appendU32Field(s.gps_status);
   appendU32Field(s.holdover_age_ms);
-  appendU32Field(s.r_ppm);
-  appendU32Field(s.j_ticks);
   appendU32Field(s.dropped_events);
   appendU32Field(s.adj_diag);
   appendU32Field(s.adj_comp_diag);
@@ -581,5 +583,54 @@ void sendSample(const PendulumSample &s) {
     return;
   }
   queueCSVLine(lineBuf, len);
+  releaseFormatBuffer(FormatBufferOwner::SerialParser);
+}
+
+void sendCanonicalSwingSample(const CanonicalSwingSample& s) {
+  if (ACTIVE_EMIT_MODE != EmitMode::CANONICAL) return;
+  if (headerPending) printCsvHeader();
+  char* lineBuf = tryAcquireFormatBuffer(FormatBufferOwner::SerialParser);
+  if (!lineBuf) return;
+  const int len = snprintf(lineBuf,
+                           CSV_LINE_MAX,
+                           "%s,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%u,%u\n",
+                           TAG_CSW,
+                           (unsigned long)s.seq,
+                           (unsigned long)s.edge0_tcb0,
+                           (unsigned long)s.edge1_tcb0,
+                           (unsigned long)s.edge2_tcb0,
+                           (unsigned long)s.edge3_tcb0,
+                           (unsigned long)s.edge4_tcb0,
+                           (unsigned long)s.drop_ir,
+                           (unsigned long)s.drop_pps,
+                           (unsigned long)s.drop_swing,
+                           (unsigned int)s.adj_diag,
+                           (unsigned int)s.adj_comp_diag);
+  if (len > 0 && len < (int)CSV_LINE_MAX) {
+    queueCSVLine(lineBuf, len);
+  }
+  releaseFormatBuffer(FormatBufferOwner::SerialParser);
+}
+
+void sendCanonicalPpsSample(const CanonicalPpsSample& s) {
+  if (ACTIVE_EMIT_MODE != EmitMode::CANONICAL) return;
+  if (headerPending) printCsvHeader();
+  char* lineBuf = tryAcquireFormatBuffer(FormatBufferOwner::SerialParser);
+  if (!lineBuf) return;
+  const int len = snprintf(lineBuf,
+                           CSV_LINE_MAX,
+                           "%s,%lu,%lu,%u,%lu,%u,%u,%lu,%lu\n",
+                           TAG_CPS,
+                           (unsigned long)s.seq,
+                           (unsigned long)s.edge_tcb0,
+                           (unsigned int)s.gps_status,
+                           (unsigned long)s.holdover_age_ms,
+                           (unsigned int)s.cap16,
+                           (unsigned int)s.latency16,
+                           (unsigned long)s.now32,
+                           (unsigned long)s.drop_pps);
+  if (len > 0 && len < (int)CSV_LINE_MAX) {
+    queueCSVLine(lineBuf, len);
+  }
   releaseFormatBuffer(FormatBufferOwner::SerialParser);
 }

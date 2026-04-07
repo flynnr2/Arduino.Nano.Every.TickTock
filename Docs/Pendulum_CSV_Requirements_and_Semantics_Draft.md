@@ -1,5 +1,14 @@
 # Pendulum CSV Requirements and Semantics Draft
 
+## Draft status
+
+Keep this file as a **requirements/philosophy draft** for DERIVED `pendulum.csv` analysis semantics.
+
+It is intentionally not the normative wire-contract source. For active runtime tags/schemas and emit-mode behavior, defer to:
+- `Nano.Every/src/PendulumProtocol.h`
+- `Docs/Emit_Mode_Guide.md`
+- `Docs/Pendulum_Data_Record_Guide.md` (field interpretation guide for DERIVED mode)
+
 ## 1. Purpose
 
 `pendulum.csv` is the **primary scientific and operational record** for pendulum analysis.
@@ -159,12 +168,10 @@ They may be more authoritative for total timing than reconstructed sums of adjus
 These describe the correction context and diagnostic status of the row.
 
 Examples:
-- `f_inst_hz`
-- `f_hat_hz`
+- `tick_total_f_hat_hz`
+- `tock_total_f_hat_hz`
 - `gps_status`
 - `holdover_age_ms`
-- `r_ppm`
-- `j_ticks`
 - `dropped`
 - `adj_diag`
 - `tick_total_adj_diag`

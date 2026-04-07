@@ -10,13 +10,30 @@ struct EdgeEvent {
 };
 
 struct PpsCapture {
+  uint32_t seq;
   uint32_t edge32;
   uint32_t now32;
   uint16_t ovf;
   uint16_t cap16;
   uint16_t cnt;
   uint16_t latency16;
+#if ENABLE_PROFILING && DUAL_PPS_PROFILING
+  uint32_t rise_seq;
+#endif
 };
+
+#if ENABLE_PROFILING && DUAL_PPS_PROFILING
+struct DualPpsTcb1RisingSnapshot {
+  uint32_t rise_seq;
+  uint32_t edge32;
+  uint16_t cap16;
+};
+
+struct DualPpsProfilingCounters {
+  uint32_t tcb1_rising_seen;
+  uint32_t tcb2_rising_seen;
+};
+#endif
 
 // Keep this alias so ISR capture code has one local name; source of truth lives in Config.h.
 constexpr uint8_t CAPTURE_EDGE_BUFFER_SIZE = RING_SIZE_IR_SENSOR;
@@ -48,5 +65,14 @@ uint32_t tcb0NowCoherentMainLoop();
 uint64_t tcb0NowCoherent64();
 
 uint32_t captureDroppedEvents();
+uint32_t captureDroppedIrEvents();
+uint32_t captureDroppedPpsEvents();
+uint32_t captureDroppedSwingRows();
 uint32_t capturePpsSeen();
 void captureRecordDroppedEvent();
+void captureRecordSwingRowDrop();
+
+#if ENABLE_PROFILING && DUAL_PPS_PROFILING
+bool captureReadDualPpsTcb1RisingSnapshot(DualPpsTcb1RisingSnapshot& out);
+void captureReadDualPpsSeenCounters(DualPpsProfilingCounters& out);
+#endif

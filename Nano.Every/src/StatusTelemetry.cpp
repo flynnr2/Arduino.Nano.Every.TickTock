@@ -11,13 +11,19 @@
 #include "PpsValidator.h"
 #include "FreqDiscipliner.h"
 #include "MemoryTelemetry.h"
+#include "PendulumCore.h"
+#include "ClockSource.h"
+#include "ResetCauseEarly.h"
 
 
 namespace {
 uint16_t g_boot_sequence_for_telemetry = 0;
 bool g_reset_cause_latched = false;
 uint8_t g_latched_rstfr = 0;
-bool g_reset_cause_emitted_this_boot = false;
+uint8_t g_late_observed_rstfr = 0;
+bool g_latched_rstfr_uses_early = false;
+bool g_latched_rstfr_early_valid = false;
+bool g_reset_cause_emitted_once_this_boot = false;
 
 // Forensic boot sequence tracking:
 // - Retained in .noinit to survive software/watchdog/external resets.
@@ -67,7 +73,7 @@ void emitSchemaHeader() {
   if (!line) return;
   const int n = snprintf(line,
                          CSV_PAYLOAD_MAX,
-                         "%s,sts=%u,sample=%s,eeprom=%u,%s=%u,%s=%s",
+                         "%s,sts=%u,sample=%s,eeprom=%u,%s=%u,%s=%s,%s=%s",
                          STS_FAMILY_SCHEMA,
                          (unsigned int)STS_SCHEMA_VERSION,
                          SAMPLE_SCHEMA_ID,
@@ -75,7 +81,9 @@ void emitSchemaHeader() {
                          CFG_KEY_ADJ_SEMANTICS_VERSION,
                          (unsigned int)ADJ_SEMANTICS_VERSION,
                          CFG_KEY_HDR_MODE,
-                         HDR_MODE_ACTIVE);
+                         HDR_MODE_ACTIVE,
+                         CFG_KEY_EMIT_MODE,
+                         emitModeToStr(ACTIVE_EMIT_MODE));
   if (n > 0) {
     sendStatusFromOwnedBuffer(FormatBufferOwner::StatusTelemetry,
                               StatusCode::ProgressUpdate,
@@ -113,15 +121,39 @@ void emitFlagsHeader() {
 
 void latchResetCauseOnceAtBoot() {
   if (g_reset_cause_latched) return;
-  const uint8_t rstfr = RSTCTRL.RSTFR;
-  g_latched_rstfr = rstfr;
-  RSTCTRL.RSTFR = rstfr; // Clear exactly once after the single boot-time read.
+  resetCauseEarlyInitNoopReference();
+  g_late_observed_rstfr = RSTCTRL.RSTFR;
+  g_latched_rstfr_early_valid = resetCauseEarlyValid();
+  g_latched_rstfr_uses_early = g_latched_rstfr_early_valid;
+  g_latched_rstfr = g_latched_rstfr_uses_early ? resetCauseEarlyRaw()
+                                                : g_late_observed_rstfr;
+  // Early hook already clears RSTFR in .init3. Keep late clear as fallback only.
+  if (!g_latched_rstfr_uses_early) {
+    RSTCTRL.RSTFR = g_late_observed_rstfr;
+  }
   g_reset_cause_latched = true;
-  g_reset_cause_emitted_this_boot = false;
+  g_reset_cause_emitted_once_this_boot = false;
 }
 
 uint8_t getLatchedResetCause() {
   return g_latched_rstfr;
+}
+
+uint8_t getLateObservedResetCause() {
+  return g_late_observed_rstfr;
+}
+
+bool latchedResetCauseUsesEarlyCapture() {
+  return g_latched_rstfr_uses_early;
+}
+
+bool latchedResetCauseEarlyValid() {
+  return g_latched_rstfr_early_valid;
+}
+
+bool latchedResetCauseMismatch() {
+  return g_latched_rstfr_early_valid &&
+         (g_latched_rstfr != g_late_observed_rstfr);
 }
 
 void setBootSequenceForTelemetry(uint16_t bootSeq) {
@@ -133,8 +165,11 @@ uint16_t getBootSequenceForTelemetry() {
 }
 
 void formatLatchedResetFlags(char* out, size_t outLen) {
+  formatResetFlagsFromRaw(getLatchedResetCause(), out, outLen);
+}
+
+void formatResetFlagsFromRaw(uint8_t rstfr, char* out, size_t outLen) {
   if (!out || outLen == 0) return;
-  const uint8_t rstfr = getLatchedResetCause();
   size_t pos = 0;
 
   auto appendFlag = [&](const char* flag) {
@@ -230,6 +265,19 @@ void emitStatusPpsConfig() {
                PARAM_PPS_STALE_MS,
                PARAM_PPS_ISR_STALE_MS);
   if (n > 0) sendStatusFromOwnedBuffer(FormatBufferOwner::StatusTelemetry, StatusCode::ProgressUpdate, line);
+
+#if ENABLE_PROFILING && DUAL_PPS_PROFILING
+  DualPpsRuntimeCounters dual = {};
+  getDualPpsRuntimeCounters(dual);
+  n = snprintf(line,
+               CSV_PAYLOAD_MAX,
+               "DUAL_PPS_SUMMARY,matched_pairs=%lu,unpaired_tcb1_rising=%lu,unpaired_tcb2_rising=%lu,skipped_pairs=%lu",
+               (unsigned long)dual.matched_pairs,
+               (unsigned long)dual.unpaired_tcb1_rising,
+               (unsigned long)dual.unpaired_tcb2_rising,
+               (unsigned long)dual.skipped_pairs);
+  if (n > 0) sendStatusFromOwnedBuffer(FormatBufferOwner::StatusTelemetry, StatusCode::ProgressUpdate, line);
+#endif
   releaseStatusLineBuf();
 }
 
@@ -239,7 +287,7 @@ void emitStatusSampleConfig() {
   // CFG carries metadata (including schema ID). Literal sample columns are emitted by HDR_PART sequence.
   const int n = snprintf(line,
                          CSV_PAYLOAD_MAX,
-                         "%s,%s=%u,%s=%lu,%s=%s,%s=%s,%s=%u,%s=%s,fw=%s",
+                         "%s,%s=%u,%s=%lu,%s=%s,%s=%s,%s=%u,%s=%s,%s=%s,%s=%s,%s=%s,%s=%s,fw=%s",
                          STS_FAMILY_CFG,
                          CFG_KEY_PROTOCOL_VERSION,
                          (unsigned int)PROTOCOL_VERSION,
@@ -253,12 +301,22 @@ void emitStatusSampleConfig() {
                          (unsigned int)ADJ_SEMANTICS_VERSION,
                          CFG_KEY_HDR_MODE,
                          HDR_MODE_ACTIVE,
+                         CFG_KEY_EMIT_MODE,
+                         emitModeToStr(ACTIVE_EMIT_MODE),
+                         CFG_KEY_CANONICAL_SWING_TAG,
+                         TAG_CSW,
+                         CFG_KEY_CANONICAL_SWING_SCHEMA,
+                         CANONICAL_SWING_SCHEMA_ID,
+                         CFG_KEY_CANONICAL_PPS_TAG,
+                         TAG_CPS,
+                         CFG_KEY_CANONICAL_PPS_SCHEMA,
+                         CANONICAL_PPS_SCHEMA_ID,
                          FW_VERSION);
   if (n > 0) sendStatusFromOwnedBuffer(FormatBufferOwner::StatusTelemetry, StatusCode::ProgressUpdate, line);
 
   const int cfg_n = snprintf(line,
                              CSV_PAYLOAD_MAX,
-                             "%s=%u,%s=%lu,%s=%s,%s=%s,%s=%u,%s=%s,fw=%s",
+                             "%s=%u,%s=%lu,%s=%s,%s=%s,%s=%u,%s=%s,%s=%s,%s=%s,%s=%s,%s=%s,fw=%s",
                              CFG_KEY_PROTOCOL_VERSION,
                              (unsigned int)PROTOCOL_VERSION,
                              CFG_KEY_NOMINAL_HZ,
@@ -271,6 +329,16 @@ void emitStatusSampleConfig() {
                              (unsigned int)ADJ_SEMANTICS_VERSION,
                              CFG_KEY_HDR_MODE,
                              HDR_MODE_ACTIVE,
+                             CFG_KEY_EMIT_MODE,
+                             emitModeToStr(ACTIVE_EMIT_MODE),
+                             CFG_KEY_CANONICAL_SWING_TAG,
+                             TAG_CSW,
+                             CFG_KEY_CANONICAL_SWING_SCHEMA,
+                             CANONICAL_SWING_SCHEMA_ID,
+                             CFG_KEY_CANONICAL_PPS_TAG,
+                             TAG_CPS,
+                             CFG_KEY_CANONICAL_PPS_SCHEMA,
+                             CANONICAL_PPS_SCHEMA_ID,
                              FW_VERSION);
   if (cfg_n > 0) {
     const size_t payload_len = strnlen(line, CSV_PAYLOAD_MAX);
@@ -341,6 +409,20 @@ void emitStatusClockDiagnostics() {
                (unsigned int)devid1,
                (unsigned int)devid0);
   if (n > 0) sendStatusFromOwnedBuffer(FormatBufferOwner::StatusTelemetry, StatusCode::ProgressUpdate, line);
+
+#if ENABLE_EXTCLK_HANDOFF_DIAG_STS
+  const ExtClockHandoffDiagnostics handoff_diag = getExtClockHandoffDiagnostics();
+  n = snprintf(line,
+               CSV_PAYLOAD_MAX,
+               "clkdiag_extclk,pre_delay=%u,sosc_clear=%u,sosc_poll_iter=%u,mclkctrla=0x%02X,mclkctrlb=0x%02X,mclkstatus=0x%02X",
+               (unsigned int)handoff_diag.preSwitchDelayApplied,
+               (unsigned int)handoff_diag.soscClearPollSucceeded,
+               (unsigned int)handoff_diag.soscClearPollIterations,
+               (unsigned int)handoff_diag.mclkctrla,
+               (unsigned int)handoff_diag.mclkctrlb,
+               (unsigned int)handoff_diag.mclkstatus);
+  if (n > 0) sendStatusFromOwnedBuffer(FormatBufferOwner::StatusTelemetry, StatusCode::ProgressUpdate, line);
+#endif
   releaseStatusLineBuf();
 }
 #else
@@ -382,26 +464,44 @@ void emitStatusBootHeaders() {
 }
 
 void emitResetCause() {
-  if (g_reset_cause_emitted_this_boot) return;
-  g_reset_cause_emitted_this_boot = true;
-
-  const uint8_t rstfr = getLatchedResetCause();
-  char flags[48];
-  formatLatchedResetFlags(flags, sizeof(flags));
+  const bool early_valid = latchedResetCauseEarlyValid();
+  const uint8_t rstfr_early = early_valid ? resetCauseEarlyRaw() : 0;
+  const uint8_t rstfr_late = getLateObservedResetCause();
+  const bool mismatch = latchedResetCauseMismatch();
+  const char* source = latchedResetCauseUsesEarlyCapture() ? "early" : "late";
+  char flags_early[48];
+  char flags_late[48];
+  if (early_valid) {
+    formatResetFlagsFromRaw(rstfr_early, flags_early, sizeof(flags_early));
+  } else {
+    strncpy(flags_early, "INVALID", sizeof(flags_early));
+    flags_early[sizeof(flags_early) - 1] = '\0';
+  }
+  formatResetFlagsFromRaw(rstfr_late, flags_late, sizeof(flags_late));
   // Stack-sensitive telemetry section: reuse shared formatter buffer (main-loop only).
   char* line = prepareStatusLineBuf();
   if (!line) return;
   const int n = snprintf(line,
                          CSV_PAYLOAD_MAX,
-                         "rstfr,boot_seq=%u,raw=0x%02X,flags=%s",
+                         "rstfr,boot_seq=%u,rstfr_early_valid=%u,rstfr_source=%s,rstfr_early_raw=0x%02X,rstfr_early_flags=%s,rstfr_late_raw=0x%02X,rstfr_late_flags=%s,rstfr_mismatch=%u,early_cap_count=%u",
                          (unsigned int)g_boot_sequence_for_telemetry,
-                         (unsigned int)rstfr,
-                         flags);
+                         (unsigned int)early_valid,
+                         source,
+                         (unsigned int)rstfr_early,
+                         flags_early,
+                         (unsigned int)rstfr_late,
+                         flags_late,
+                         (unsigned int)mismatch,
+                         (unsigned int)resetCauseEarlyCaptureCount());
   if (n > 0) sendStatusFromOwnedBuffer(FormatBufferOwner::StatusTelemetry, StatusCode::ProgressUpdate, line);
   releaseStatusLineBuf();
 }
 
-void emitResetCauseOncePerBoot() { emitResetCause(); }
+void emitResetCauseOncePerBoot() {
+  if (g_reset_cause_emitted_once_this_boot) return;
+  g_reset_cause_emitted_once_this_boot = true;
+  emitResetCause();
+}
 
 void emitStatusTunables() {
   char* line = prepareStatusLineBuf();
@@ -449,6 +549,13 @@ void emitStatusTunables() {
                (unsigned int)Tunables::ppsConfigReemitDelayMsActive(),
                PARAM_PPS_ACQUIRE_MIN_MS,
                (unsigned int)Tunables::ppsAcquireMinMsActive());
+  if (n > 0) sendStatusFromOwnedBuffer(FormatBufferOwner::StatusTelemetry, StatusCode::ProgressUpdate, line);
+
+  n = snprintf(line,
+               CSV_PAYLOAD_MAX,
+               "%s,%lu",
+               PARAM_PPS_METROLOGY_GRACE_MS,
+               (unsigned long)Tunables::ppsMetrologyGraceMsActive());
   if (n > 0) sendStatusFromOwnedBuffer(FormatBufferOwner::StatusTelemetry, StatusCode::ProgressUpdate, line);
   releaseStatusLineBuf();
 }

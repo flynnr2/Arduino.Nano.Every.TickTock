@@ -33,6 +33,7 @@ public:
   uint8_t lockStreak() const { return lock_streak_; }
   uint8_t unlockStreak() const { return unlock_streak_; }
   uint8_t transitionStreak() const { return transition_streak_; }
+  uint32_t lastGoodSlow() const { return last_good_slow_; }
   static inline uint32_t lockFrequencyErrorThresholdPpm() { return Tunables::ppsLockRppmActive(); }
   // Legacy name retained for STS/API compatibility; value is MAD residual ticks threshold.
   static inline uint32_t lockMadThresholdTicks() { return Tunables::ppsLockMadTicksActive(); }

@@ -14,7 +14,7 @@ struct PpsTaggedStamp {
 
 struct PpsScaleEntry {
   uint32_t pps_seq;
-  uint64_t scale_q32;  // round((16000000 << 32) / f_hat_hz_for_that_pps_second)
+  uint64_t scale_q32;  // round((nominal_hz << 32) / f_hat_hz_for_that_pps_second)
 };
 
 // Compact row-level diagnostics for component interval adjustments:
@@ -67,6 +67,12 @@ void ppsAdjustOnPpsFinalized(uint32_t prev_edge32,
 
 bool ppsAdjustTagTick(uint32_t edge32, PpsTaggedStamp* out);
 bool ppsAdjustLookupSeq(uint32_t seq, uint32_t* span_ticks, uint32_t* applied_hz);
+bool ppsAdjustIntervalToNominalTicks(const PpsTaggedStamp& start,
+                                     const PpsTaggedStamp& end,
+                                     uint32_t raw_ticks,
+                                     uint32_t* adjusted_ticks,
+                                     uint8_t* diag_bits,
+                                     uint8_t crossed_bit);
 bool ppsAdjustIntervalToNominal16Mhz(const PpsTaggedStamp& start,
                                      const PpsTaggedStamp& end,
                                      uint32_t raw_ticks,

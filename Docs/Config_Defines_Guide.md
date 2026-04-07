@@ -12,11 +12,23 @@ Selects which runtime wall-clock implementation `PlatformTime` uses:
 
 Allowed values are only `0` or `1`.
 
-### `USE_EXTCLK_MAIN` (default: `0`)
+### `USE_EXTCLK_MAIN` (default: `1`)
 ATmega4809/Nano Every boot-time mode switch:
 - `0`: stay on normal internal/main board clock behavior
 - `1`: perform one-shot boot handoff to driven `EXTCLK` on `PA0` (`D2`)
 
+Allowed values are only `0` or `1`.
+
+### `EXTCLK_PRESWITCH_DELAY_MS` (default: `25U`)
+Deterministic early-boot delay (milliseconds) before switching to `EXTCLK`.
+Used to allow external clock drivers to settle before `CLK_MAIN` handoff.
+
+### `EXTCLK_SOSC_CLEAR_POLL_ITERATIONS` (default: `60000U`)
+Bounded loop count used while polling `MCLKSTATUS.SOSC` clear after selecting `EXTCLK`.
+This is a fixed-loop bound (no `millis()` dependency) to keep startup deterministic.
+
+### `ENABLE_EXTCLK_HANDOFF_DIAG_STS` (default: `1`)
+Controls whether boot clock diagnostics include the optional EXTCLK handoff snapshot fields.
 Allowed values are only `0` or `1`.
 
 ### `MAIN_CLOCK_HZ` (default: `F_CPU`)
@@ -32,7 +44,7 @@ Constraints enforced by `Config.h`:
 
 ## Optional telemetry / diagnostics surface
 
-### `ENABLE_PROFILING` (default: `1`)
+### `ENABLE_PROFILING` (default: `0`)
 Performance/telemetry profile selector:
 - `1`: diagnostics-first profile (richer optional telemetry defaults)
 - `0`: lower-overhead profile (leaner optional telemetry defaults)
@@ -106,6 +118,17 @@ Power-of-two divider for LED activity toggling frequency.
 ### `STARTUP_SERIAL_SETTLE_MS` (default: `1200UL`)
 Startup delay (ms) after setup to let serial consumers attach before startup emission.
 
+### `STARTUP_FULL_REPLAY_RETRY_DELAY_MS` (default: `3000UL`)
+One-shot backup delay before automatic full startup replay retry (`emit startup` equivalent behavior).
+Used only as a bounded fallback if host tooling may have missed the initial startup burst.
+
+### `DATA_SERIAL` / `CMD_SERIAL` (default: `Serial1` / `Serial1`)
+Compile-time serial routing macros (declared in `SerialParser.h`):
+- `DATA_SERIAL`: output stream for telemetry and sample rows
+- `CMD_SERIAL`: input stream for CLI commands
+
+These can be overridden for USB `Serial` debugging workflows, but command and data streams should generally remain aligned unless a split-channel integration is intentional.
+
 ## Foreground scheduling / fairness
 
 ### `PPS_PROCESS_BUDGET_PER_LOOP` (default: `4U`)
@@ -135,3 +158,4 @@ Build identity string injected into telemetry when not overridden by build tooli
 
 - `Config.h` also contains many `constexpr` defaults (ring sizes and runtime tunable defaults). Those are constants, not `#define` controls.
 - If this guide and code ever diverge, treat `Nano.Every/src/Config.h` as canonical.
+- Maintenance checklist: whenever `Config.h` changes, re-verify default values, allowed ranges, and profile-dependent formulas in this guide.
