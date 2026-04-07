@@ -72,7 +72,7 @@ static_assert(static_cast<uint32_t>(MAIN_CLOCK_HZ) == static_cast<uint32_t>(F_CP
 // shared TCB0 timeline, so it is the more meaningful cross-path edge delta.
 // Neither value is PPS disciplining correction.
 #ifndef DUAL_PPS_PROFILING
-#define DUAL_PPS_PROFILING 1
+#define DUAL_PPS_PROFILING 0
 #endif
 
 #if ((DUAL_PPS_PROFILING) != 0) && ((DUAL_PPS_PROFILING) != 1)

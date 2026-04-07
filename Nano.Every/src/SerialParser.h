@@ -28,11 +28,11 @@ static_assert(CSV_PAYLOAD_MAX > 0, "CSV_PAYLOAD_MAX must leave room for STS wrap
 
 
 #ifndef DATA_SERIAL
-#define DATA_SERIAL Serial1
+#define DATA_SERIAL Serial
 #endif
 
 #ifndef CMD_SERIAL
-#define CMD_SERIAL Serial1
+#define CMD_SERIAL Serial
 #endif
 
 enum class FormatBufferOwner : uint8_t {
