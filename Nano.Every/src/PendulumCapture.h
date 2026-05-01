@@ -50,11 +50,9 @@ void captureMarkHardwareInitialized();
 void captureResetAndReinit();
 void captureResetState();
 
-bool captureEdgeAvailable();
-EdgeEvent capturePopEdge();
+bool captureTryPopEdge(EdgeEvent* out);
 
-bool capturePpsAvailable();
-PpsCapture capturePopPps();
+bool captureTryPopPps(PpsCapture* out);
 
 // Usage contract for coherent TCB0 readers:
 // - ISR-only helper exists privately in PendulumCapture.cpp and must not use ATOMIC_BLOCK.

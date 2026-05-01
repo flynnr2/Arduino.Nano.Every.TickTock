@@ -14,12 +14,27 @@ constexpr uint8_t  EEPROM_SLOT_NANO_A_ADDR = 0;       // [0, 255] EEPROM base by
 constexpr uint8_t  EEPROM_SLOT_NANO_B_ADDR = 64;      // [0, 255] EEPROM base byte for 2nd copy
 constexpr uint16_t EEPROM_SLOT_SIZE        = (uint16_t)(EEPROM_SLOT_NANO_B_ADDR - EEPROM_SLOT_NANO_A_ADDR);
 
-constexpr uint8_t  EEPROM_CONFIG_VERSION_ACTIVE_PPS_ONLY      = 5; // adds ppsMetrologyGraceMs tunable to persisted config
-constexpr uint8_t  EEPROM_CONFIG_VERSION_CURRENT               = EEPROM_CONFIG_VERSION_ACTIVE_PPS_ONLY;
+constexpr uint8_t  EEPROM_CONFIG_VERSION_EXPLICIT_V1 = 6;
+constexpr uint8_t  EEPROM_CONFIG_VERSION_CURRENT     = EEPROM_CONFIG_VERSION_EXPLICIT_V1;
 
-static_assert(sizeof(TunableConfig) <= EEPROM_SLOT_SIZE,
-              "TunableConfig must fit within one EEPROM slot");
+enum class EepromSlotCode : uint8_t {
+  Ok = 0,
+  Mag,
+  Ver,
+  Len,
+  Lay,
+  Crc,
+  Sem,
+  Ncm
+};
 
-// Older EEPROM layouts are not migrated anymore. If a saved record does not match
-// the current schema/CRC, firmware falls back to compiled defaults until a new save
-// rewrites the active schema.
+struct EepromLoadDiag {
+  char source;
+  EepromSlotCode slotA;
+  EepromSlotCode slotB;
+  uint8_t schema;
+  uint32_t sequence;
+  bool hasSequence;
+};
+
+const EepromLoadDiag& getEepromLoadDiag();

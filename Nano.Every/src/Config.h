@@ -19,7 +19,7 @@
 // External main clock mode is a boot-time-only option for Nano Every /
 // ATmega4809 EXTCLK use and must match the board build's F_CPU.
 #ifndef USE_EXTCLK_MAIN
-#define USE_EXTCLK_MAIN 1
+#define USE_EXTCLK_MAIN 0
 #endif
 
 #if ((USE_EXTCLK_MAIN) != 0) && ((USE_EXTCLK_MAIN) != 1)
@@ -62,6 +62,10 @@ static_assert(static_cast<uint32_t>(MAIN_CLOCK_HZ) == static_cast<uint32_t>(F_CP
 #if (USE_ARDUINO_TIMEBASE == 1) && (DISABLE_ARDUINO_TCB3_TIMEBASE == 1)
 #error "Cannot disable Arduino TCB3 timebase while USE_ARDUINO_TIMEBASE=1"
 #endif
+
+#ifndef ENABLE_CLOCK_DIAG_STS
+#define ENABLE_CLOCK_DIAG_STS 1 // emit optional STS clock-diagnostic records at boot
+#endif
 /******************************************************************************/
 
 /******************************************************************************/
@@ -72,7 +76,7 @@ static_assert(static_cast<uint32_t>(MAIN_CLOCK_HZ) == static_cast<uint32_t>(F_CP
 // shared TCB0 timeline, so it is the more meaningful cross-path edge delta.
 // Neither value is PPS disciplining correction.
 #ifndef DUAL_PPS_PROFILING
-#define DUAL_PPS_PROFILING 0
+#define DUAL_PPS_PROFILING 1
 #endif
 
 #if ((DUAL_PPS_PROFILING) != 0) && ((DUAL_PPS_PROFILING) != 1)
@@ -85,7 +89,7 @@ static_assert(static_cast<uint32_t>(MAIN_CLOCK_HZ) == static_cast<uint32_t>(F_CP
 // - 0: off (lower periodic overhead, lower optional telemetry volume)
 // - 1: on (diagnostics-first, richer telemetry)
 #ifndef ENABLE_PROFILING
-#define ENABLE_PROFILING 1
+#define ENABLE_PROFILING 0
 #endif
 
 #if ((ENABLE_PROFILING) != 0) && ((ENABLE_PROFILING) != 1)
@@ -123,11 +127,15 @@ static_assert(static_cast<uint32_t>(MAIN_CLOCK_HZ) == static_cast<uint32_t>(F_CP
 #if ((SAMPLE_DIAGNOSTIC_DETAIL) != 1) && ((SAMPLE_DIAGNOSTIC_DETAIL) != 2)
 #error "SAMPLE_DIAGNOSTIC_DETAIL must be 1 (reduced) or 2 (full)"
 #endif
-/******************************************************************************/
 
-#ifndef ENABLE_CLOCK_DIAG_STS
-#define ENABLE_CLOCK_DIAG_STS 1 // emit optional STS clock-diagnostic records at boot
+#ifndef ENABLE_RESTART_BREADCRUMBS
+#define ENABLE_RESTART_BREADCRUMBS 1
 #endif
+
+#if ((ENABLE_RESTART_BREADCRUMBS) != 0) && ((ENABLE_RESTART_BREADCRUMBS) != 1)
+#error "ENABLE_RESTART_BREADCRUMBS must be 0 or 1"
+#endif
+/******************************************************************************/
 
 /******************************************************************************/
 // Memory warnings

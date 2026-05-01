@@ -6,6 +6,10 @@
 #include <string.h>
 #ifdef __AVR__
 #include <avr/pgmspace.h>
+#else
+#ifndef PROGMEM
+#define PROGMEM
+#endif
 #endif
 
 // Line tags written to DATA_SERIAL.
@@ -74,7 +78,7 @@ static constexpr EmitMode EMIT_MODE_CANONICAL = EmitMode::CANONICAL;
 #define PENDULUM_EMIT_MODE EMIT_MODE_DERIVED
 #endif
 
-static constexpr EmitMode ACTIVE_EMIT_MODE = PENDULUM_EMIT_MODE;
+static constexpr EmitMode ACTIVE_EMIT_MODE = EMIT_MODE_CANONICAL; //PENDULUM_EMIT_MODE;
 
 inline const char* emitModeToStr(EmitMode mode) {
   switch (mode) {

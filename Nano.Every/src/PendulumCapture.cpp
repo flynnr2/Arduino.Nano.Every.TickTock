@@ -42,6 +42,8 @@ static_assert((CAPTURE_PPS_RING_SIZE & (CAPTURE_PPS_RING_SIZE - 1U)) == 0U, "CAP
 static_assert(sizeof(evbuf) <= 512U, "Edge-event ring exceeds SRAM guardrail");
 static_assert(sizeof(ppsBuffer) <= 256U, "PPS ring exceeds SRAM guardrail");
 
+static inline uint32_t tcb0_now_coherent_isr_only();
+
 namespace {
 
 constexpr uint8_t TCB0_ENABLE = TCB_CLKSEL_CLKDIV1_gc | TCB_ENABLE_bm;
@@ -54,6 +56,29 @@ constexpr uint8_t TCB_CAPTURE_MODE = TCB_CNTMODE_CAPT_gc;
 constexpr uint8_t EVCTRL_CAPTURE_EDGE_HIGH_TO_LOW = TCB_CAPTEI_bm | TCB_EDGE_bm | TCB_FILTER_bm;
 constexpr uint8_t EVCTRL_CAPTURE_EDGE_LOW_TO_HIGH = TCB_CAPTEI_bm | TCB_FILTER_bm;
 constexpr uint8_t EVCTRL_PPS_CAPTURE = TCB_CAPTEI_bm;
+
+struct CaptureMathResult {
+  uint32_t now32;
+  uint16_t latency16;
+  uint32_t edge32;
+};
+
+// Contract:
+// - Callable only from ISR context after CAPT flags were validated/cleared by the caller.
+// - Relies on tcb0_now_coherent_isr_only() for coherent TCB0 overflow handling.
+// - Read ordering is intentional: caller latches CCMP first, then this helper samples
+//   coherent TCB0 now followed by CNT so latency16 = CNT - CCMP matches the backdating point.
+static inline CaptureMathResult capture_math_from_regs_isr_only(uint16_t ccmp,
+                                                                volatile uint16_t& cntReg) {
+  const uint32_t now32 = tcb0_now_coherent_isr_only();
+  const uint16_t cnt = cntReg;
+  const uint16_t latency16 = (uint16_t)(cnt - ccmp);
+  return CaptureMathResult{
+      now32,
+      latency16,
+      now32 - (uint32_t)latency16,
+  };
+}
 
 static inline void resetCaptureSoftwareState() {
   pps_seen = 0;
@@ -216,34 +241,38 @@ void captureReadDualPpsSeenCounters(DualPpsProfilingCounters& out) {
 }
 #endif
 
-bool captureEdgeAvailable() {
-  return ev_tail != ev_head;
-}
-
-EdgeEvent capturePopEdge() {
-  EdgeEvent event;
-  ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
-    const uint8_t tail = ev_tail;
-    // Take a stable snapshot before freeing the ring slot; the ISR may wrap and reuse it immediately.
-    event = evbuf[tail];
-    ev_tail = (uint8_t)(tail + 1) & (CAPTURE_EDGE_BUFFER_SIZE - 1);
+bool captureTryPopEdge(EdgeEvent* out) {
+  if (out == nullptr) {
+    return false;
   }
-  return event;
-}
-
-bool capturePpsAvailable() {
-  return ppsTail != ppsHead;
-}
-
-PpsCapture capturePopPps() {
-  PpsCapture capture;
+  bool popped = false;
   ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
-    const uint8_t tail = ppsTail;
-    // Take a stable snapshot before freeing the ring slot; the ISR may wrap and reuse it immediately.
-    capture = ppsBuffer[tail];
-    ppsTail = pps_mask(tail + 1);
+    if (ev_tail != ev_head) {
+      const uint8_t tail = ev_tail;
+      // Take a stable snapshot before freeing the ring slot; the ISR may wrap and reuse it immediately.
+      *out = evbuf[tail];
+      ev_tail = (uint8_t)(tail + 1) & (CAPTURE_EDGE_BUFFER_SIZE - 1);
+      popped = true;
+    }
   }
-  return capture;
+  return popped;
+}
+
+bool captureTryPopPps(PpsCapture* out) {
+  if (out == nullptr) {
+    return false;
+  }
+  bool popped = false;
+  ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
+    if (ppsTail != ppsHead) {
+      const uint8_t tail = ppsTail;
+      // Take a stable snapshot before freeing the ring slot; the ISR may wrap and reuse it immediately.
+      *out = ppsBuffer[tail];
+      ppsTail = pps_mask(tail + 1);
+      popped = true;
+    }
+  }
+  return popped;
 }
 
 uint32_t tcb0NowCoherentMainLoop() {
@@ -399,30 +428,18 @@ ISR(TCB1_INT_vect) {
     return;
   }
 
-  // Latch the captured edge time (TCB1 domain)
   const uint16_t ccmp = TCB1.CCMP;
-
-  // Coherent 32-bit "now" in TCB0 domain (t2)
-  const uint32_t now32 = tcb0_now_coherent_isr_only();
-
-  // Tightened: sample CNT as close as possible to now32 (also ~t2)
-  const uint16_t cnt = TCB1.CNT;
-
-  // Latency since edge measured at ~t2, in TCB1 ticks
-  const uint16_t latency16 = (uint16_t)(cnt - ccmp);
-
-  // Backdate into TCB0 domain
-  const uint32_t edge32 = now32 - (uint32_t)latency16;
+  const CaptureMathResult captureMath = capture_math_from_regs_isr_only(ccmp, TCB1.CNT);
 
   if (isTick) {
 #if ENABLE_PROFILING && DUAL_PPS_PROFILING
     dual_tcb1_rising_seq++;
     dual_tcb1_rising_cap16 = ccmp;
-    dual_tcb1_rising_edge32 = edge32;
+    dual_tcb1_rising_edge32 = captureMath.edge32;
 #endif
     uint8_t next = (uint8_t)(ev_head + 1) & (CAPTURE_EDGE_BUFFER_SIZE - 1);
     if (next != ev_tail) {
-      evbuf[ev_head].ticks = edge32;
+      evbuf[ev_head].ticks = captureMath.edge32;
       evbuf[ev_head].type  = 0;
       ev_head = next;
     } else {
@@ -433,7 +450,7 @@ ISR(TCB1_INT_vect) {
   } else {
     uint8_t next = (uint8_t)(ev_head + 1) & (CAPTURE_EDGE_BUFFER_SIZE - 1);
     if (next != ev_tail) {
-      evbuf[ev_head].ticks = edge32;
+      evbuf[ev_head].ticks = captureMath.edge32;
       evbuf[ev_head].type  = 1;
       ev_head = next;
     } else {
@@ -469,27 +486,16 @@ ISR(TCB2_INT_vect) {
     return;
   }
 
-  // Latch the captured edge time (TCB2 domain)
   const uint16_t ccmp = TCB2.CCMP;
-
-  // Coherent 32-bit "now" in TCB0 domain (t2)
-  const uint32_t now32 = tcb0_now_coherent_isr_only();
-
-  // Tightened: sample CNT as close as possible to now32 (also ~t2)
-  const uint16_t cnt = TCB2.CNT;
-
-  // Latency since edge measured at ~t2, in TCB2 ticks
-  const uint16_t latency16 = (uint16_t)(cnt - ccmp);
-
-  // Backdate into TCB0 domain
-  const uint32_t edge32 = now32 - (uint32_t)latency16;
+  const CaptureMathResult captureMath = capture_math_from_regs_isr_only(ccmp, TCB2.CNT);
+  const uint16_t cnt = (uint16_t)(ccmp + captureMath.latency16);
 
   pps_seen++;
 #if ENABLE_PROFILING && DUAL_PPS_PROFILING
   dual_tcb2_rising_seq++;
-  ppsData_push_isr(pps_seen, edge32, now32, tcb0Ovf, ccmp, cnt, latency16, dual_tcb2_rising_seq);
+  ppsData_push_isr(pps_seen, captureMath.edge32, captureMath.now32, tcb0Ovf, ccmp, cnt, captureMath.latency16, dual_tcb2_rising_seq);
 #else
-  ppsData_push_isr(pps_seen, edge32, now32, tcb0Ovf, ccmp, cnt, latency16);
+  ppsData_push_isr(pps_seen, captureMath.edge32, captureMath.now32, tcb0Ovf, ccmp, cnt, captureMath.latency16);
 #endif
 }
 

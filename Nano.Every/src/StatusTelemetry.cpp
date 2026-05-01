@@ -13,7 +13,10 @@
 #include "MemoryTelemetry.h"
 #include "PendulumCore.h"
 #include "ClockSource.h"
+#include "EEPROMConfig.h"
 #include "ResetCauseEarly.h"
+#include "RestartBreadcrumbs.h"
+#include "SwingAssembler.h"
 
 
 namespace {
@@ -24,6 +27,7 @@ uint8_t g_late_observed_rstfr = 0;
 bool g_latched_rstfr_uses_early = false;
 bool g_latched_rstfr_early_valid = false;
 bool g_reset_cause_emitted_once_this_boot = false;
+bool g_setup_entry_none_emitted_once_this_boot = false;
 
 // Forensic boot sequence tracking:
 // - Retained in .noinit to survive software/watchdog/external resets.
@@ -117,6 +121,21 @@ void emitFlagsHeader() {
   releaseStatusLineBuf();
 }
 
+
+const char* eepromSlotCodeToStr(EepromSlotCode code) {
+  switch (code) {
+    case EepromSlotCode::Ok: return "ok";
+    case EepromSlotCode::Mag: return "mag";
+    case EepromSlotCode::Ver: return "ver";
+    case EepromSlotCode::Len: return "len";
+    case EepromSlotCode::Lay: return "lay";
+    case EepromSlotCode::Crc: return "crc";
+    case EepromSlotCode::Sem: return "sem";
+    case EepromSlotCode::Ncm: return "ncm";
+    default: return "ncm";
+  }
+}
+
 } // namespace
 
 void latchResetCauseOnceAtBoot() {
@@ -133,6 +152,7 @@ void latchResetCauseOnceAtBoot() {
   }
   g_reset_cause_latched = true;
   g_reset_cause_emitted_once_this_boot = false;
+  g_setup_entry_none_emitted_once_this_boot = false;
 }
 
 uint8_t getLatchedResetCause() {
@@ -243,12 +263,13 @@ void emitStatusPpsConfig() {
   const uint32_t max_ticks = PpsValidator::maxOkTicks(ref);
   int n = snprintf(line,
                    CSV_PAYLOAD_MAX,
-                   "pps_cfg,ref=%lu,min=%lu,max=%lu,seed_n2_max10=%u,seed_cons100=%u,seed_need=%u,reseed_need=%u,hard_ticks=%lu,dup_num10=%u,ok_min_num10=%u,ok_max_num10=%u,gap_num10=%u,ratio_den10=%u",
+                   "pps_cfg,ref=%lu,min=%lu,max=%lu,seed_n2_max10=%u,startup_seed_cons100=%u,recovery_seed_cons100=%u,seed_need=%u,reseed_need=%u,hard_ticks=%lu,dup_num10=%u,ok_min_num10=%u,ok_max_num10=%u,gap_num10=%u,ratio_den10=%u",
                    (unsigned long)ref,
                    (unsigned long)min_ticks,
                    (unsigned long)max_ticks,
                    (unsigned int)PpsValidator::seedNear2xMaxNum10(),
-                   (unsigned int)PpsValidator::seedConsistencyNum100(),
+                   (unsigned int)PpsValidator::startupSeedConsistencyNum100(),
+                   (unsigned int)PpsValidator::recoverySeedConsistencyNum100(),
                    (unsigned int)PpsValidator::startupSeedRequired(),
                    (unsigned int)PpsValidator::recoverySeedRequired(),
                    (unsigned long)PpsValidator::kHardTicks(),
@@ -434,12 +455,17 @@ void emitStatusSerialDiagnostics() {
   if (!line) return;
   const int n = snprintf(line,
                          CSV_PAYLOAD_MAX,
-                         "serial_diag,fmt_acq_fail=%lu,fmt_acq_fail_required=%lu,queue_reject=%lu,tx_reentry_drop=%lu,required_drop=%lu",
+                         "serial_diag,fmt_acq_fail=%lu,fmt_acq_fail_required=%lu,queue_reject=%lu,tx_reentry_drop=%lu,required_drop=%lu,tx_partial=%lu,tx_partial_completed=%lu,tx_partial_fenced=%lu,swing_emit_retry=%lu,swing_transport_drop=%lu",
                          (unsigned long)serialFormatAcquireFailures(),
                          (unsigned long)serialRequiredFormatAcquireFailures(),
                          (unsigned long)serialQueueRejectsInvalidArgs(),
                          (unsigned long)serialTxReentryDrops(),
-                         (unsigned long)serialRequiredDrops());
+                         (unsigned long)serialRequiredDrops(),
+                         (unsigned long)serialPartialWrites(),
+                         (unsigned long)serialPartialWriteCompletions(),
+                         (unsigned long)serialPartialWriteFences(),
+                         (unsigned long)swingAssemblerEmitAttemptFailedCount(),
+                         (unsigned long)swingAssemblerTransportDropCount());
   if (n > 0) {
     sendStatusFromOwnedBuffer(FormatBufferOwner::StatusTelemetry,
                               StatusCode::ProgressUpdate,
@@ -453,6 +479,14 @@ void emitStatusBootHeaders() {
   emitBuildHeader();
   emitSchemaHeader();
   emitFlagsHeader();
+  char* line = prepareStatusLineBuf();
+  if (line && restartBreadcrumbsFormatPrevBootLine(line, CSV_PAYLOAD_MAX)) {
+    sendStatusFromOwnedBuffer(FormatBufferOwner::StatusTelemetry,
+                              StatusCode::ProgressUpdate,
+                              line,
+                              EmissionReliability::Required);
+  }
+  releaseStatusLineBuf();
 #if ENABLE_MEMORY_TELEMETRY_STS
   emitStatusMemoryTelemetry(false);
 #endif
@@ -483,7 +517,7 @@ void emitResetCause() {
   if (!line) return;
   const int n = snprintf(line,
                          CSV_PAYLOAD_MAX,
-                         "rstfr,boot_seq=%u,rstfr_early_valid=%u,rstfr_source=%s,rstfr_early_raw=0x%02X,rstfr_early_flags=%s,rstfr_late_raw=0x%02X,rstfr_late_flags=%s,rstfr_mismatch=%u,early_cap_count=%u",
+                         "rstfr,boot_seq=%u,rstfr_early_valid=%u,rstfr_source=%s,rstfr_early_raw=0x%02X,rstfr_early_flags=%s,rstfr_late_raw=0x%02X,rstfr_late_flags=%s,rstfr_mismatch=%u,early_cap_count=%u,vlma=%u",
                          (unsigned int)g_boot_sequence_for_telemetry,
                          (unsigned int)early_valid,
                          source,
@@ -492,7 +526,8 @@ void emitResetCause() {
                          (unsigned int)rstfr_late,
                          flags_late,
                          (unsigned int)mismatch,
-                         (unsigned int)resetCauseEarlyCaptureCount());
+                         (unsigned int)resetCauseEarlyCaptureCount(),
+                         (unsigned int)(restartBreadcrumbsVlmArmed() ? 1U : 0U));
   if (n > 0) sendStatusFromOwnedBuffer(FormatBufferOwner::StatusTelemetry, StatusCode::ProgressUpdate, line);
   releaseStatusLineBuf();
 }
@@ -501,6 +536,26 @@ void emitResetCauseOncePerBoot() {
   if (g_reset_cause_emitted_once_this_boot) return;
   g_reset_cause_emitted_once_this_boot = true;
   emitResetCause();
+}
+
+void emitSetupEntryNoneIfLatchedResetFlagsNone() {
+  if (g_setup_entry_none_emitted_once_this_boot) return;
+  // Uses already-latched reset cause; emits once/boot only when flags format to NONE (raw 0x00).
+  if (getLatchedResetCause() != 0U) return;
+  char* line = prepareStatusLineBuf();
+  if (!line) return;
+  const int n = snprintf(line,
+                         CSV_PAYLOAD_MAX,
+                         "setup_entry_none,boot_seq=%u",
+                         (unsigned int)g_boot_sequence_for_telemetry);
+  if (n > 0) {
+    g_setup_entry_none_emitted_once_this_boot = true;
+    sendStatusFromOwnedBuffer(FormatBufferOwner::StatusTelemetry,
+                              StatusCode::ProgressUpdate,
+                              line,
+                              EmissionReliability::Required);
+  }
+  releaseStatusLineBuf();
 }
 
 void emitStatusTunables() {
@@ -557,5 +612,38 @@ void emitStatusTunables() {
                PARAM_PPS_METROLOGY_GRACE_MS,
                (unsigned long)Tunables::ppsMetrologyGraceMsActive());
   if (n > 0) sendStatusFromOwnedBuffer(FormatBufferOwner::StatusTelemetry, StatusCode::ProgressUpdate, line);
+  releaseStatusLineBuf();
+}
+
+
+void emitEepromLoadStatus() {
+  char* line = prepareStatusLineBuf();
+  if (!line) return;
+  const EepromLoadDiag& d = getEepromLoadDiag();
+  int n = 0;
+  if (d.hasSequence) {
+    n = snprintf(line,
+                 CSV_PAYLOAD_MAX,
+                 "eep,src=%c,a=%s,b=%s,seq=%lu,sch=%u",
+                 d.source,
+                 eepromSlotCodeToStr(d.slotA),
+                 eepromSlotCodeToStr(d.slotB),
+                 (unsigned long)d.sequence,
+                 (unsigned int)d.schema);
+  } else {
+    n = snprintf(line,
+                 CSV_PAYLOAD_MAX,
+                 "eep,src=%c,a=%s,b=%s,seq=-,sch=%u",
+                 d.source,
+                 eepromSlotCodeToStr(d.slotA),
+                 eepromSlotCodeToStr(d.slotB),
+                 (unsigned int)d.schema);
+  }
+  if (n > 0) {
+    sendStatusFromOwnedBuffer(FormatBufferOwner::StatusTelemetry,
+                              StatusCode::ProgressUpdate,
+                              line,
+                              EmissionReliability::Required);
+  }
   releaseStatusLineBuf();
 }

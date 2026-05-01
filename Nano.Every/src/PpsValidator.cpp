@@ -17,10 +17,10 @@ static inline bool is_near_2x_nominal(uint32_t n_k) {
   return lhs >= min2 && lhs <= max2;
 }
 
-static inline bool is_mutually_consistent(uint32_t n_k, uint32_t candidate) {
+static inline bool is_mutually_consistent(uint32_t n_k, uint32_t candidate, uint8_t num100) {
   if (candidate == 0U) return true;
   const uint64_t diff = (uint64_t)abs_diff_u32(n_k, candidate);
-  const uint64_t lim = ((uint64_t)candidate * PpsValidator::seedConsistencyNum100()) /
+  const uint64_t lim = ((uint64_t)candidate * num100) /
                        PpsValidator::seedConsistencyDen100();
   return diff <= lim;
 }
@@ -79,7 +79,9 @@ void PpsValidator::observe(SampleClass cls, uint32_t n_k, uint32_t /*now_ms*/) {
       if (startup_seed_count_ == 0U) {
         startup_seed_candidate_ = n_k;
         startup_seed_count_ = 1U;
-      } else if (is_mutually_consistent(n_k, startup_seed_candidate_)) {
+      } else if (is_mutually_consistent(n_k,
+                                        startup_seed_candidate_,
+                                        startupSeedConsistencyNum100())) {
         startup_seed_candidate_ = (uint32_t)((((uint64_t)startup_seed_candidate_ * startup_seed_count_) + n_k) /
                                              (startup_seed_count_ + 1U));
         startup_seed_count_++;
@@ -123,7 +125,9 @@ void PpsValidator::observe(SampleClass cls, uint32_t n_k, uint32_t /*now_ms*/) {
     if (recovery_seed_count_ == 0U) {
       recovery_seed_candidate_ = n_k;
       recovery_seed_count_ = 1U;
-    } else if (is_mutually_consistent(n_k, recovery_seed_candidate_)) {
+    } else if (is_mutually_consistent(n_k,
+                                      recovery_seed_candidate_,
+                                      recoverySeedConsistencyNum100())) {
       recovery_seed_candidate_ = (uint32_t)((((uint64_t)recovery_seed_candidate_ * recovery_seed_count_) + n_k) /
                                             (recovery_seed_count_ + 1U));
       recovery_seed_count_++;

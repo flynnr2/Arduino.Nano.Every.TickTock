@@ -43,7 +43,8 @@ public:
 
   // Startup/recovery guidance bands around the known 1 Hz PPS period.
   static constexpr uint8_t seedNear2xMaxNum10() { return 23; }
-  static constexpr uint8_t seedConsistencyNum100() { return 10; } // 10%
+  static constexpr uint8_t startupSeedConsistencyNum100() { return 1; }  // 1%
+  static constexpr uint8_t recoverySeedConsistencyNum100() { return 10; } // 10%
   static constexpr uint8_t seedConsistencyDen100() { return 100; }
   static constexpr uint8_t startupSeedRequired() { return 3; }
   static constexpr uint8_t recoverySeedRequired() { return 3; }

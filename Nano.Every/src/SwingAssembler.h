@@ -46,5 +46,8 @@ struct FullSwing {
 };
 
 void swingAssemblerProcessEdges();
-bool swingAssemblerAvailable();
-FullSwing swingAssemblerPop();
+bool swingAssemblerTryPeekOldest(FullSwing* out);
+bool swingAssemblerRetireOldest();
+void swingAssemblerRecordEmitAttemptFailed();
+uint32_t swingAssemblerEmitAttemptFailedCount();
+uint32_t swingAssemblerTransportDropCount();

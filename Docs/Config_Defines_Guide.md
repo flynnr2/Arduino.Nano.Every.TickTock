@@ -66,6 +66,13 @@ Enables optional compact PPS-only baseline telemetry (`PPS_BASE`).
 ### `ENABLE_CLOCK_DIAG_STS` (default: `1`)
 Enables optional boot clock-diagnostic `STS` records.
 
+### `ENABLE_RESTART_BREADCRUMBS` (default: `1`)
+Enables retained restart breadcrumb capture/formatting used for previous-boot health snapshots.
+- `1`: keep retained previous-boot breadcrumbs (`PREV_BOOT` path) and runtime heartbeat/flag updates enabled
+- `0`: disable retained restart breadcrumb logic; API remains available but resolves to no-op stubs and reports no retained bytes
+
+Allowed values are only `0` or `1`.
+
 ### `ENABLE_MEMORY_LOW_WATER_WARN_STS` (default: `1`)
 Enables one-time low-SRAM warning telemetry (`mem_warn`) when free SRAM drops below threshold.
 

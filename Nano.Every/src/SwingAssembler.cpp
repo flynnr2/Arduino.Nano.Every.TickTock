@@ -20,6 +20,8 @@ FullSwing swing_buf[SWING_RING_SIZE];
 volatile uint8_t swing_head = 0;
 volatile uint8_t swing_tail = 0;
 uint32_t swing_seq = 0;
+volatile uint32_t swing_emit_attempt_failures = 0;
+volatile uint32_t swing_transport_drops = 0;
 
 // SRAM guardrails: rows are produced at pendulum cadence (much slower than edge ISR
 // cadence), so this queue should stay compact on ATmega4809.
@@ -34,6 +36,11 @@ static inline void swing_push(const FullSwing &s) {
     swing_buf[swing_head] = s;
     swing_head = n;
   } else {
+    // Ring full under serial backpressure: preserve existing pending rows and
+    // drop this newly completed row explicitly/countably.
+    ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
+      swing_transport_drops++;
+    }
     captureRecordSwingRowDrop();
   }
 }
@@ -145,17 +152,51 @@ static void adjust_composite_interval_or_fallback(uint32_t start_tick32,
 
 } // namespace
 
-bool swingAssemblerAvailable() {
-  return swing_tail != swing_head;
+bool swingAssemblerTryPeekOldest(FullSwing* out) {
+  if (out == nullptr) {
+    return false;
+  }
+  bool peeked = false;
+  ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
+    if (swing_tail != swing_head) {
+      *out = swing_buf[swing_tail];
+      peeked = true;
+    }
+  }
+  return peeked;
 }
 
-FullSwing swingAssemblerPop() {
-  FullSwing s;
+bool swingAssemblerRetireOldest() {
+  bool retired = false;
   ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
-    s = swing_buf[swing_tail];
-    swing_tail = swing_mask(swing_tail + 1);
+    if (swing_tail != swing_head) {
+      swing_tail = swing_mask(swing_tail + 1);
+      retired = true;
+    }
   }
-  return s;
+  return retired;
+}
+
+void swingAssemblerRecordEmitAttemptFailed() {
+  ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
+    swing_emit_attempt_failures++;
+  }
+}
+
+uint32_t swingAssemblerEmitAttemptFailedCount() {
+  uint32_t count = 0;
+  ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
+    count = swing_emit_attempt_failures;
+  }
+  return count;
+}
+
+uint32_t swingAssemblerTransportDropCount() {
+  uint32_t count = 0;
+  ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
+    count = swing_transport_drops;
+  }
+  return count;
 }
 
 void swingAssemblerProcessEdges() {
@@ -165,8 +206,8 @@ void swingAssemblerProcessEdges() {
   static uint32_t tock_half_start_ts = 0;
   static FullSwing curr;
 
-  while (captureEdgeAvailable()) {
-    EdgeEvent e = capturePopEdge();
+  EdgeEvent e;
+  while (captureTryPopEdge(&e)) {
     uint8_t component_diag = 0U;
 
     switch (swing_state) {

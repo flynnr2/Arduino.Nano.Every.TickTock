@@ -32,6 +32,9 @@ static volatile uint32_t s_requiredFormatAcquireFailures = 0;
 static volatile uint32_t s_queueRejectsInvalidArgs = 0;
 static volatile uint32_t s_txReentryDrops = 0;
 static volatile uint32_t s_requiredDrops = 0;
+static volatile uint32_t s_partialWrites = 0;
+static volatile uint32_t s_partialWriteCompleted = 0;
+static volatile uint32_t s_partialWriteFenced = 0;
 
 namespace {
 
@@ -82,6 +85,68 @@ bool appendU32(char* out, size_t outLen, size_t& pos, uint32_t v) {
 
 bool appendFieldSep(char* out, size_t outLen, size_t& pos) {
   return appendChar(out, outLen, pos, ',');
+}
+
+constexpr uint32_t TX_TAIL_BUDGET_US_BEST_EFFORT = 250U;
+constexpr uint32_t TX_TAIL_BUDGET_US_REQUIRED = 1500U;
+constexpr uint32_t TX_FENCE_BUDGET_US_BEST_EFFORT = 150U;
+constexpr uint32_t TX_FENCE_BUDGET_US_REQUIRED = 400U;
+
+inline uint32_t txTailBudgetUs(EmissionReliability reliability) {
+  return (reliability == EmissionReliability::Required)
+             ? TX_TAIL_BUDGET_US_REQUIRED
+             : TX_TAIL_BUDGET_US_BEST_EFFORT;
+}
+
+inline uint32_t txFenceBudgetUs(EmissionReliability reliability) {
+  return (reliability == EmissionReliability::Required)
+             ? TX_FENCE_BUDGET_US_REQUIRED
+             : TX_FENCE_BUDGET_US_BEST_EFFORT;
+}
+
+size_t boundedTailWrite(const uint8_t* buf, size_t len, EmissionReliability reliability) {
+  if (!buf || len == 0U) return 0U;
+
+  size_t written = DATA_SERIAL.write(buf, len);
+  if (written >= len) return len;
+
+  ATOMIC_BLOCK(ATOMIC_RESTORESTATE) { s_partialWrites++; }
+
+  const uint32_t startUs = micros();
+  const uint32_t budgetUs = txTailBudgetUs(reliability);
+  while (written < len) {
+    if ((uint32_t)(micros() - startUs) >= budgetUs) break;
+
+    size_t remaining = len - written;
+    const int canWrite = DATA_SERIAL.availableForWrite();
+    if (canWrite <= 0) continue;
+    if ((size_t)canWrite < remaining) {
+      remaining = (size_t)canWrite;
+    }
+    const size_t tailWritten = DATA_SERIAL.write(buf + written, remaining);
+    if (tailWritten == 0U) continue;
+    written += tailWritten;
+  }
+
+  if (written >= len) {
+    ATOMIC_BLOCK(ATOMIC_RESTORESTATE) { s_partialWriteCompleted++; }
+  }
+  return written;
+}
+
+bool emitNewlineFence(EmissionReliability reliability) {
+  const uint8_t nl = '\n';
+  size_t fenced = DATA_SERIAL.write(&nl, 1U);
+  if (fenced == 1U) return true;
+
+  const uint32_t startUs = micros();
+  const uint32_t budgetUs = txFenceBudgetUs(reliability);
+  while (fenced == 0U) {
+    if ((uint32_t)(micros() - startUs) >= budgetUs) break;
+    if (DATA_SERIAL.availableForWrite() <= 0) continue;
+    fenced = DATA_SERIAL.write(&nl, 1U);
+  }
+  return fenced == 1U;
 }
 
 char* tryAcquireFormatBufferInternal(FormatBufferOwner owner, EmissionReliability reliability) {
@@ -311,23 +376,23 @@ bool queueCSVLine(const char* buf, int len, EmissionReliability reliability) {
   }
 
   const int payloadLen = len;
-  size_t writeLen = 0;
-  size_t written = 0;
+  bool needsNewline = true;
+  if (payloadLen > 0 && buf[payloadLen - 1] == '\n') {
+    needsNewline = false;
+  }
 
-  do {
-    writeLen = (size_t)payloadLen;
-    written = DATA_SERIAL.write((const uint8_t*)buf, writeLen);
+  const size_t payloadWriteLen = (size_t)payloadLen;
+  size_t payloadWritten = boundedTailWrite((const uint8_t*)buf, payloadWriteLen, reliability);
+  size_t writeLen = payloadWriteLen + (needsNewline ? 1U : 0U);
+  size_t written = payloadWritten;
 
-    bool needsNewline = true;
-    if (payloadLen > 0 && buf[payloadLen - 1] == '\n') {
-      needsNewline = false;
-    }
-    if (needsNewline) {
-      const uint8_t nl = '\n';
-      written += DATA_SERIAL.write(&nl, 1);
-      writeLen += 1;
-    }
-  } while (false);
+  if (payloadWritten == payloadWriteLen && needsNewline) {
+    written += boundedTailWrite((const uint8_t*)"\n", 1U, reliability);
+  }
+  if (written != writeLen) {
+    emitNewlineFence(reliability);
+    ATOMIC_BLOCK(ATOMIC_RESTORESTATE) { s_partialWriteFenced++; }
+  }
 
 #if LED_ACTIVITY_ENABLE
   static_assert(LED_ACTIVITY_DIV > 0, "LED_ACTIVITY_DIV must be greater than 0");
@@ -386,6 +451,30 @@ uint32_t serialRequiredDrops() {
   uint32_t value = 0;
   ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
     value = s_requiredDrops;
+  }
+  return value;
+}
+
+uint32_t serialPartialWrites() {
+  uint32_t value = 0;
+  ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
+    value = s_partialWrites;
+  }
+  return value;
+}
+
+uint32_t serialPartialWriteCompletions() {
+  uint32_t value = 0;
+  ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
+    value = s_partialWriteCompleted;
+  }
+  return value;
+}
+
+uint32_t serialPartialWriteFences() {
+  uint32_t value = 0;
+  ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
+    value = s_partialWriteFenced;
   }
   return value;
 }
@@ -520,16 +609,16 @@ void printCsvHeader() {
   releaseFormatBuffer(FormatBufferOwner::SerialParser);
 }
 
-void sendSample(const PendulumSample &s) {
+bool sendSample(const PendulumSample &s) {
   if (ACTIVE_EMIT_MODE != EmitMode::DERIVED) {
-    return;
+    return false;
   }
   if (headerPending) {
     printCsvHeader();
   }
 
   char* lineBuf = tryAcquireFormatBuffer(FormatBufferOwner::SerialParser);
-  if (!lineBuf) return;
+  if (!lineBuf) return false;
 
   size_t pos = 0;
   uint8_t emittedFieldCount = 0;
@@ -573,24 +662,25 @@ void sendSample(const PendulumSample &s) {
   if (emittedFieldCount != CF_REQUIRED_COUNT) {
     releaseFormatBuffer(FormatBufferOwner::SerialParser);
     sendStatus(StatusCode::InternalError, "smp field_count mismatch");
-    return;
+    return false;
   }
 
   ok = ok && appendChar(lineBuf, CSV_LINE_MAX, pos, '\n');
   const int len = static_cast<int>(pos);
   if (!ok || len <= 0 || len >= (int)CSV_LINE_MAX) {
     releaseFormatBuffer(FormatBufferOwner::SerialParser);
-    return;
+    return false;
   }
-  queueCSVLine(lineBuf, len);
+  const bool sent = queueCSVLine(lineBuf, len);
   releaseFormatBuffer(FormatBufferOwner::SerialParser);
+  return sent;
 }
 
-void sendCanonicalSwingSample(const CanonicalSwingSample& s) {
-  if (ACTIVE_EMIT_MODE != EmitMode::CANONICAL) return;
+bool sendCanonicalSwingSample(const CanonicalSwingSample& s) {
+  if (ACTIVE_EMIT_MODE != EmitMode::CANONICAL) return false;
   if (headerPending) printCsvHeader();
   char* lineBuf = tryAcquireFormatBuffer(FormatBufferOwner::SerialParser);
-  if (!lineBuf) return;
+  if (!lineBuf) return false;
   const int len = snprintf(lineBuf,
                            CSV_LINE_MAX,
                            "%s,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%u,%u\n",
@@ -606,17 +696,19 @@ void sendCanonicalSwingSample(const CanonicalSwingSample& s) {
                            (unsigned long)s.drop_swing,
                            (unsigned int)s.adj_diag,
                            (unsigned int)s.adj_comp_diag);
+  bool sent = false;
   if (len > 0 && len < (int)CSV_LINE_MAX) {
-    queueCSVLine(lineBuf, len);
+    sent = queueCSVLine(lineBuf, len);
   }
   releaseFormatBuffer(FormatBufferOwner::SerialParser);
+  return sent;
 }
 
-void sendCanonicalPpsSample(const CanonicalPpsSample& s) {
-  if (ACTIVE_EMIT_MODE != EmitMode::CANONICAL) return;
+bool sendCanonicalPpsSample(const CanonicalPpsSample& s) {
+  if (ACTIVE_EMIT_MODE != EmitMode::CANONICAL) return false;
   if (headerPending) printCsvHeader();
   char* lineBuf = tryAcquireFormatBuffer(FormatBufferOwner::SerialParser);
-  if (!lineBuf) return;
+  if (!lineBuf) return false;
   const int len = snprintf(lineBuf,
                            CSV_LINE_MAX,
                            "%s,%lu,%lu,%u,%lu,%u,%u,%lu,%lu\n",
@@ -629,8 +721,10 @@ void sendCanonicalPpsSample(const CanonicalPpsSample& s) {
                            (unsigned int)s.latency16,
                            (unsigned long)s.now32,
                            (unsigned long)s.drop_pps);
+  bool sent = false;
   if (len > 0 && len < (int)CSV_LINE_MAX) {
-    queueCSVLine(lineBuf, len);
+    sent = queueCSVLine(lineBuf, len);
   }
   releaseFormatBuffer(FormatBufferOwner::SerialParser);
+  return sent;
 }

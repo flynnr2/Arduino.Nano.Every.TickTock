@@ -58,9 +58,9 @@ void processSerialCommands();
 bool queueCSVLine(const char* buf, int len,
                   EmissionReliability reliability = EmissionReliability::BestEffort);
 void sendTaggedCsvLine(const char* tag, const char* text);
-void sendSample(const PendulumSample &s);
-void sendCanonicalSwingSample(const CanonicalSwingSample& s);
-void sendCanonicalPpsSample(const CanonicalPpsSample& s);
+bool sendSample(const PendulumSample &s);
+bool sendCanonicalSwingSample(const CanonicalSwingSample& s);
+bool sendCanonicalPpsSample(const CanonicalPpsSample& s);
 void sendStatus(StatusCode code, const char* text,
                 EmissionReliability reliability = EmissionReliability::BestEffort);
 void printCsvHeader();
@@ -72,3 +72,6 @@ uint32_t serialRequiredFormatAcquireFailures();
 uint32_t serialQueueRejectsInvalidArgs();
 uint32_t serialTxReentryDrops();
 uint32_t serialRequiredDrops();
+uint32_t serialPartialWrites();
+uint32_t serialPartialWriteCompletions();
+uint32_t serialPartialWriteFences();

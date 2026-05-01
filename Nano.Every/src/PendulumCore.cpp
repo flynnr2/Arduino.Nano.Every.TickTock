@@ -18,6 +18,7 @@
 #include "PpsAdjust.h"
 #include "MemoryTelemetry.h"
 #include "PendulumTelemetry.h"
+#include "RestartBreadcrumbs.h"
 
 static_assert(sizeof(uint16_t) == 2, "Expected 16-bit capture modulo domain");
 static_assert(sizeof(uint32_t) == 4, "Expected 32-bit PPS tick domain");
@@ -157,6 +158,8 @@ void noteExplicitStartupReplayRequest() {
 void pendulumSetup() {
   latchResetCauseOnceAtBoot();
   advanceBootSequenceForBoot();
+  restartBreadcrumbsInitAtBoot();
+  restartBreadcrumbsInitVlmEarly();
 
   pinMode(ledPin, OUTPUT);
 
@@ -165,6 +168,7 @@ void pendulumSetup() {
   if (&CMD_SERIAL != &DATA_SERIAL) {
     CMD_SERIAL.begin(SERIAL_BAUD_NANO);
   }
+  emitSetupEntryNoneIfLatchedResetFlagsNone();
 
   TunableConfig cfg = {};
   if (loadConfig(cfg)) {
@@ -199,6 +203,7 @@ void pendulumSetup() {
   memoryTelemetrySample();
 #endif
   emitStatusBootHeaders();
+  emitEepromLoadStatus();
 #if PPS_TUNING_TELEMETRY
   emitPpsTuningConfigSnapshot();
 #endif
@@ -211,8 +216,10 @@ static void process_pps(uint8_t budget_remaining) {
   const uint32_t now_ms = platformMillis();
   const uint32_t pps_seen_now = capturePpsSeen();
   if (pps_seen_now != pps_seen_prev) {
+    const uint32_t pps_seen_delta = (uint32_t)(pps_seen_now - pps_seen_prev);
     pps_seen_prev = pps_seen_now;
     last_pps_isr_change_ms = now_ms;
+    restartBreadcrumbsNotifyPpsIsrEdge(now_ms, pps_seen_delta);
   }
 
   // Freshness is tracked in two domains:
@@ -226,6 +233,9 @@ static void process_pps(uint8_t budget_remaining) {
   pps_freshness_inputs.pps_processing_stale_ms = Tunables::ppsStaleMsActive();
   pps_freshness_inputs.pps_primed = pps_primed;
   const PpsFreshnessResult pps_freshness = evaluatePpsFreshness(pps_freshness_inputs);
+  if (pps_freshness.pps_isr_stale || pps_freshness.pps_processing_stale) {
+    restartBreadcrumbsSetFlag(RESTART_BC_FLAG_PPS_STALE);
+  }
   if (pps_freshness.shouldResetToNoPps()) {
     gPpsValidator.reset();
     gFreqDiscipliner.observe(PpsValidator::SampleClass::GAP, false, (uint32_t)MAIN_CLOCK_HZ, now_ms, true);
@@ -254,9 +264,8 @@ static void process_pps(uint8_t budget_remaining) {
     }
   }
 
-  while (budget_remaining > 0U && capturePpsAvailable()) {
-    budget_remaining--;
-    PpsCapture cap = capturePopPps();
+  PpsCapture cap{};
+  while (budget_remaining-- > 0U && captureTryPopPps(&cap)) {
     uint32_t t = cap.edge32;
     if (startup_output_ready && ACTIVE_EMIT_MODE == EmitMode::CANONICAL) {
       CanonicalPpsSample canonicalPps{};
@@ -268,7 +277,7 @@ static void process_pps(uint8_t budget_remaining) {
       canonicalPps.gps_status = gpsStatus;
       canonicalPps.holdover_age_ms = gFreqDiscipliner.holdoverAgeMs();
       canonicalPps.drop_pps = captureDroppedPpsEvents();
-      sendCanonicalPpsSample(canonicalPps);
+      (void)sendCanonicalPpsSample(canonicalPps);
     }
 
     if (!pps_primed) {
@@ -277,6 +286,7 @@ static void process_pps(uint8_t budget_remaining) {
       lastPpsCapture = t;
       lastPpsCap16 = cap.cap16;
       last_pps_processed_ms = now_ms;
+      restartBreadcrumbsNotifyPpsProcessed(now_ms);
       ppsAdjustOnPpsPrimed(t, pps_delta_active ? (uint32_t)pps_delta_active : (uint32_t)MAIN_CLOCK_HZ);
       continue;
     }
@@ -297,6 +307,7 @@ static void process_pps(uint8_t budget_remaining) {
     lastPpsCapture = t;
     lastPpsCap16 = cap.cap16;
     last_pps_processed_ms = now_ms;
+    restartBreadcrumbsNotifyPpsProcessed(now_ms);
 
 #if ENABLE_PROFILING && DUAL_PPS_PROFILING
     DualPpsTcb1RisingSnapshot tcb1_rising = {};
@@ -323,6 +334,9 @@ static void process_pps(uint8_t budget_remaining) {
 
     PpsValidator::SampleClass cls = gPpsValidator.classify(pps_dt32_ticks, false);
     gPpsValidator.observe(cls, pps_dt32_ticks, now_ms);
+    if (cls == PpsValidator::SampleClass::OK) {
+      restartBreadcrumbsNotifyAcceptedPpsSample(cap.seq, cap.edge32, cap.now32, now_ms);
+    }
 
     const bool pps_valid = gPpsValidator.isValid();
     const bool anomaly = (cls != PpsValidator::SampleClass::OK);
@@ -385,17 +399,22 @@ static void process_pps(uint8_t budget_remaining) {
 
 void pendulumLoop() {
   const uint32_t now_ms = platformMillis();
+  restartBreadcrumbsSetLoopPhase(RESTART_BC_LOOP_PHASE_LOOP_TOP);
+  restartBreadcrumbsMainloopTick(now_ms);
 #if ENABLE_MEMORY_TELEMETRY_STS
   memoryTelemetrySample();
 #endif
+  restartBreadcrumbsSetLoopPhase(RESTART_BC_LOOP_PHASE_SERIAL_COMMANDS);
   processSerialCommands();
+  restartBreadcrumbsSetLoopPhase(RESTART_BC_LOOP_PHASE_PPS_PROCESS);
   process_pps(PPS_PROCESS_BUDGET_PER_LOOP);
+  restartBreadcrumbsSetLoopPhase(RESTART_BC_LOOP_PHASE_SWING_EDGE_SCAN);
   swingAssemblerProcessEdges();
 
+  restartBreadcrumbsSetLoopPhase(RESTART_BC_LOOP_PHASE_SWING_POP_EMIT);
   uint8_t swing_budget = SWING_PROCESS_BUDGET_PER_LOOP;
-  while (swing_budget > 0U && swingAssemblerAvailable()) {
-    swing_budget--;
-    FullSwing fs = swingAssemblerPop();
+  FullSwing fs{};
+  while (swing_budget-- > 0U && swingAssemblerTryPeekOldest(&fs)) {
 
     PendulumSample sample{};
     sample.tick       = fs.tick;
@@ -420,10 +439,11 @@ void pendulumLoop() {
     sample.pps_seq_row    = fs.pps_seq_row;
 
     if (!startup_output_ready) {
-      continue;
+      break;
     }
+    bool emitted = false;
     if (ACTIVE_EMIT_MODE == EmitMode::DERIVED) {
-      sendSample(sample);
+      emitted = sendSample(sample);
     } else {
       CanonicalSwingSample canonical{};
       canonical.seq = fs.swing_seq;
@@ -437,10 +457,22 @@ void pendulumLoop() {
       canonical.drop_swing = captureDroppedSwingRows();
       canonical.adj_diag = fs.adj_diag;
       canonical.adj_comp_diag = fs.adj_comp_diag;
-      sendCanonicalSwingSample(canonical);
+      emitted = sendCanonicalSwingSample(canonical);
+    }
+
+    if (!emitted) {
+      // Keep oldest row pending for retry on a later pass.
+      swingAssemblerRecordEmitAttemptFailed();
+      break;
+    }
+    if (!swingAssemblerRetireOldest()) {
+      // Defensive consistency guard: treat as transient failure and retry later.
+      swingAssemblerRecordEmitAttemptFailed();
+      break;
     }
   }
 
+  restartBreadcrumbsSetLoopPhase(RESTART_BC_LOOP_PHASE_PERIODIC_TELEMETRY);
 #if ENABLE_MEMORY_TELEMETRY_STS
   if (startup_output_ready &&
       (uint32_t)(now_ms - last_mem_telemetry_ms) >= (uint32_t)MEMORY_TELEMETRY_PERIOD_MS) {
