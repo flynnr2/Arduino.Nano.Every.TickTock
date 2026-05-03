@@ -6,7 +6,9 @@
 #include <stdlib.h>
 
 #include "StringCase.h"
+#include "PendulumCommands.h"
 #include "PendulumProtocol.h"
+#include "ProgmemCompat.h"
 #include "SerialParser.h"
 #include "PendulumCore.h"
 #include "TunableCommands.h"
@@ -55,6 +57,10 @@ bool appendCStr(char* out, size_t outLen, size_t& pos, const char* s) {
   return true;
 }
 
+bool appendLit(char* out, size_t outLen, size_t& pos, const char* s) {
+  return appendCStr(out, outLen, pos, s);
+}
+
 bool u64ToDec(char* out, size_t outLen, uint64_t v) {
   if (!out || outLen < 2U) return false;
 
@@ -83,7 +89,23 @@ bool appendU32(char* out, size_t outLen, size_t& pos, uint32_t v) {
   return appendU64(out, outLen, pos, static_cast<uint64_t>(v));
 }
 
-bool appendFieldSep(char* out, size_t outLen, size_t& pos) {
+bool appendU16(char* out, size_t outLen, size_t& pos, uint16_t v) {
+  return appendU32(out, outLen, pos, static_cast<uint32_t>(v));
+}
+
+bool appendI32(char* out, size_t outLen, size_t& pos, int32_t v) {
+  if (v < 0) {
+    const uint32_t mag = static_cast<uint32_t>(-(v + 1)) + 1U;
+    return appendChar(out, outLen, pos, '-') && appendU32(out, outLen, pos, mag);
+  }
+  return appendU32(out, outLen, pos, static_cast<uint32_t>(v));
+}
+
+bool appendI16(char* out, size_t outLen, size_t& pos, int16_t v) {
+  return appendI32(out, outLen, pos, static_cast<int32_t>(v));
+}
+
+bool appendComma(char* out, size_t outLen, size_t& pos) {
   return appendChar(out, outLen, pos, ',');
 }
 
@@ -625,7 +647,7 @@ bool sendSample(const PendulumSample &s) {
   bool ok = true;
   ok = ok && appendCStr(lineBuf, CSV_LINE_MAX, pos, TAG_SMP);
   auto appendU32Field = [&](uint32_t v) {
-    const bool fieldOk = appendFieldSep(lineBuf, CSV_LINE_MAX, pos) &&
+    const bool fieldOk = appendComma(lineBuf, CSV_LINE_MAX, pos) &&
                          appendU32(lineBuf, CSV_LINE_MAX, pos, v);
     ok = ok && fieldOk;
     if (fieldOk) ++emittedFieldCount;
@@ -681,23 +703,23 @@ bool sendCanonicalSwingSample(const CanonicalSwingSample& s) {
   if (headerPending) printCsvHeader();
   char* lineBuf = tryAcquireFormatBuffer(FormatBufferOwner::SerialParser);
   if (!lineBuf) return false;
-  const int len = snprintf(lineBuf,
-                           CSV_LINE_MAX,
-                           "%s,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%u,%u\n",
-                           TAG_CSW,
-                           (unsigned long)s.seq,
-                           (unsigned long)s.edge0_tcb0,
-                           (unsigned long)s.edge1_tcb0,
-                           (unsigned long)s.edge2_tcb0,
-                           (unsigned long)s.edge3_tcb0,
-                           (unsigned long)s.edge4_tcb0,
-                           (unsigned long)s.drop_ir,
-                           (unsigned long)s.drop_pps,
-                           (unsigned long)s.drop_swing,
-                           (unsigned int)s.adj_diag,
-                           (unsigned int)s.adj_comp_diag);
+  size_t pos = 0;
+  bool ok = appendLit(lineBuf, CSV_LINE_MAX, pos, TAG_CSW) &&
+            appendComma(lineBuf, CSV_LINE_MAX, pos) && appendU32(lineBuf, CSV_LINE_MAX, pos, s.seq) &&
+            appendComma(lineBuf, CSV_LINE_MAX, pos) && appendU32(lineBuf, CSV_LINE_MAX, pos, s.edge0_tcb0) &&
+            appendComma(lineBuf, CSV_LINE_MAX, pos) && appendU32(lineBuf, CSV_LINE_MAX, pos, s.edge1_tcb0) &&
+            appendComma(lineBuf, CSV_LINE_MAX, pos) && appendU32(lineBuf, CSV_LINE_MAX, pos, s.edge2_tcb0) &&
+            appendComma(lineBuf, CSV_LINE_MAX, pos) && appendU32(lineBuf, CSV_LINE_MAX, pos, s.edge3_tcb0) &&
+            appendComma(lineBuf, CSV_LINE_MAX, pos) && appendU32(lineBuf, CSV_LINE_MAX, pos, s.edge4_tcb0) &&
+            appendComma(lineBuf, CSV_LINE_MAX, pos) && appendU32(lineBuf, CSV_LINE_MAX, pos, s.drop_ir) &&
+            appendComma(lineBuf, CSV_LINE_MAX, pos) && appendU32(lineBuf, CSV_LINE_MAX, pos, s.drop_pps) &&
+            appendComma(lineBuf, CSV_LINE_MAX, pos) && appendU32(lineBuf, CSV_LINE_MAX, pos, s.drop_swing) &&
+            appendComma(lineBuf, CSV_LINE_MAX, pos) && appendU16(lineBuf, CSV_LINE_MAX, pos, s.adj_diag) &&
+            appendComma(lineBuf, CSV_LINE_MAX, pos) && appendU16(lineBuf, CSV_LINE_MAX, pos, s.adj_comp_diag) &&
+            appendChar(lineBuf, CSV_LINE_MAX, pos, '\n');
+  const int len = static_cast<int>(pos);
   bool sent = false;
-  if (len > 0 && len < (int)CSV_LINE_MAX) {
+  if (ok && len > 0 && len < (int)CSV_LINE_MAX) {
     sent = queueCSVLine(lineBuf, len);
   }
   releaseFormatBuffer(FormatBufferOwner::SerialParser);
@@ -709,20 +731,20 @@ bool sendCanonicalPpsSample(const CanonicalPpsSample& s) {
   if (headerPending) printCsvHeader();
   char* lineBuf = tryAcquireFormatBuffer(FormatBufferOwner::SerialParser);
   if (!lineBuf) return false;
-  const int len = snprintf(lineBuf,
-                           CSV_LINE_MAX,
-                           "%s,%lu,%lu,%u,%lu,%u,%u,%lu,%lu\n",
-                           TAG_CPS,
-                           (unsigned long)s.seq,
-                           (unsigned long)s.edge_tcb0,
-                           (unsigned int)s.gps_status,
-                           (unsigned long)s.holdover_age_ms,
-                           (unsigned int)s.cap16,
-                           (unsigned int)s.latency16,
-                           (unsigned long)s.now32,
-                           (unsigned long)s.drop_pps);
+  size_t pos = 0;
+  bool ok = appendLit(lineBuf, CSV_LINE_MAX, pos, TAG_CPS) &&
+            appendComma(lineBuf, CSV_LINE_MAX, pos) && appendU32(lineBuf, CSV_LINE_MAX, pos, s.seq) &&
+            appendComma(lineBuf, CSV_LINE_MAX, pos) && appendU32(lineBuf, CSV_LINE_MAX, pos, s.edge_tcb0) &&
+            appendComma(lineBuf, CSV_LINE_MAX, pos) && appendU16(lineBuf, CSV_LINE_MAX, pos, s.gps_status) &&
+            appendComma(lineBuf, CSV_LINE_MAX, pos) && appendU32(lineBuf, CSV_LINE_MAX, pos, s.holdover_age_ms) &&
+            appendComma(lineBuf, CSV_LINE_MAX, pos) && appendU16(lineBuf, CSV_LINE_MAX, pos, s.cap16) &&
+            appendComma(lineBuf, CSV_LINE_MAX, pos) && appendU16(lineBuf, CSV_LINE_MAX, pos, s.latency16) &&
+            appendComma(lineBuf, CSV_LINE_MAX, pos) && appendU32(lineBuf, CSV_LINE_MAX, pos, s.now32) &&
+            appendComma(lineBuf, CSV_LINE_MAX, pos) && appendU32(lineBuf, CSV_LINE_MAX, pos, s.drop_pps) &&
+            appendChar(lineBuf, CSV_LINE_MAX, pos, '\n');
+  const int len = static_cast<int>(pos);
   bool sent = false;
-  if (len > 0 && len < (int)CSV_LINE_MAX) {
+  if (ok && len > 0 && len < (int)CSV_LINE_MAX) {
     sent = queueCSVLine(lineBuf, len);
   }
   releaseFormatBuffer(FormatBufferOwner::SerialParser);

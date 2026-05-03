@@ -4,19 +4,28 @@
 #include <util/atomic.h>
 
 #include "PendulumCapture.h"
+#include "CaptureEvctrl.h"
 
 static volatile uint32_t pps_seen = 0;
 static volatile uint32_t droppedEvents = 0;
 static volatile uint32_t droppedIrEvents = 0;
 static volatile uint32_t droppedPpsEvents = 0;
 static volatile uint32_t droppedSwingRows = 0;
+#if ENABLE_TCB_LATENCY_DIAG
+static volatile uint32_t droppedTcbLatencyTraceEvents = 0;
+static volatile uint32_t tcb1LatencyTraceSeq = 0;
+#endif
 
 static volatile uint16_t tcb0Ovf = 0;
 static volatile uint32_t tcb0WrapDetected = 0;
 static volatile uint32_t coherentOvfFlagSeenCount = 0;
 static volatile uint32_t coherentOvfAppliedCount = 0;
 
-static bool isTick = true;
+enum Tcb1CaptureSide : uint8_t {
+  TCB1_CAPTURE_SIDE_TICK = 0,
+  TCB1_CAPTURE_SIDE_TOCK = 1,
+};
+static volatile uint8_t tcb1CaptureSide = TCB1_CAPTURE_SIDE_TICK;
 
 static EdgeEvent evbuf[CAPTURE_EDGE_BUFFER_SIZE];
 static volatile uint8_t ev_head = 0;
@@ -25,6 +34,11 @@ static volatile uint8_t ev_tail = 0;
 static PpsCapture ppsBuffer[CAPTURE_PPS_RING_SIZE];
 static volatile uint8_t ppsHead = 0;
 static volatile uint8_t ppsTail = 0;
+#if ENABLE_TCB_LATENCY_DIAG
+static TcbLatencyTraceEvent tcbLatencyTraceBuffer[TCB_LATENCY_TRACE_RING_SIZE];
+static volatile uint8_t tcbLatencyTraceHead = 0;
+static volatile uint8_t tcbLatencyTraceTail = 0;
+#endif
 
 #if ENABLE_PROFILING && DUAL_PPS_PROFILING
 static volatile uint32_t dual_tcb1_rising_seq = 0;
@@ -41,6 +55,9 @@ static_assert(CAPTURE_EDGE_BUFFER_SIZE > 0U &&
 static_assert((CAPTURE_PPS_RING_SIZE & (CAPTURE_PPS_RING_SIZE - 1U)) == 0U, "CAPTURE_PPS_RING_SIZE must be power-of-two for mask arithmetic");
 static_assert(sizeof(evbuf) <= 512U, "Edge-event ring exceeds SRAM guardrail");
 static_assert(sizeof(ppsBuffer) <= 256U, "PPS ring exceeds SRAM guardrail");
+#if ENABLE_TCB_LATENCY_DIAG
+static_assert(sizeof(tcbLatencyTraceBuffer) <= 384U, "TCB latency trace ring exceeds SRAM guardrail");
+#endif
 
 static inline uint32_t tcb0_now_coherent_isr_only();
 
@@ -53,9 +70,14 @@ constexpr uint8_t TCB2_ENABLE = TCB_CLKSEL_CLKDIV1_gc | TCB_ENABLE_bm;
 constexpr uint8_t TCB0_MODE_FREE_RUNNING = TCB_CNTMODE_INT_gc;
 constexpr uint8_t TCB_CAPTURE_MODE = TCB_CNTMODE_CAPT_gc;
 
-constexpr uint8_t EVCTRL_CAPTURE_EDGE_HIGH_TO_LOW = TCB_CAPTEI_bm | TCB_EDGE_bm | TCB_FILTER_bm;
-constexpr uint8_t EVCTRL_CAPTURE_EDGE_LOW_TO_HIGH = TCB_CAPTEI_bm | TCB_FILTER_bm;
 constexpr uint8_t EVCTRL_PPS_CAPTURE = TCB_CAPTEI_bm;
+// EVCTRL values used to arm the next TCB1 capture edge.
+// Important: this table is indexed by the NEXT side, not the side just captured.
+// Check this carefully before changing polarity definitions.
+static constexpr uint8_t TCB1_EVCTRL_FOR_NEXT_SIDE[2] = {
+    EVCTRL_CAPTURE_EDGE_HIGH_TO_LOW,  // next side = tick (0): arm high->low
+    EVCTRL_CAPTURE_EDGE_LOW_TO_HIGH,  // next side = tock (1): arm low->high
+};
 
 struct CaptureMathResult {
   uint32_t now32;
@@ -86,16 +108,24 @@ static inline void resetCaptureSoftwareState() {
   droppedIrEvents = 0;
   droppedPpsEvents = 0;
   droppedSwingRows = 0;
+#if ENABLE_TCB_LATENCY_DIAG
+  droppedTcbLatencyTraceEvents = 0;
+  tcb1LatencyTraceSeq = 0;
+#endif
   tcb0Ovf = 0;
   tcb0WrapDetected = 0;
   coherentOvfFlagSeenCount = 0;
   coherentOvfAppliedCount = 0;
 
-  isTick = true;
+  tcb1CaptureSide = TCB1_CAPTURE_SIDE_TICK;
   ev_head = 0;
   ev_tail = 0;
   ppsHead = 0;
   ppsTail = 0;
+#if ENABLE_TCB_LATENCY_DIAG
+  tcbLatencyTraceHead = 0;
+  tcbLatencyTraceTail = 0;
+#endif
 #if ENABLE_PROFILING && DUAL_PPS_PROFILING
   dual_tcb1_rising_seq = 0;
   dual_tcb2_rising_seq = 0;
@@ -118,6 +148,31 @@ static inline void droppedPpsEvents_inc_isr() {
   droppedEvents++;
   droppedPpsEvents++;
 }
+#if ENABLE_TCB_LATENCY_DIAG
+static inline uint8_t tcbLatency_mask(uint8_t v) { return v & (TCB_LATENCY_TRACE_RING_SIZE - 1U); }
+static inline void tcbLatencyTracePushIsr(uint8_t tcb,
+                                          uint8_t edgeKind,
+                                          uint32_t seqOrEdgeIndex,
+                                          uint32_t edge32,
+                                          uint16_t cap16,
+                                          uint16_t cnt16,
+                                          uint16_t latency16) {
+  const uint8_t n = tcbLatency_mask((uint8_t)(tcbLatencyTraceHead + 1U));
+  if (n != tcbLatencyTraceTail) {
+    TcbLatencyTraceEvent& slot = tcbLatencyTraceBuffer[tcbLatencyTraceHead];
+    slot.seq_or_edge_index = seqOrEdgeIndex;
+    slot.edge32 = edge32;
+    slot.cap16 = cap16;
+    slot.cnt16 = cnt16;
+    slot.latency16 = latency16;
+    slot.tcb = tcb;
+    slot.edge_kind = edgeKind;
+    tcbLatencyTraceHead = n;
+  } else {
+    droppedTcbLatencyTraceEvents++;
+  }
+}
+#endif
 
 static inline void ppsData_push_isr(uint32_t seq,
                                     uint32_t edge32,
@@ -274,6 +329,29 @@ bool captureTryPopPps(PpsCapture* out) {
   }
   return popped;
 }
+#if ENABLE_TCB_LATENCY_DIAG
+bool captureTryPopTcbLatencyTrace(TcbLatencyTraceEvent* out) {
+  if (out == nullptr) return false;
+  bool popped = false;
+  ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
+    if (tcbLatencyTraceTail != tcbLatencyTraceHead) {
+      const uint8_t tail = tcbLatencyTraceTail;
+      *out = tcbLatencyTraceBuffer[tail];
+      tcbLatencyTraceTail = tcbLatency_mask((uint8_t)(tail + 1U));
+      popped = true;
+    }
+  }
+  return popped;
+}
+
+uint32_t captureDroppedTcbLatencyTraceEvents() {
+  uint32_t dropped = 0;
+  ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
+    dropped = droppedTcbLatencyTraceEvents;
+  }
+  return dropped;
+}
+#endif
 
 uint32_t tcb0NowCoherentMainLoop() {
   uint32_t now32 = 0;
@@ -337,7 +415,7 @@ void captureResetAndReinit() {
 
   resetCaptureSoftwareState();
 
-  // Restore the expected post-reset edge polarity so `isTick == true` matches the next IR edge.
+  // Restore the expected post-reset edge polarity so side=tick matches the next IR edge.
   TCB0.CTRLB = TCB0_MODE_FREE_RUNNING;
   TCB1.CTRLB = TCB_CAPTURE_MODE;
   TCB2.CTRLB = TCB_CAPTURE_MODE;
@@ -415,10 +493,10 @@ Minimal math (inside ISR):
 // | Read `TCB1.CCMP` + `TCB1.CNT`      | 8      | two 16-bit peripheral reads                     |
 // | `now32 = tcb0_now_coherent_isr_only()`  | ~20    | coherent overflow/CNT sample in TCB0 domain     |
 // | `latency16` + `edge32` arithmetic  | ~6     | 16-bit sub + 32-bit backdate                    |
-// | Tick/tock branch logic             | ~2-4   | branch on `isTick`                              |
+// | Tick/tock side select              | ~2     | side index load + xor toggle                    |
 // | `push_event(...)`                  | ~33    | ring index, stores, dropped-event guard         |
-// | Update `TCB1.EVCTRL` + `isTick`    | ~4     | select next edge + state toggle                 |
-// | **Total (CAPT path)**              | **~102-107** | **~6.4-6.7µs**                             |
+// | Update `TCB1.EVCTRL` + side        | ~4     | table-index next edge + state toggle            |
+// | **Total (CAPT path)**              | **~100-106** | **~6.3-6.6µs**                             |
 // |-----------------------------------------------------------------------------------------------|
 ISR(TCB1_INT_vect) {
   const uint8_t flags = TCB1.INTFLAGS;
@@ -431,34 +509,44 @@ ISR(TCB1_INT_vect) {
   const uint16_t ccmp = TCB1.CCMP;
   const CaptureMathResult captureMath = capture_math_from_regs_isr_only(ccmp, TCB1.CNT);
 
-  if (isTick) {
+  // TCB1 capture ISR timing note:
+  // This hot path is deliberately branch-symmetric with respect to tick/tock.
+  // The hardware capture timestamp is already latched in CCMP; this ISR only
+  // records the captured edge into the current semantic slot, arms TCB1 for
+  // the next opposite edge, and toggles the side index.
+  //
+  // Do not reintroduce:
+  //
+  //     if (isTick) { ... } else { ... }
+  //
+  // here. Even small tick-vs-tock branch differences make later asymmetry
+  // analysis harder to trust. Sequence validation, startup resync, diagnostics,
+  // and row assembly should happen outside this ISR.
+  const uint8_t side = tcb1CaptureSide;
+  const uint8_t nextSide = side ^ 1u;
+
 #if ENABLE_PROFILING && DUAL_PPS_PROFILING
-    dual_tcb1_rising_seq++;
-    dual_tcb1_rising_cap16 = ccmp;
-    dual_tcb1_rising_edge32 = captureMath.edge32;
+  const uint8_t tickSideCaptured = (uint8_t)(side == TCB1_CAPTURE_SIDE_TICK);
+  dual_tcb1_rising_seq += tickSideCaptured;
+  dual_tcb1_rising_cap16 = tickSideCaptured != 0U ? ccmp : dual_tcb1_rising_cap16;
+  dual_tcb1_rising_edge32 = tickSideCaptured != 0U ? captureMath.edge32 : dual_tcb1_rising_edge32;
 #endif
-    uint8_t next = (uint8_t)(ev_head + 1) & (CAPTURE_EDGE_BUFFER_SIZE - 1);
-    if (next != ev_tail) {
-      evbuf[ev_head].ticks = captureMath.edge32;
-      evbuf[ev_head].type  = 0;
-      ev_head = next;
-    } else {
-      droppedIrEvents_inc_isr();
-    }
-    TCB1.EVCTRL = EVCTRL_CAPTURE_EDGE_HIGH_TO_LOW;
-    isTick = false;
+  uint8_t next = (uint8_t)(ev_head + 1) & (CAPTURE_EDGE_BUFFER_SIZE - 1);
+#if ENABLE_TCB_LATENCY_DIAG
+  tcb1LatencyTraceSeq++;
+  tcbLatencyTracePushIsr(1U, side == TCB1_CAPTURE_SIDE_TICK ? TCB_LATENCY_EDGE_TICK : TCB_LATENCY_EDGE_TOCK,
+                         tcb1LatencyTraceSeq, captureMath.edge32, ccmp,
+                         (uint16_t)(ccmp + captureMath.latency16), captureMath.latency16);
+#endif
+  if (next != ev_tail) {
+    evbuf[ev_head].ticks = captureMath.edge32;
+    evbuf[ev_head].type  = side;
+    ev_head = next;
   } else {
-    uint8_t next = (uint8_t)(ev_head + 1) & (CAPTURE_EDGE_BUFFER_SIZE - 1);
-    if (next != ev_tail) {
-      evbuf[ev_head].ticks = captureMath.edge32;
-      evbuf[ev_head].type  = 1;
-      ev_head = next;
-    } else {
-      droppedIrEvents_inc_isr();
-    }
-    TCB1.EVCTRL = EVCTRL_CAPTURE_EDGE_LOW_TO_HIGH;
-    isTick = true;
+    droppedIrEvents_inc_isr();
   }
+  TCB1.EVCTRL = TCB1_EVCTRL_FOR_NEXT_SIDE[nextSide];
+  tcb1CaptureSide = nextSide;
 }
 
 // |------------------------------------------------------------------------------------------------|
@@ -491,6 +579,9 @@ ISR(TCB2_INT_vect) {
   const uint16_t cnt = (uint16_t)(ccmp + captureMath.latency16);
 
   pps_seen++;
+#if ENABLE_TCB_LATENCY_DIAG
+  tcbLatencyTracePushIsr(2U, TCB_LATENCY_EDGE_PPS, pps_seen, captureMath.edge32, ccmp, cnt, captureMath.latency16);
+#endif
 #if ENABLE_PROFILING && DUAL_PPS_PROFILING
   dual_tcb2_rising_seq++;
   ppsData_push_isr(pps_seen, captureMath.edge32, captureMath.now32, tcb0Ovf, ccmp, cnt, captureMath.latency16, dual_tcb2_rising_seq);

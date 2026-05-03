@@ -1,3 +1,5 @@
+Status: architecture decision / design constraint. This file records the memory and telemetry budget strategy; code remains the source of truth for exact constants.
+
 # ADR 0001: Memory and Telemetry Budget Strategy
 
 ## Status

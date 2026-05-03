@@ -6,6 +6,9 @@
 #include "DisciplinedTime.h"
 
 #include <stdint.h>
+#if ENABLE_TCB_LATENCY_DIAG
+#include "PendulumCapture.h"
+#endif
 
 void emit_pps_baseline_telemetry(uint32_t seq,
                                  uint32_t now_ms,
@@ -42,4 +45,13 @@ void emit_dual_pps_edge_telemetry(uint32_t q,
                                   uint32_t tcb2_ext,
                                   uint32_t tcb1_ext,
                                   int32_t delta_ext);
+#endif
+
+#if ENABLE_TCB_LATENCY_DIAG
+void emit_tcb_latency_trace_event(uint32_t now_ms, const TcbLatencyTraceEvent& event);
+void emit_tcb_latency_summary(uint32_t now_ms,
+                              uint32_t dropped,
+                              uint32_t tick_n, uint16_t tick_last, uint16_t tick_min, uint16_t tick_max, uint32_t tick_spikes,
+                              uint32_t tock_n, uint16_t tock_last, uint16_t tock_min, uint16_t tock_max, uint32_t tock_spikes,
+                              uint32_t pps_n, uint16_t pps_last, uint16_t pps_min, uint16_t pps_max, uint32_t pps_spikes);
 #endif

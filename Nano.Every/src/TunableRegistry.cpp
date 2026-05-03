@@ -1,5 +1,6 @@
 #include "TunableRegistry.h"
 
+#include "PendulumCommands.h"
 #include "PendulumProtocol.h"
 #include "SerialParser.h"
 
@@ -328,22 +329,22 @@ DEFINE_APPLY_TUNABLE(applyPpsMetrologyGraceMs, ppsMetrologyGraceMs)
 #undef DEFINE_APPLY_TUNABLE
 
 const TunableDescriptor REGISTRY[] = {
-  { PARAM_PPS_FAST_SHIFT, nullptr, TunableCliType::Unsigned, nullptr, nullptr, "EWMA fast shift", printUIntPpsFastShift, setPpsFastShift, writePpsFastShift, applyPpsFastShift },
-  { PARAM_PPS_SLOW_SHIFT, nullptr, TunableCliType::Unsigned, nullptr, nullptr, "EWMA slow shift", printUIntPpsSlowShift, setPpsSlowShift, writePpsSlowShift, applyPpsSlowShift },
-  { PARAM_PPS_BLEND_LO_PPM, nullptr, TunableCliType::Unsigned, nullptr, nullptr, "slow/fast blend low", printUIntPpsBlendLoPpm, setPpsBlendLoPpm, writePpsBlendLoPpm, applyPpsBlendLoPpm },
-  { PARAM_PPS_BLEND_HI_PPM, nullptr, TunableCliType::Unsigned, nullptr, nullptr, "slow/fast blend high", printUIntPpsBlendHiPpm, setPpsBlendHiPpm, writePpsBlendHiPpm, applyPpsBlendHiPpm },
-  { PARAM_PPS_LOCK_R_PPM, nullptr, TunableCliType::Unsigned, nullptr, nullptr, "lock drift threshold", printUIntPpsLockRppm, setPpsLockRppm, writePpsLockRppm, applyPpsLockRppm },
-  { PARAM_PPS_LOCK_MAD_TICKS, PARAM_PPS_LOCK_MAD_TICKS_DEPRECATED_ALIAS, TunableCliType::Unsigned, nullptr, nullptr, "lock MAD threshold", printUIntPpsLockMadTicks, setPpsLockMadTicks, writePpsLockMadTicks, applyPpsLockMadTicks },
-  { PARAM_PPS_LOCK_COUNT, nullptr, TunableCliType::Unsigned, "range 1..60", nullptr, "lock streak", printUIntPpsLockCount, setPpsLockCount, writePpsLockCount, applyPpsLockCount },
-  { PARAM_PPS_UNLOCK_R_PPM, nullptr, TunableCliType::Unsigned, nullptr, nullptr, "unlock drift threshold", printUIntPpsUnlockRppm, setPpsUnlockRppm, writePpsUnlockRppm, applyPpsUnlockRppm },
-  { PARAM_PPS_UNLOCK_MAD_TICKS, PARAM_PPS_UNLOCK_MAD_TICKS_DEPRECATED_ALIAS, TunableCliType::Unsigned, nullptr, nullptr, "unlock MAD threshold", printUIntPpsUnlockMadTicks, setPpsUnlockMadTicks, writePpsUnlockMadTicks, applyPpsUnlockMadTicks },
-  { PARAM_PPS_UNLOCK_COUNT, nullptr, TunableCliType::Unsigned, nullptr, nullptr, "unlock streak", printUIntPpsUnlockCount, setPpsUnlockCount, writePpsUnlockCount, applyPpsUnlockCount },
-  { PARAM_PPS_HOLDOVER_MS, nullptr, TunableCliType::Unsigned, nullptr, nullptr, "holdover ms", printUIntPpsHoldoverMs, setPpsHoldoverMs, writePpsHoldoverMs, applyPpsHoldoverMs },
-  { PARAM_PPS_STALE_MS, nullptr, TunableCliType::Unsigned, nullptr, nullptr, "main-loop stale ms", printUIntPpsStaleMs, setPpsStaleMs, writePpsStaleMs, applyPpsStaleMs },
-  { PARAM_PPS_ISR_STALE_MS, nullptr, TunableCliType::Unsigned, nullptr, nullptr, "ISR stale ms", printUIntPpsIsrStaleMs, setPpsIsrStaleMs, writePpsIsrStaleMs, applyPpsIsrStaleMs },
-  { PARAM_PPS_CFG_REEMIT_DELAY_MS, nullptr, TunableCliType::Unsigned, nullptr, nullptr, "cfg reemit delay ms", printUIntPpsConfigReemitDelayMs, setPpsConfigReemitDelayMs, writePpsConfigReemitDelayMs, applyPpsConfigReemitDelayMs },
-  { PARAM_PPS_ACQUIRE_MIN_MS, nullptr, TunableCliType::Unsigned, nullptr, nullptr, "acquire min ms", printUIntPpsAcquireMinMs, setPpsAcquireMinMs, writePpsAcquireMinMs, applyPpsAcquireMinMs },
-  { PARAM_PPS_METROLOGY_GRACE_MS, nullptr, TunableCliType::Unsigned, nullptr, nullptr, "metrology grace ms", printUIntPpsMetrologyGraceMs, setPpsMetrologyGraceMs, writePpsMetrologyGraceMs, applyPpsMetrologyGraceMs },
+  { PARAM_PPS_FAST_SHIFT, TunableCliType::Unsigned, nullptr, nullptr, "EWMA fast shift", printUIntPpsFastShift, setPpsFastShift, writePpsFastShift, applyPpsFastShift },
+  { PARAM_PPS_SLOW_SHIFT, TunableCliType::Unsigned, nullptr, nullptr, "EWMA slow shift", printUIntPpsSlowShift, setPpsSlowShift, writePpsSlowShift, applyPpsSlowShift },
+  { PARAM_PPS_BLEND_LO_PPM, TunableCliType::Unsigned, nullptr, nullptr, "slow/fast blend low", printUIntPpsBlendLoPpm, setPpsBlendLoPpm, writePpsBlendLoPpm, applyPpsBlendLoPpm },
+  { PARAM_PPS_BLEND_HI_PPM, TunableCliType::Unsigned, nullptr, nullptr, "slow/fast blend high", printUIntPpsBlendHiPpm, setPpsBlendHiPpm, writePpsBlendHiPpm, applyPpsBlendHiPpm },
+  { PARAM_PPS_LOCK_R_PPM, TunableCliType::Unsigned, nullptr, nullptr, "lock drift threshold", printUIntPpsLockRppm, setPpsLockRppm, writePpsLockRppm, applyPpsLockRppm },
+  { PARAM_PPS_LOCK_MAD_TICKS, TunableCliType::Unsigned, nullptr, nullptr, "lock MAD threshold", printUIntPpsLockMadTicks, setPpsLockMadTicks, writePpsLockMadTicks, applyPpsLockMadTicks },
+  { PARAM_PPS_LOCK_COUNT, TunableCliType::Unsigned, "range 1..60", nullptr, "lock streak", printUIntPpsLockCount, setPpsLockCount, writePpsLockCount, applyPpsLockCount },
+  { PARAM_PPS_UNLOCK_R_PPM, TunableCliType::Unsigned, nullptr, nullptr, "unlock drift threshold", printUIntPpsUnlockRppm, setPpsUnlockRppm, writePpsUnlockRppm, applyPpsUnlockRppm },
+  { PARAM_PPS_UNLOCK_MAD_TICKS, TunableCliType::Unsigned, nullptr, nullptr, "unlock MAD threshold", printUIntPpsUnlockMadTicks, setPpsUnlockMadTicks, writePpsUnlockMadTicks, applyPpsUnlockMadTicks },
+  { PARAM_PPS_UNLOCK_COUNT, TunableCliType::Unsigned, nullptr, nullptr, "unlock streak", printUIntPpsUnlockCount, setPpsUnlockCount, writePpsUnlockCount, applyPpsUnlockCount },
+  { PARAM_PPS_HOLDOVER_MS, TunableCliType::Unsigned, nullptr, nullptr, "holdover ms", printUIntPpsHoldoverMs, setPpsHoldoverMs, writePpsHoldoverMs, applyPpsHoldoverMs },
+  { PARAM_PPS_STALE_MS, TunableCliType::Unsigned, nullptr, nullptr, "main-loop stale ms", printUIntPpsStaleMs, setPpsStaleMs, writePpsStaleMs, applyPpsStaleMs },
+  { PARAM_PPS_ISR_STALE_MS, TunableCliType::Unsigned, nullptr, nullptr, "ISR stale ms", printUIntPpsIsrStaleMs, setPpsIsrStaleMs, writePpsIsrStaleMs, applyPpsIsrStaleMs },
+  { PARAM_PPS_CFG_REEMIT_DELAY_MS, TunableCliType::Unsigned, nullptr, nullptr, "cfg reemit delay ms", printUIntPpsConfigReemitDelayMs, setPpsConfigReemitDelayMs, writePpsConfigReemitDelayMs, applyPpsConfigReemitDelayMs },
+  { PARAM_PPS_ACQUIRE_MIN_MS, TunableCliType::Unsigned, nullptr, nullptr, "acquire min ms", printUIntPpsAcquireMinMs, setPpsAcquireMinMs, writePpsAcquireMinMs, applyPpsAcquireMinMs },
+  { PARAM_PPS_METROLOGY_GRACE_MS, TunableCliType::Unsigned, nullptr, nullptr, "metrology grace ms", printUIntPpsMetrologyGraceMs, setPpsMetrologyGraceMs, writePpsMetrologyGraceMs, applyPpsMetrologyGraceMs },
 };
 
 } // namespace
@@ -364,7 +365,6 @@ const TunableDescriptor* findTunableDescriptor(const char* cliName) {
   if (!cliName) return nullptr;
   for (const TunableDescriptor* it = tunableRegistryBegin(); it != tunableRegistryEnd(); ++it) {
     if (equalsIgnoreCaseAscii(cliName, it->cliName)) return it;
-    if (it->deprecatedCliAlias && equalsIgnoreCaseAscii(cliName, it->deprecatedCliAlias)) return it;
   }
   return nullptr;
 }

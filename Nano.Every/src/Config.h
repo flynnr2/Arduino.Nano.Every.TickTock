@@ -19,7 +19,7 @@
 // External main clock mode is a boot-time-only option for Nano Every /
 // ATmega4809 EXTCLK use and must match the board build's F_CPU.
 #ifndef USE_EXTCLK_MAIN
-#define USE_EXTCLK_MAIN 0
+#define USE_EXTCLK_MAIN 1
 #endif
 
 #if ((USE_EXTCLK_MAIN) != 0) && ((USE_EXTCLK_MAIN) != 1)
@@ -37,7 +37,7 @@
 #endif
 
 #ifndef ENABLE_EXTCLK_HANDOFF_DIAG_STS
-#define ENABLE_EXTCLK_HANDOFF_DIAG_STS 1 // emit optional EXTCLK handoff snapshot in STS clock diagnostics
+#define ENABLE_EXTCLK_HANDOFF_DIAG_STS ENABLE_DIAGNOSTIC_TELEMETRY // emit optional EXTCLK handoff snapshot in STS clock diagnostics
 #endif
 
 #if ((ENABLE_EXTCLK_HANDOFF_DIAG_STS) != 0) && ((ENABLE_EXTCLK_HANDOFF_DIAG_STS) != 1)
@@ -64,7 +64,7 @@ static_assert(static_cast<uint32_t>(MAIN_CLOCK_HZ) == static_cast<uint32_t>(F_CP
 #endif
 
 #ifndef ENABLE_CLOCK_DIAG_STS
-#define ENABLE_CLOCK_DIAG_STS 1 // emit optional STS clock-diagnostic records at boot
+#define ENABLE_CLOCK_DIAG_STS ENABLE_DIAGNOSTIC_TELEMETRY // emit optional STS clock-diagnostic records at boot
 #endif
 /******************************************************************************/
 
@@ -96,8 +96,83 @@ static_assert(static_cast<uint32_t>(MAIN_CLOCK_HZ) == static_cast<uint32_t>(F_CP
 #error "ENABLE_PROFILING must be 0 (off) or 1 (on)"
 #endif
 
+// Stage-1 build profile gates:
+// - Keep diagnostics on by default while environmental sensors remain off.
+// - Sensor-specific flags stay disabled until sensor integration lands.
+#ifndef ENABLE_DIAGNOSTIC_TELEMETRY
+#define ENABLE_DIAGNOSTIC_TELEMETRY 0
+#endif
+
+#ifndef ENABLE_ENV_SENSORS
+#define ENABLE_ENV_SENSORS 0
+#endif
+
+#ifndef ENABLE_ENV_SHT4X
+#define ENABLE_ENV_SHT4X 0
+#endif
+
+#ifndef ENABLE_ENV_BMP280
+#define ENABLE_ENV_BMP280 0
+#endif
+
+#if ((ENABLE_DIAGNOSTIC_TELEMETRY) != 0) && ((ENABLE_DIAGNOSTIC_TELEMETRY) != 1)
+#error "ENABLE_DIAGNOSTIC_TELEMETRY must be 0 or 1"
+#endif
+
+#if ((ENABLE_ENV_SENSORS) != 0) && ((ENABLE_ENV_SENSORS) != 1)
+#error "ENABLE_ENV_SENSORS must be 0 or 1"
+#endif
+
+#if ((ENABLE_ENV_SHT4X) != 0) && ((ENABLE_ENV_SHT4X) != 1)
+#error "ENABLE_ENV_SHT4X must be 0 or 1"
+#endif
+
+#if ((ENABLE_ENV_BMP280) != 0) && ((ENABLE_ENV_BMP280) != 1)
+#error "ENABLE_ENV_BMP280 must be 0 or 1"
+#endif
+
+#ifndef ENABLE_TCB_LATENCY_DIAG
+#define ENABLE_TCB_LATENCY_DIAG ((ENABLE_DIAGNOSTIC_TELEMETRY == 0) ? 0 : ((ENABLE_PROFILING == 0) ? 0 : 1))
+#endif
+
+#ifndef ENABLE_TCB_LATENCY_TRACE_ALL
+#define ENABLE_TCB_LATENCY_TRACE_ALL 0
+#endif
+
+#ifndef TCB_LATENCY_SPIKE_THRESHOLD_CYCLES
+#define TCB_LATENCY_SPIKE_THRESHOLD_CYCLES 160U
+#endif
+
+#ifndef TCB_LATENCY_SUMMARY_PERIOD_MS
+#define TCB_LATENCY_SUMMARY_PERIOD_MS 5000UL
+#endif
+
+#ifndef TCB_LATENCY_TRACE_RING_SIZE
+#define TCB_LATENCY_TRACE_RING_SIZE 16U
+#endif
+
+#if ((ENABLE_TCB_LATENCY_DIAG) != 0) && ((ENABLE_TCB_LATENCY_DIAG) != 1)
+#error "ENABLE_TCB_LATENCY_DIAG must be 0 or 1"
+#endif
+
+#if ((ENABLE_TCB_LATENCY_TRACE_ALL) != 0) && ((ENABLE_TCB_LATENCY_TRACE_ALL) != 1)
+#error "ENABLE_TCB_LATENCY_TRACE_ALL must be 0 or 1"
+#endif
+
+#if ((TCB_LATENCY_SPIKE_THRESHOLD_CYCLES) == 0) || ((TCB_LATENCY_SPIKE_THRESHOLD_CYCLES) > 65535U)
+#error "TCB_LATENCY_SPIKE_THRESHOLD_CYCLES must be in [1, 65535]"
+#endif
+
+#if (TCB_LATENCY_TRACE_RING_SIZE == 0U) || ((TCB_LATENCY_TRACE_RING_SIZE & (TCB_LATENCY_TRACE_RING_SIZE - 1U)) != 0U)
+#error "TCB_LATENCY_TRACE_RING_SIZE must be a non-zero power-of-two"
+#endif
+
+#if ENABLE_DIAGNOSTIC_TELEMETRY && ENABLE_ENV_SENSORS
+#error "Diagnostic telemetry and environmental sensors are mutually exclusive on Nano Every flash budget"
+#endif
+
 #ifndef PPS_TUNING_TELEMETRY
-#define PPS_TUNING_TELEMETRY ((ENABLE_PROFILING == 0) ? 0 : 1) // emit optional TUNE_CFG/TUNE_WIN/TUNE_EVT STS records
+#define PPS_TUNING_TELEMETRY ((ENABLE_DIAGNOSTIC_TELEMETRY == 0) ? 0 : ((ENABLE_PROFILING == 0) ? 0 : 1)) // emit optional TUNE_CFG/TUNE_WIN/TUNE_EVT STS records
 #endif
 
 #ifndef PPS_TUNE_WIN_SIZE
@@ -105,11 +180,11 @@ static_assert(static_cast<uint32_t>(MAIN_CLOCK_HZ) == static_cast<uint32_t>(F_CP
 #endif
 
 #ifndef ENABLE_PPS_BASELINE_TELEMETRY
-#define ENABLE_PPS_BASELINE_TELEMETRY ((ENABLE_PROFILING == 0) ? 0 : 1) // emit optional PPS_BASE records for PPS-only characterization
+#define ENABLE_PPS_BASELINE_TELEMETRY ((ENABLE_DIAGNOSTIC_TELEMETRY == 0) ? 0 : ((ENABLE_PROFILING == 0) ? 0 : 1)) // emit optional PPS_BASE records for PPS-only characterization
 #endif
 
 #ifndef ENABLE_MEMORY_TELEMETRY_STS
-#define ENABLE_MEMORY_TELEMETRY_STS ((ENABLE_PROFILING == 0) ? 0 : 1) // emit mem STS telemetry and maintain SRAM low-water tracking
+#define ENABLE_MEMORY_TELEMETRY_STS ((ENABLE_DIAGNOSTIC_TELEMETRY == 0) ? 0 : ((ENABLE_PROFILING == 0) ? 0 : 1)) // emit mem STS telemetry and maintain SRAM low-water tracking
 #endif
 
 #ifndef MEMORY_TELEMETRY_PERIOD_MS
@@ -129,7 +204,7 @@ static_assert(static_cast<uint32_t>(MAIN_CLOCK_HZ) == static_cast<uint32_t>(F_CP
 #endif
 
 #ifndef ENABLE_RESTART_BREADCRUMBS
-#define ENABLE_RESTART_BREADCRUMBS 1
+#define ENABLE_RESTART_BREADCRUMBS ENABLE_DIAGNOSTIC_TELEMETRY
 #endif
 
 #if ((ENABLE_RESTART_BREADCRUMBS) != 0) && ((ENABLE_RESTART_BREADCRUMBS) != 1)
@@ -140,7 +215,7 @@ static_assert(static_cast<uint32_t>(MAIN_CLOCK_HZ) == static_cast<uint32_t>(F_CP
 /******************************************************************************/
 // Memory warnings
 #ifndef ENABLE_MEMORY_LOW_WATER_WARN_STS
-#define ENABLE_MEMORY_LOW_WATER_WARN_STS 1 // emit one-time mem_warn STS when free SRAM crosses low-water threshold
+#define ENABLE_MEMORY_LOW_WATER_WARN_STS ENABLE_DIAGNOSTIC_TELEMETRY // emit one-time mem_warn STS when free SRAM crosses low-water threshold
 #endif
 
 #ifndef MEMORY_LOW_WATER_WARN_BYTES
@@ -148,7 +223,7 @@ static_assert(static_cast<uint32_t>(MAIN_CLOCK_HZ) == static_cast<uint32_t>(F_CP
 #endif
 
 #ifndef ENABLE_PERIODIC_SERIAL_DIAG_STS
-#define ENABLE_PERIODIC_SERIAL_DIAG_STS 0 // emit periodic STS serial diagnostic counter summaries
+#define ENABLE_PERIODIC_SERIAL_DIAG_STS ((ENABLE_DIAGNOSTIC_TELEMETRY == 0) ? 0 : 0) // emit periodic STS serial diagnostic counter summaries
 #endif
 
 #ifndef SERIAL_DIAG_PERIOD_MS

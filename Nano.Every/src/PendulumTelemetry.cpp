@@ -341,3 +341,50 @@ void emit_dual_pps_edge_telemetry(uint32_t q,
   telemetryReleaseLineBuf();
 }
 #endif
+
+#if ENABLE_TCB_LATENCY_DIAG
+void emit_tcb_latency_trace_event(uint32_t now_ms, const TcbLatencyTraceEvent& event) {
+  char* line = telemetryEmitLineBuf();
+  if (!line) return;
+  const char edge_code =
+      (event.edge_kind == TCB_LATENCY_EDGE_TICK) ? 'T' :
+      (event.edge_kind == TCB_LATENCY_EDGE_TOCK) ? 'K' : 'P';
+  const int n = snprintf(line,
+                         CSV_PAYLOAD_MAX,
+                         "LT,m=%lu,s=%lu,t=%u,e=%c,x=%lu,l=%u,c=%u,n=%u",
+                         (unsigned long)now_ms,
+                         (unsigned long)event.seq_or_edge_index,
+                         (unsigned int)event.tcb,
+                         edge_code,
+                         (unsigned long)event.edge32,
+                         (unsigned int)event.latency16,
+                         (unsigned int)event.cap16,
+                         (unsigned int)event.cnt16);
+  if (n > 0) {
+    sendStatusFromOwnedBuffer(FormatBufferOwner::PendulumCore, StatusCode::ProgressUpdate, line);
+  }
+  telemetryReleaseLineBuf();
+}
+
+void emit_tcb_latency_summary(uint32_t now_ms,
+                              uint32_t dropped,
+                              uint32_t tick_n, uint16_t tick_last, uint16_t tick_min, uint16_t tick_max, uint32_t tick_spikes,
+                              uint32_t tock_n, uint16_t tock_last, uint16_t tock_min, uint16_t tock_max, uint32_t tock_spikes,
+                              uint32_t pps_n, uint16_t pps_last, uint16_t pps_min, uint16_t pps_max, uint32_t pps_spikes) {
+  // latency16 is ISR service latency in timer cycles; edge32 is already backdated in ISR.
+  // LT/LTS are diagnostics-only and not part of SMP/pendulum.csv contract.
+  char* line = telemetryEmitLineBuf();
+  if (!line) return;
+  const int n = snprintf(line,
+                         CSV_PAYLOAD_MAX,
+                         "LTS,m=%lu,d=%lu,t1t_n=%lu,t1t_l=%u,t1t_min=%u,t1t_max=%u,t1t_sp=%lu,t1k_n=%lu,t1k_l=%u,t1k_min=%u,t1k_max=%u,t1k_sp=%lu,t2p_n=%lu,t2p_l=%u,t2p_min=%u,t2p_max=%u,t2p_sp=%lu",
+                         (unsigned long)now_ms, (unsigned long)dropped,
+                         (unsigned long)tick_n, (unsigned int)tick_last, (unsigned int)tick_min, (unsigned int)tick_max, (unsigned long)tick_spikes,
+                         (unsigned long)tock_n, (unsigned int)tock_last, (unsigned int)tock_min, (unsigned int)tock_max, (unsigned long)tock_spikes,
+                         (unsigned long)pps_n, (unsigned int)pps_last, (unsigned int)pps_min, (unsigned int)pps_max, (unsigned long)pps_spikes);
+  if (n > 0) {
+    sendStatusFromOwnedBuffer(FormatBufferOwner::PendulumCore, StatusCode::ProgressUpdate, line);
+  }
+  telemetryReleaseLineBuf();
+}
+#endif

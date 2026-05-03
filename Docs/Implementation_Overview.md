@@ -1,11 +1,13 @@
-# Implementation Guide
+# Implementation Overview
+
+Status: implementation overview. This document maps firmware responsibilities and source modules. It intentionally cross-links to specialised docs rather than duplicating full schemas, command tables, or config tables.
 
 Companion subsystem docs:
-- `Docs/adr/0001-memory-and-telemetry-budget.md` (memory/telemetry tradeoffs)
+- `Docs/Memory_and_Telemetry_Budget.md` (memory/telemetry tradeoffs)
 - `Docs/Capture_Timebase_Architecture.md` (EVSYS/TCB and shared-timeline projection)
 - `Docs/Config_Defines_Guide.md` (src/Config.h #defines)
 - `Docs/Emit_Mode_Guide.md` (CANONICAL vs DERIVED behavior)
-- `Docs/Pendulum_CSV_Requirements_and_Semantics_Draft.md` (DERIVED mode emission reference)
+- `Docs/Pendulum_CSV_Semantics.md` (DERIVED mode emission reference)
 - `Docs/Pendulum_Data_Record_Guide.md` (Guide to emitted pendulum data fields)
 - `Docs/PPS_Discipliner_Guide.md` (EWMA model, state machine, tuning workflow)
 
@@ -42,7 +44,7 @@ Those four values are assembled into `FullSwing` records on the same 32-bit TCB0
 
 ### Runtime control, telemetry, and persistence
 
-- **`SerialParser.*`** owns command tokenization, segmented `HDR_PART` emission, raw-cycle sample emission, and generic `STS` framing.
+- **`SerialParser.*`** owns command tokenization, mode-aware schema/sample emission (`SCH`/`CSW`/`CPS` or `HDR_PART`/`SMP`), and generic `STS` framing.
 - **`TunableRegistry.*`** is the single source of truth for tunable names, parsing, validation, EEPROM mapping, and runtime help text.
 - **`TunableCommands.*`** wires `get` / `set` / `reset defaults` commands to the registry.
 - **`TunablesRuntime.cpp`** stores live tunable values and normalizes dependent settings.
@@ -181,10 +183,11 @@ Responsibilities are intentionally split:
 - `schema`
 - `flags`
 - `mem`
-- three tunables snapshot lines emitted as `<param>,<value>,...` pairs:
+- four tunables snapshot lines emitted as `<param>,<value>,...` pairs:
   - line 1: `ppsFastShift`, `ppsSlowShift`, `ppsBlendLoPpm`, `ppsBlendHiPpm`, `ppsLockRppm`
   - line 2: `ppsLockMadTicks`, `ppsUnlockRppm`, `ppsUnlockMadTicks`, `ppsLockCount`, `ppsUnlockCount`
   - line 3: `ppsHoldoverMs`, `ppsStaleMs`, `ppsIsrStaleMs`, `ppsCfgReemitDelayMs`, `ppsAcquireMinMs`
+  - line 4: `ppsMetrologyGraceMs`
 - `cfg`
 - `pps_cfg`
 - `pps_freshness`
@@ -201,7 +204,7 @@ Optional families compiled in only when explicitly enabled:
 - `schema` states the current `STS` schema version, sample schema name, and EEPROM schema version
 - `flags` advertises which intentional compile-time runtime modes were compiled in
 - `mem` reports `free_now`, retained low-water `free_min`, and `phase` (`boot` at startup, `periodic` thereafter at `MEMORY_TELEMETRY_PERIOD_MS`); sampling updates continuously in `pendulumLoop()` to preserve a runtime watermark between emissions
-- the three tunables snapshot lines summarize retained tunables as `param,value` pairs
+- the four tunables snapshot lines summarize retained tunables as `param,value` pairs
 - `schema` also publishes `adj_semantics_version` so host parsers can bind adjusted-field meaning before row parsing
 - `cfg` publishes `nominal_hz`, the active sample row tag, the sample schema name, and `adj_semantics_version` for host recovery
 - `CFG` mirrors that sample-stream metadata as a top-level line-tagged record for host recovery, including `adj_semantics_version`

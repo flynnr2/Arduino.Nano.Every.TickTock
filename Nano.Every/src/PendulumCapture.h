@@ -22,6 +22,24 @@ struct PpsCapture {
 #endif
 };
 
+#if ENABLE_TCB_LATENCY_DIAG
+enum TcbLatencyEdgeKind : uint8_t {
+  TCB_LATENCY_EDGE_TICK = 0,
+  TCB_LATENCY_EDGE_TOCK = 1,
+  TCB_LATENCY_EDGE_PPS  = 2,
+};
+
+struct TcbLatencyTraceEvent {
+  uint32_t seq_or_edge_index;
+  uint32_t edge32;
+  uint16_t cap16;
+  uint16_t cnt16;
+  uint16_t latency16;
+  uint8_t tcb;
+  uint8_t edge_kind;
+};
+#endif
+
 #if ENABLE_PROFILING && DUAL_PPS_PROFILING
 struct DualPpsTcb1RisingSnapshot {
   uint32_t rise_seq;
@@ -53,6 +71,10 @@ void captureResetState();
 bool captureTryPopEdge(EdgeEvent* out);
 
 bool captureTryPopPps(PpsCapture* out);
+#if ENABLE_TCB_LATENCY_DIAG
+bool captureTryPopTcbLatencyTrace(TcbLatencyTraceEvent* out);
+uint32_t captureDroppedTcbLatencyTraceEvents();
+#endif
 
 // Usage contract for coherent TCB0 readers:
 // - ISR-only helper exists privately in PendulumCapture.cpp and must not use ATOMIC_BLOCK.

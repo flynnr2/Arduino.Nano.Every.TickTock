@@ -2,6 +2,7 @@
 
 #include "Config.h"
 #include "EEPROMConfig.h"
+#include "PendulumCommands.h"
 #include "PendulumProtocol.h"
 #include "PendulumCore.h"
 #include "SerialParser.h"

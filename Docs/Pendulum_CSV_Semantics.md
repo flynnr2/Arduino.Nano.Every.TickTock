@@ -1,3 +1,5 @@
+Status: design intent / analysis semantics. For current emitted serial records, see Protocol_Wire_Contract.md.
+
 # Pendulum CSV Requirements and Semantics Draft
 
 ## Draft status

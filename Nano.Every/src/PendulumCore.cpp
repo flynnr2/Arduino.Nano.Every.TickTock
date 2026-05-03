@@ -64,6 +64,9 @@ static uint32_t last_serial_diag_telemetry_ms = 0;
 #if ENABLE_PPS_BASELINE_TELEMETRY
 static uint32_t pps_base_seq = 0;
 #endif
+#if ENABLE_TCB_LATENCY_DIAG
+static uint32_t tcb_latency_last_summary_ms = 0;
+#endif
 #if ENABLE_PROFILING && DUAL_PPS_PROFILING
 static uint32_t dual_pps_matched_pairs = 0;
 static uint32_t dual_pps_skipped_pairs = 0;
@@ -97,6 +100,9 @@ void resetRuntimeStateAfterTunablesChange() {
 #if ENABLE_PPS_BASELINE_TELEMETRY
   pps_base_seq = 0;
 #endif
+#if ENABLE_TCB_LATENCY_DIAG
+  tcb_latency_last_summary_ms = 0;
+#endif
 #if ENABLE_PROFILING && DUAL_PPS_PROFILING
   dual_pps_matched_pairs = 0;
   dual_pps_skipped_pairs = 0;
@@ -126,6 +132,7 @@ void emitMetadataNow() {
     return;
   }
   // emit meta stays intentionally narrow for parser/schema recovery only.
+  // This path must remain always-on even with ENABLE_DIAGNOSTIC_TELEMETRY=0.
   // Emit only the metadata contract in strict order:
   //   1) CFG metadata row
   //   2) active schema/header declaration (SCH in CANONICAL, HDR_PART in DERIVED)
@@ -141,7 +148,9 @@ void emitStartupNow() {
   }
   // Authoritative full startup replay contract (safe to re-emit within one boot):
   //   1) reset-cause / boot-sequence status
-  //   2) startup status rows (build/schema/flags/clock/tunables/CFG/PPS config)
+  //   2) startup status rows:
+  //      - REQUIRED protocol replay (always compiled): schema+CFG
+  //      - optional diagnostics (build/flags/clock/tunables/forensics)
   //   3) schema/header declarations (SCH in CANONICAL, HDR_PART in DERIVED)
   emitResetCause();
   emitStatusBootHeaders();
@@ -158,8 +167,10 @@ void noteExplicitStartupReplayRequest() {
 void pendulumSetup() {
   latchResetCauseOnceAtBoot();
   advanceBootSequenceForBoot();
+  #if ENABLE_RESTART_BREADCRUMBS
   restartBreadcrumbsInitAtBoot();
   restartBreadcrumbsInitVlmEarly();
+#endif
 
   pinMode(ledPin, OUTPUT);
 
@@ -219,7 +230,9 @@ static void process_pps(uint8_t budget_remaining) {
     const uint32_t pps_seen_delta = (uint32_t)(pps_seen_now - pps_seen_prev);
     pps_seen_prev = pps_seen_now;
     last_pps_isr_change_ms = now_ms;
+    #if ENABLE_RESTART_BREADCRUMBS
     restartBreadcrumbsNotifyPpsIsrEdge(now_ms, pps_seen_delta);
+#endif
   }
 
   // Freshness is tracked in two domains:
@@ -234,7 +247,9 @@ static void process_pps(uint8_t budget_remaining) {
   pps_freshness_inputs.pps_primed = pps_primed;
   const PpsFreshnessResult pps_freshness = evaluatePpsFreshness(pps_freshness_inputs);
   if (pps_freshness.pps_isr_stale || pps_freshness.pps_processing_stale) {
+    #if ENABLE_RESTART_BREADCRUMBS
     restartBreadcrumbsSetFlag(RESTART_BC_FLAG_PPS_STALE);
+#endif
   }
   if (pps_freshness.shouldResetToNoPps()) {
     gPpsValidator.reset();
@@ -286,7 +301,9 @@ static void process_pps(uint8_t budget_remaining) {
       lastPpsCapture = t;
       lastPpsCap16 = cap.cap16;
       last_pps_processed_ms = now_ms;
+      #if ENABLE_RESTART_BREADCRUMBS
       restartBreadcrumbsNotifyPpsProcessed(now_ms);
+#endif
       ppsAdjustOnPpsPrimed(t, pps_delta_active ? (uint32_t)pps_delta_active : (uint32_t)MAIN_CLOCK_HZ);
       continue;
     }
@@ -307,7 +324,9 @@ static void process_pps(uint8_t budget_remaining) {
     lastPpsCapture = t;
     lastPpsCap16 = cap.cap16;
     last_pps_processed_ms = now_ms;
-    restartBreadcrumbsNotifyPpsProcessed(now_ms);
+    #if ENABLE_RESTART_BREADCRUMBS
+      restartBreadcrumbsNotifyPpsProcessed(now_ms);
+#endif
 
 #if ENABLE_PROFILING && DUAL_PPS_PROFILING
     DualPpsTcb1RisingSnapshot tcb1_rising = {};
@@ -335,7 +354,9 @@ static void process_pps(uint8_t budget_remaining) {
     PpsValidator::SampleClass cls = gPpsValidator.classify(pps_dt32_ticks, false);
     gPpsValidator.observe(cls, pps_dt32_ticks, now_ms);
     if (cls == PpsValidator::SampleClass::OK) {
+      #if ENABLE_RESTART_BREADCRUMBS
       restartBreadcrumbsNotifyAcceptedPpsSample(cap.seq, cap.edge32, cap.now32, now_ms);
+#endif
     }
 
     const bool pps_valid = gPpsValidator.isValid();
@@ -397,21 +418,74 @@ static void process_pps(uint8_t budget_remaining) {
   }
 }
 
+#if ENABLE_TCB_LATENCY_DIAG
+static void processTcbLatencyDiagnostics(uint32_t now_ms) {
+  struct Bucket {
+    uint32_t count = 0;
+    uint16_t last = 0;
+    uint16_t min = 0xFFFFu;
+    uint16_t max = 0;
+    uint32_t spikes = 0;
+  };
+  static Bucket tick;
+  static Bucket tock;
+  static Bucket pps;
+
+  TcbLatencyTraceEvent ev{};
+  while (captureTryPopTcbLatencyTrace(&ev)) {
+    Bucket* bucket = (ev.tcb == 2U) ? &pps : ((ev.edge_kind == TCB_LATENCY_EDGE_TICK) ? &tick : &tock);
+    bucket->count++;
+    bucket->last = ev.latency16;
+    if (ev.latency16 < bucket->min) bucket->min = ev.latency16;
+    if (ev.latency16 > bucket->max) bucket->max = ev.latency16;
+    const bool is_spike = ev.latency16 >= (uint16_t)TCB_LATENCY_SPIKE_THRESHOLD_CYCLES;
+    if (is_spike) bucket->spikes++;
+    if (ENABLE_TCB_LATENCY_TRACE_ALL || is_spike) {
+      emit_tcb_latency_trace_event(now_ms, ev);
+    }
+  }
+
+  if ((uint32_t)(now_ms - tcb_latency_last_summary_ms) >= (uint32_t)TCB_LATENCY_SUMMARY_PERIOD_MS) {
+    tcb_latency_last_summary_ms = now_ms;
+    emit_tcb_latency_summary(now_ms, captureDroppedTcbLatencyTraceEvents(),
+                             tick.count, tick.last, tick.count ? tick.min : 0U, tick.max, tick.spikes,
+                             tock.count, tock.last, tock.count ? tock.min : 0U, tock.max, tock.spikes,
+                             pps.count, pps.last, pps.count ? pps.min : 0U, pps.max, pps.spikes);
+    tick = Bucket{};
+    tock = Bucket{};
+    pps = Bucket{};
+  }
+}
+#endif
+
 void pendulumLoop() {
   const uint32_t now_ms = platformMillis();
+  #if ENABLE_RESTART_BREADCRUMBS
   restartBreadcrumbsSetLoopPhase(RESTART_BC_LOOP_PHASE_LOOP_TOP);
   restartBreadcrumbsMainloopTick(now_ms);
+#endif
 #if ENABLE_MEMORY_TELEMETRY_STS
   memoryTelemetrySample();
 #endif
+  #if ENABLE_RESTART_BREADCRUMBS
   restartBreadcrumbsSetLoopPhase(RESTART_BC_LOOP_PHASE_SERIAL_COMMANDS);
+#endif
   processSerialCommands();
+  #if ENABLE_RESTART_BREADCRUMBS
   restartBreadcrumbsSetLoopPhase(RESTART_BC_LOOP_PHASE_PPS_PROCESS);
+#endif
   process_pps(PPS_PROCESS_BUDGET_PER_LOOP);
+#if ENABLE_TCB_LATENCY_DIAG
+  processTcbLatencyDiagnostics(now_ms);
+#endif
+  #if ENABLE_RESTART_BREADCRUMBS
   restartBreadcrumbsSetLoopPhase(RESTART_BC_LOOP_PHASE_SWING_EDGE_SCAN);
+#endif
   swingAssemblerProcessEdges();
 
+  #if ENABLE_RESTART_BREADCRUMBS
   restartBreadcrumbsSetLoopPhase(RESTART_BC_LOOP_PHASE_SWING_POP_EMIT);
+#endif
   uint8_t swing_budget = SWING_PROCESS_BUDGET_PER_LOOP;
   FullSwing fs{};
   while (swing_budget-- > 0U && swingAssemblerTryPeekOldest(&fs)) {
@@ -472,7 +546,9 @@ void pendulumLoop() {
     }
   }
 
+  #if ENABLE_RESTART_BREADCRUMBS
   restartBreadcrumbsSetLoopPhase(RESTART_BC_LOOP_PHASE_PERIODIC_TELEMETRY);
+#endif
 #if ENABLE_MEMORY_TELEMETRY_STS
   if (startup_output_ready &&
       (uint32_t)(now_ms - last_mem_telemetry_ms) >= (uint32_t)MEMORY_TELEMETRY_PERIOD_MS) {

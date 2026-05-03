@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "PendulumCommands.h"
 #include "PendulumProtocol.h"
 #include "SerialParser.h"
 #include "StatusTelemetry.h"
@@ -287,7 +288,7 @@ void emitStatusPpsConfig() {
                PARAM_PPS_ISR_STALE_MS);
   if (n > 0) sendStatusFromOwnedBuffer(FormatBufferOwner::StatusTelemetry, StatusCode::ProgressUpdate, line);
 
-#if ENABLE_PROFILING && DUAL_PPS_PROFILING
+#if ENABLE_DIAGNOSTIC_TELEMETRY && ENABLE_PROFILING && DUAL_PPS_PROFILING
   DualPpsRuntimeCounters dual = {};
   getDualPpsRuntimeCounters(dual);
   n = snprintf(line,
@@ -475,17 +476,30 @@ void emitStatusSerialDiagnostics() {
   releaseStatusLineBuf();
 }
 
-void emitStatusBootHeaders() {
-  emitBuildHeader();
+// REQUIRED protocol replay contract:
+// Always emit these rows even when diagnostics are compiled out. Hosts that
+// attach late rely on this set to discover protocol/schema and parse SMP/CSW/CPS.
+void emitStatusProtocolReplayRequired() {
   emitSchemaHeader();
+  emitStatusSampleConfig();
+}
+
+// DIAGNOSTIC/forensic replay contract:
+// Rich startup visibility (build flags, reset breadcrumbs, tunables, etc.).
+// This is optional and compile-time gated by ENABLE_DIAGNOSTIC_TELEMETRY.
+void emitStatusBootDiagnostics() {
+#if ENABLE_DIAGNOSTIC_TELEMETRY
+  emitBuildHeader();
   emitFlagsHeader();
   char* line = prepareStatusLineBuf();
+#if ENABLE_RESTART_BREADCRUMBS
   if (line && restartBreadcrumbsFormatPrevBootLine(line, CSV_PAYLOAD_MAX)) {
     sendStatusFromOwnedBuffer(FormatBufferOwner::StatusTelemetry,
                               StatusCode::ProgressUpdate,
                               line,
                               EmissionReliability::Required);
   }
+#endif
   releaseStatusLineBuf();
 #if ENABLE_MEMORY_TELEMETRY_STS
   emitStatusMemoryTelemetry(false);
@@ -493,8 +507,13 @@ void emitStatusBootHeaders() {
   emitStatusClockDiagnostics();
   emitStatusSerialDiagnostics();
   emitStatusTunables();
-  emitStatusSampleConfig();
   emitStatusPpsConfig();
+#endif
+}
+
+void emitStatusBootHeaders() {
+  emitStatusProtocolReplayRequired();
+  emitStatusBootDiagnostics();
 }
 
 void emitResetCause() {
@@ -503,6 +522,13 @@ void emitResetCause() {
   const uint8_t rstfr_late = getLateObservedResetCause();
   const bool mismatch = latchedResetCauseMismatch();
   const char* source = latchedResetCauseUsesEarlyCapture() ? "early" : "late";
+  const unsigned int vlm_armed = (unsigned int)(
+#if ENABLE_RESTART_BREADCRUMBS
+      restartBreadcrumbsVlmArmed() ? 1U : 0U
+#else
+      0U
+#endif
+      );
   char flags_early[48];
   char flags_late[48];
   if (early_valid) {
@@ -527,7 +553,7 @@ void emitResetCause() {
                          flags_late,
                          (unsigned int)mismatch,
                          (unsigned int)resetCauseEarlyCaptureCount(),
-                         (unsigned int)(restartBreadcrumbsVlmArmed() ? 1U : 0U));
+                         vlm_armed);
   if (n > 0) sendStatusFromOwnedBuffer(FormatBufferOwner::StatusTelemetry, StatusCode::ProgressUpdate, line);
   releaseStatusLineBuf();
 }

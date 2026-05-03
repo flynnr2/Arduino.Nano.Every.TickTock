@@ -16,6 +16,8 @@ void emitResetCause();
 void emitResetCauseOncePerBoot();
 void emitSetupEntryNoneIfLatchedResetFlagsNone();
 void emitStatusBootHeaders();
+void emitStatusProtocolReplayRequired();
+void emitStatusBootDiagnostics();
 void emitStatusTunables();
 void emitStatusPpsConfig();
 void emitStatusSampleConfig();

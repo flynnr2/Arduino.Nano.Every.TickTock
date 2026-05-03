@@ -12,7 +12,6 @@ enum class TunableCliType : uint8_t {
 
 struct TunableDescriptor {
   const char* cliName;
-  const char* deprecatedCliAlias;
   TunableCliType type;
   const char* validationText;
   const char* exampleText;
