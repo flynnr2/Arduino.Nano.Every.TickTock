@@ -210,6 +210,14 @@ void swingAssemblerProcessEdges() {
   while (captureTryPopEdge(&e)) {
     uint8_t component_diag = 0U;
 
+    // IR sensor polarity used by derived component labels:
+    //   HIGH = beam blocked, LOW = beam open.
+    // Canonical edge fields remain neutral edge timestamps.
+    // Derived component fields are assigned by physical interval meaning:
+    //   edge0->edge1 = tick       (open)
+    //   edge1->edge2 = tick_block (blocked)
+    //   edge2->edge3 = tock       (open)
+    //   edge3->edge4 = tock_block (blocked)
     switch (swing_state) {
       case 0:
         if (e.type == 0) {
@@ -228,23 +236,6 @@ void swingAssemblerProcessEdges() {
       case 1:
         if (e.type == 1) {
           curr.edge1_tcb0 = e.ticks;
-          curr.tick_block = elapsed32(e.ticks, last_ts);
-          stamp_interval_provenance(last_ts, e.ticks, &curr.tick_block_start_tag, &curr.tick_block_end_tag);
-          adjust_interval_or_fallback(last_ts,
-                                      e.ticks,
-                                      curr.tick_block,
-                                      ADJ_DIAG_TICK_BLOCK_CROSSED,
-                                      &curr.tick_block_adj,
-                                      &curr.adj_diag,
-                                      &component_diag);
-          stamp_component_degradation_diag(ADJ_DIAG_TICK_BLOCK_CROSSED, component_diag, &curr.adj_comp_diag);
-          last_ts = e.ticks;
-          swing_state = 2;
-        }
-        break;
-      case 2:
-        if (e.type == 0) {
-          curr.edge2_tcb0 = e.ticks;
           curr.tick = elapsed32(e.ticks, last_ts);
           stamp_interval_provenance(last_ts, e.ticks, &curr.tick_start_tag, &curr.tick_end_tag);
           adjust_interval_or_fallback(last_ts,
@@ -255,6 +246,23 @@ void swingAssemblerProcessEdges() {
                                       &curr.adj_diag,
                                       &component_diag);
           stamp_component_degradation_diag(ADJ_DIAG_TICK_CROSSED, component_diag, &curr.adj_comp_diag);
+          last_ts = e.ticks;
+          swing_state = 2;
+        }
+        break;
+      case 2:
+        if (e.type == 0) {
+          curr.edge2_tcb0 = e.ticks;
+          curr.tick_block = elapsed32(e.ticks, last_ts);
+          stamp_interval_provenance(last_ts, e.ticks, &curr.tick_block_start_tag, &curr.tick_block_end_tag);
+          adjust_interval_or_fallback(last_ts,
+                                      e.ticks,
+                                      curr.tick_block,
+                                      ADJ_DIAG_TICK_BLOCK_CROSSED,
+                                      &curr.tick_block_adj,
+                                      &curr.adj_diag,
+                                      &component_diag);
+          stamp_component_degradation_diag(ADJ_DIAG_TICK_BLOCK_CROSSED, component_diag, &curr.adj_comp_diag);
           // Component-level *_adj fields remain authoritative for sub-interval studies.
           // Direct composite *_total_adj_direct fields are authoritative for full
           // half-swing timing and should generally be preferred over sums of separately
@@ -278,23 +286,6 @@ void swingAssemblerProcessEdges() {
       case 3:
         if (e.type == 1) {
           curr.edge3_tcb0 = e.ticks;
-          curr.tock_block = elapsed32(e.ticks, last_ts);
-          stamp_interval_provenance(last_ts, e.ticks, &curr.tock_block_start_tag, &curr.tock_block_end_tag);
-          adjust_interval_or_fallback(last_ts,
-                                      e.ticks,
-                                      curr.tock_block,
-                                      ADJ_DIAG_TOCK_BLOCK_CROSSED,
-                                      &curr.tock_block_adj,
-                                      &curr.adj_diag,
-                                      &component_diag);
-          stamp_component_degradation_diag(ADJ_DIAG_TOCK_BLOCK_CROSSED, component_diag, &curr.adj_comp_diag);
-          last_ts = e.ticks;
-          swing_state = 4;
-        }
-        break;
-      case 4:
-        if (e.type == 0) {
-          curr.edge4_tcb0 = e.ticks;
           curr.tock = elapsed32(e.ticks, last_ts);
           stamp_interval_provenance(last_ts, e.ticks, &curr.tock_start_tag, &curr.tock_end_tag);
           adjust_interval_or_fallback(last_ts,
@@ -305,6 +296,23 @@ void swingAssemblerProcessEdges() {
                                       &curr.adj_diag,
                                       &component_diag);
           stamp_component_degradation_diag(ADJ_DIAG_TOCK_CROSSED, component_diag, &curr.adj_comp_diag);
+          last_ts = e.ticks;
+          swing_state = 4;
+        }
+        break;
+      case 4:
+        if (e.type == 0) {
+          curr.edge4_tcb0 = e.ticks;
+          curr.tock_block = elapsed32(e.ticks, last_ts);
+          stamp_interval_provenance(last_ts, e.ticks, &curr.tock_block_start_tag, &curr.tock_block_end_tag);
+          adjust_interval_or_fallback(last_ts,
+                                      e.ticks,
+                                      curr.tock_block,
+                                      ADJ_DIAG_TOCK_BLOCK_CROSSED,
+                                      &curr.tock_block_adj,
+                                      &curr.adj_diag,
+                                      &component_diag);
+          stamp_component_degradation_diag(ADJ_DIAG_TOCK_BLOCK_CROSSED, component_diag, &curr.adj_comp_diag);
           const uint32_t tock_total_raw = elapsed32(e.ticks, tock_half_start_ts);
           stamp_interval_provenance(tock_half_start_ts,
                                     e.ticks,
