@@ -372,7 +372,7 @@ void emit_tcb_latency_summary(uint32_t now_ms,
                               uint32_t tock_n, uint16_t tock_last, uint16_t tock_min, uint16_t tock_max, uint32_t tock_spikes,
                               uint32_t pps_n, uint16_t pps_last, uint16_t pps_min, uint16_t pps_max, uint32_t pps_spikes) {
   // latency16 is ISR service latency in timer cycles; edge32 is already backdated in ISR.
-  // LT/LTS are diagnostics-only and not part of SMP/pendulum.csv contract.
+  // LT/LTS are diagnostics-only and separate from the capture record contract.
   char* line = telemetryEmitLineBuf();
   if (!line) return;
   const int n = snprintf(line,

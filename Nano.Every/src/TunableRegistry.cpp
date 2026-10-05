@@ -5,6 +5,7 @@
 #include "SerialParser.h"
 
 #include <stdlib.h>
+#include <errno.h>
 #include <string.h>
 
 #include "StringCase.h"
@@ -15,9 +16,13 @@ void printInvalidValue(const char* name, const char* detail);
 
 bool parseUnsignedLong(const char* value, unsigned long& out) {
   if (!value || *value == '\0') return false;
+  for (const char* p = value; *p; ++p) {
+    if (*p < '0' || *p > '9') return false;
+  }
   char* end = nullptr;
+  errno = 0;
   out = strtoul(value, &end, 10);
-  return end && *end == '\0';
+  return errno != ERANGE && end && *end == '\0';
 }
 
 bool parseUnsignedLongInRange(const char* value, unsigned long minValue, unsigned long maxValue, unsigned long& out) {
@@ -115,83 +120,83 @@ bool assignUint32InRangeAndMarkChanged(const char* value,
   tuningChanged = true;
   return true;
 }
-bool setPpsFastShift(const char* value, bool&, bool&) {
+bool setPpsFastShift(const char* value, bool&) {
   return assignUint8InRange(value,
                             PARAM_PPS_FAST_SHIFT,
-                            0UL,
-                            255UL,
-                            "expected unsigned integer in range 0..255",
+                            1UL,
+                            15UL,
+                            "range 1..15",
                             Tunables::ppsFastShift);
 }
 
-bool setPpsSlowShift(const char* value, bool&, bool&) {
+bool setPpsSlowShift(const char* value, bool&) {
   return assignUint8InRange(value,
                             PARAM_PPS_SLOW_SHIFT,
-                            0UL,
-                            255UL,
-                            "expected unsigned integer in range 0..255",
+                            1UL,
+                            15UL,
+                            "range 1..15",
                             Tunables::ppsSlowShift);
 }
 
-bool setPpsBlendLoPpm(const char* value, bool&, bool&) {
+bool setPpsBlendLoPpm(const char* value, bool&) {
   return assignUint16InRange(value,
                              PARAM_PPS_BLEND_LO_PPM,
                              0UL,
-                             65535UL,
-                             "expected unsigned integer in range 0..65535",
+                             20000UL,
+                             "range 0..20000",
                              Tunables::ppsBlendLoPpm);
 }
 
-bool setPpsBlendHiPpm(const char* value, bool&, bool&) {
+bool setPpsBlendHiPpm(const char* value, bool&) {
   return assignUint16InRange(value,
                              PARAM_PPS_BLEND_HI_PPM,
-                             0UL,
-                             65535UL,
-                             "expected unsigned integer in range 0..65535",
+                             1UL,
+                             20000UL,
+                             "range 1..20000",
                              Tunables::ppsBlendHiPpm);
 }
 
-bool setPpsLockRppm(const char* value, bool& tuningChanged, bool&) {
+bool setPpsLockRppm(const char* value, bool& tuningChanged) {
   return assignUint16InRangeAndMarkChanged(value,
                                            PARAM_PPS_LOCK_R_PPM,
                                            0UL,
-                                           65535UL,
-                                           "expected unsigned integer in range 0..65535",
+                                           20000UL,
+                                           "range 0..20000",
                                            Tunables::ppsLockRppm,
                                            tuningChanged);
 }
 
-bool setPpsLockMadTicks(const char* value, bool& tuningChanged, bool&) {
+bool setPpsLockMadTicks(const char* value, bool& tuningChanged) {
   return assignUint16InRangeAndMarkChanged(value,
                                            PARAM_PPS_LOCK_MAD_TICKS,
                                            0UL,
-                                           65535UL,
-                                           "expected unsigned integer in range 0..65535",
+                                           20000UL,
+                                           "range 0..20000",
                                            Tunables::ppsLockMadTicks,
                                            tuningChanged);
 }
 
-bool setPpsUnlockRppm(const char* value, bool& tuningChanged, bool&) {
+bool setPpsUnlockRppm(const char* value, bool& tuningChanged) {
   return assignUint16InRangeAndMarkChanged(value,
                                            PARAM_PPS_UNLOCK_R_PPM,
                                            0UL,
-                                           65535UL,
-                                           "expected unsigned integer in range 0..65535",
+                                           20000UL,
+                                           "range 0..20000",
                                            Tunables::ppsUnlockRppm,
                                            tuningChanged);
 }
 
-bool setPpsUnlockMadTicks(const char* value, bool& tuningChanged, bool&) {
+bool setPpsUnlockMadTicks(const char* value, bool& tuningChanged) {
   return assignUint16InRangeAndMarkChanged(value,
                                            PARAM_PPS_UNLOCK_MAD_TICKS,
                                            0UL,
-                                           65535UL,
-                                           "expected unsigned integer in range 0..65535",
+                                           20000UL,
+                                           "range 0..20000",
                                            Tunables::ppsUnlockMadTicks,
                                            tuningChanged);
 }
 
-bool setPpsLockCount(const char* value, bool& tuningChanged, bool&) {
+bool setPpsLockCount(const char* value, bool& tuningChanged) {
   unsigned long parsed = 0;
   if (!parseUnsignedLong(value, parsed)) {
     printInvalidValue(PARAM_PPS_LOCK_COUNT, "expected unsigned integer");
@@ -206,77 +211,84 @@ bool setPpsLockCount(const char* value, bool& tuningChanged, bool&) {
   return true;
 }
 
-bool setPpsUnlockCount(const char* value, bool& tuningChanged, bool&) {
+bool setPpsUnlockCount(const char* value, bool& tuningChanged) {
   if (!assignUint8InRange(value,
                           PARAM_PPS_UNLOCK_COUNT,
-                          0UL,
-                          255UL,
-                          "expected unsigned integer in range 0..255",
+                          1UL,
+                          60UL,
+                          "range 1..60",
                           Tunables::ppsUnlockCount)) {
     return false;
   }
-  tuningChanged = true;
+                          tuningChanged = true;
   return true;
 }
 
-bool setPpsHoldoverMs(const char* value, bool& tuningChanged, bool&) {
+bool setPpsHoldoverMs(const char* value, bool& tuningChanged) {
   return assignUint16InRangeAndMarkChanged(value,
                                            PARAM_PPS_HOLDOVER_MS,
-                                           0UL,
+                                           1UL,
                                            65535UL,
-                                           "expected unsigned integer in range 0..65535",
+                                           "range 1..65535",
                                            Tunables::ppsHoldoverMs,
                                            tuningChanged);
 }
 
-bool setPpsStaleMs(const char* value, bool& tuningChanged, bool&) {
+bool setPpsStaleMs(const char* value, bool& tuningChanged) {
   return assignUint16InRangeAndMarkChanged(value,
                                            PARAM_PPS_STALE_MS,
-                                           0UL,
-                                           65535UL,
-                                           "expected unsigned integer in range 0..65535",
+                                           1UL,
+                                           30000UL,
+                                           "range 1..30000",
                                            Tunables::ppsStaleMs,
                                            tuningChanged);
 }
 
-bool setPpsIsrStaleMs(const char* value, bool& tuningChanged, bool&) {
+bool setPpsIsrStaleMs(const char* value, bool& tuningChanged) {
   return assignUint16InRangeAndMarkChanged(value,
                                            PARAM_PPS_ISR_STALE_MS,
-                                           0UL,
-                                           65535UL,
-                                           "expected unsigned integer in range 0..65535",
+                                           1UL,
+                                           30000UL,
+                                           "range 1..30000",
                                            Tunables::ppsIsrStaleMs,
                                            tuningChanged);
 }
 
-bool setPpsConfigReemitDelayMs(const char* value, bool& tuningChanged, bool&) {
+bool setPpsConfigReemitDelayMs(const char* value, bool& tuningChanged) {
   return assignUint16InRangeAndMarkChanged(value,
                                            PARAM_PPS_CFG_REEMIT_DELAY_MS,
-                                           0UL,
+                                           1UL,
                                            65535UL,
-                                           "expected unsigned integer in range 0..65535",
+                                           "range 1..65535",
                                            Tunables::ppsConfigReemitDelayMs,
                                            tuningChanged);
 }
 
-bool setPpsAcquireMinMs(const char* value, bool& tuningChanged, bool&) {
+bool setPpsAcquireMinMs(const char* value, bool& tuningChanged) {
   return assignUint16InRangeAndMarkChanged(value,
                                            PARAM_PPS_ACQUIRE_MIN_MS,
-                                           0UL,
+                                           1UL,
                                            65535UL,
-                                           "expected unsigned integer in range 0..65535",
+                                           "range 1..65535",
                                            Tunables::ppsAcquireMinMs,
                                            tuningChanged);
 }
 
-bool setPpsMetrologyGraceMs(const char* value, bool& tuningChanged, bool&) {
+bool setPpsMetrologyGraceMs(const char* value, bool& tuningChanged) {
+#if !PPS_TUNING_TELEMETRY
+  (void)value;
+  (void)tuningChanged;
+  printInvalidValue(PARAM_PPS_METROLOGY_GRACE_MS, "inactive: requires PPS_TUNING_TELEMETRY");
+  return false;
+#else
   return assignUint32InRangeAndMarkChanged(value,
                                            PARAM_PPS_METROLOGY_GRACE_MS,
-                                           0UL,
-                                           4294967295UL,
-                                           "expected unsigned integer in range 0..4294967295",
+                                           1UL,
+                                           86400000UL,
+                                           "range 1..86400000",
                                            Tunables::ppsMetrologyGraceMs,
                                            tuningChanged);
+#endif
 }
 
 #define DEFINE_WRITE_TUNABLE(NAME, FIELD) \
@@ -329,22 +341,22 @@ DEFINE_APPLY_TUNABLE(applyPpsMetrologyGraceMs, ppsMetrologyGraceMs)
 #undef DEFINE_APPLY_TUNABLE
 
 const TunableDescriptor REGISTRY[] = {
-  { PARAM_PPS_FAST_SHIFT, TunableCliType::Unsigned, nullptr, nullptr, "EWMA fast shift", printUIntPpsFastShift, setPpsFastShift, writePpsFastShift, applyPpsFastShift },
-  { PARAM_PPS_SLOW_SHIFT, TunableCliType::Unsigned, nullptr, nullptr, "EWMA slow shift", printUIntPpsSlowShift, setPpsSlowShift, writePpsSlowShift, applyPpsSlowShift },
-  { PARAM_PPS_BLEND_LO_PPM, TunableCliType::Unsigned, nullptr, nullptr, "slow/fast blend low", printUIntPpsBlendLoPpm, setPpsBlendLoPpm, writePpsBlendLoPpm, applyPpsBlendLoPpm },
-  { PARAM_PPS_BLEND_HI_PPM, TunableCliType::Unsigned, nullptr, nullptr, "slow/fast blend high", printUIntPpsBlendHiPpm, setPpsBlendHiPpm, writePpsBlendHiPpm, applyPpsBlendHiPpm },
-  { PARAM_PPS_LOCK_R_PPM, TunableCliType::Unsigned, nullptr, nullptr, "lock drift threshold", printUIntPpsLockRppm, setPpsLockRppm, writePpsLockRppm, applyPpsLockRppm },
-  { PARAM_PPS_LOCK_MAD_TICKS, TunableCliType::Unsigned, nullptr, nullptr, "lock MAD threshold", printUIntPpsLockMadTicks, setPpsLockMadTicks, writePpsLockMadTicks, applyPpsLockMadTicks },
+  { PARAM_PPS_FAST_SHIFT, TunableCliType::Unsigned, "range 1..15", nullptr, "EWMA fast shift", printUIntPpsFastShift, setPpsFastShift, writePpsFastShift, applyPpsFastShift },
+  { PARAM_PPS_SLOW_SHIFT, TunableCliType::Unsigned, "range 1..15", nullptr, "EWMA slow shift", printUIntPpsSlowShift, setPpsSlowShift, writePpsSlowShift, applyPpsSlowShift },
+  { PARAM_PPS_BLEND_LO_PPM, TunableCliType::Unsigned, "range 0..20000", nullptr, "slow/fast blend low", printUIntPpsBlendLoPpm, setPpsBlendLoPpm, writePpsBlendLoPpm, applyPpsBlendLoPpm },
+  { PARAM_PPS_BLEND_HI_PPM, TunableCliType::Unsigned, "range 1..20000", nullptr, "slow/fast blend high", printUIntPpsBlendHiPpm, setPpsBlendHiPpm, writePpsBlendHiPpm, applyPpsBlendHiPpm },
+  { PARAM_PPS_LOCK_R_PPM, TunableCliType::Unsigned, "range 0..20000", nullptr, "lock drift threshold", printUIntPpsLockRppm, setPpsLockRppm, writePpsLockRppm, applyPpsLockRppm },
+  { PARAM_PPS_LOCK_MAD_TICKS, TunableCliType::Unsigned, "range 0..20000", nullptr, "lock MAD threshold", printUIntPpsLockMadTicks, setPpsLockMadTicks, writePpsLockMadTicks, applyPpsLockMadTicks },
   { PARAM_PPS_LOCK_COUNT, TunableCliType::Unsigned, "range 1..60", nullptr, "lock streak", printUIntPpsLockCount, setPpsLockCount, writePpsLockCount, applyPpsLockCount },
-  { PARAM_PPS_UNLOCK_R_PPM, TunableCliType::Unsigned, nullptr, nullptr, "unlock drift threshold", printUIntPpsUnlockRppm, setPpsUnlockRppm, writePpsUnlockRppm, applyPpsUnlockRppm },
-  { PARAM_PPS_UNLOCK_MAD_TICKS, TunableCliType::Unsigned, nullptr, nullptr, "unlock MAD threshold", printUIntPpsUnlockMadTicks, setPpsUnlockMadTicks, writePpsUnlockMadTicks, applyPpsUnlockMadTicks },
-  { PARAM_PPS_UNLOCK_COUNT, TunableCliType::Unsigned, nullptr, nullptr, "unlock streak", printUIntPpsUnlockCount, setPpsUnlockCount, writePpsUnlockCount, applyPpsUnlockCount },
-  { PARAM_PPS_HOLDOVER_MS, TunableCliType::Unsigned, nullptr, nullptr, "holdover ms", printUIntPpsHoldoverMs, setPpsHoldoverMs, writePpsHoldoverMs, applyPpsHoldoverMs },
-  { PARAM_PPS_STALE_MS, TunableCliType::Unsigned, nullptr, nullptr, "main-loop stale ms", printUIntPpsStaleMs, setPpsStaleMs, writePpsStaleMs, applyPpsStaleMs },
-  { PARAM_PPS_ISR_STALE_MS, TunableCliType::Unsigned, nullptr, nullptr, "ISR stale ms", printUIntPpsIsrStaleMs, setPpsIsrStaleMs, writePpsIsrStaleMs, applyPpsIsrStaleMs },
-  { PARAM_PPS_CFG_REEMIT_DELAY_MS, TunableCliType::Unsigned, nullptr, nullptr, "cfg reemit delay ms", printUIntPpsConfigReemitDelayMs, setPpsConfigReemitDelayMs, writePpsConfigReemitDelayMs, applyPpsConfigReemitDelayMs },
-  { PARAM_PPS_ACQUIRE_MIN_MS, TunableCliType::Unsigned, nullptr, nullptr, "acquire min ms", printUIntPpsAcquireMinMs, setPpsAcquireMinMs, writePpsAcquireMinMs, applyPpsAcquireMinMs },
-  { PARAM_PPS_METROLOGY_GRACE_MS, TunableCliType::Unsigned, nullptr, nullptr, "metrology grace ms", printUIntPpsMetrologyGraceMs, setPpsMetrologyGraceMs, writePpsMetrologyGraceMs, applyPpsMetrologyGraceMs },
+  { PARAM_PPS_UNLOCK_R_PPM, TunableCliType::Unsigned, "range 0..20000", nullptr, "unlock drift threshold", printUIntPpsUnlockRppm, setPpsUnlockRppm, writePpsUnlockRppm, applyPpsUnlockRppm },
+  { PARAM_PPS_UNLOCK_MAD_TICKS, TunableCliType::Unsigned, "range 0..20000", nullptr, "unlock MAD threshold", printUIntPpsUnlockMadTicks, setPpsUnlockMadTicks, writePpsUnlockMadTicks, applyPpsUnlockMadTicks },
+  { PARAM_PPS_UNLOCK_COUNT, TunableCliType::Unsigned, "range 1..60", nullptr, "unlock streak", printUIntPpsUnlockCount, setPpsUnlockCount, writePpsUnlockCount, applyPpsUnlockCount },
+  { PARAM_PPS_HOLDOVER_MS, TunableCliType::Unsigned, "range 1..65535", nullptr, "holdover ms", printUIntPpsHoldoverMs, setPpsHoldoverMs, writePpsHoldoverMs, applyPpsHoldoverMs },
+  { PARAM_PPS_STALE_MS, TunableCliType::Unsigned, "range 1..30000", nullptr, "main-loop stale ms", printUIntPpsStaleMs, setPpsStaleMs, writePpsStaleMs, applyPpsStaleMs },
+  { PARAM_PPS_ISR_STALE_MS, TunableCliType::Unsigned, "range 1..30000", nullptr, "ISR stale ms", printUIntPpsIsrStaleMs, setPpsIsrStaleMs, writePpsIsrStaleMs, applyPpsIsrStaleMs },
+  { PARAM_PPS_CFG_REEMIT_DELAY_MS, TunableCliType::Unsigned, "range 1..65535", nullptr, "cfg reemit delay ms", printUIntPpsConfigReemitDelayMs, setPpsConfigReemitDelayMs, writePpsConfigReemitDelayMs, applyPpsConfigReemitDelayMs },
+  { PARAM_PPS_ACQUIRE_MIN_MS, TunableCliType::Unsigned, "range 1..65535", nullptr, "acquire min ms", printUIntPpsAcquireMinMs, setPpsAcquireMinMs, writePpsAcquireMinMs, applyPpsAcquireMinMs },
+  { PARAM_PPS_METROLOGY_GRACE_MS, TunableCliType::Unsigned, "range 1..86400000", nullptr, "export grace ms (PPS_TUNING_TELEMETRY only)", printUIntPpsMetrologyGraceMs, setPpsMetrologyGraceMs, writePpsMetrologyGraceMs, applyPpsMetrologyGraceMs },
 };
 
 } // namespace

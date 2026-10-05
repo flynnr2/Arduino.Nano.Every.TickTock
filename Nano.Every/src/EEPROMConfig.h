@@ -7,7 +7,10 @@
 TunableConfig getCurrentConfig();
 void applyConfig(const TunableConfig &cfg);
 bool loadConfig(TunableConfig &out);
-void saveConfig(TunableConfig cfg);
+bool validateConfig(const TunableConfig& cfg);
+bool saveConfig(TunableConfig cfg);
+// Restore redundancy from a valid slot; never replace it with RAM/defaults.
+bool repairEeprom();
 uint16_t computeCRC16(const uint8_t* data, size_t len);
 
 constexpr uint8_t  EEPROM_SLOT_NANO_A_ADDR = 0;       // [0, 255] EEPROM base byte for 1st copy

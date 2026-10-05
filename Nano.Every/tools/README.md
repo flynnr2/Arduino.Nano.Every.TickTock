@@ -1,23 +1,13 @@
-# Nano Every Host Serial Ingest Example
+# Nano serial capture has moved
 
-Install dependency:
+Use the single [Nano capture tool](../../tools/README.md):
 
 ```bash
 python3 -m pip install pyserial
+python3 tools/nano_capture.py --out ./my-recording
 ```
 
-Run on macOS:
-
-```bash
-python3 tools/nano_serial_ingest.py --port /dev/cu.usbmodemXXXX --baud 115200 --out ./nano_logs
-```
-
-Run on Raspberry Pi/Linux:
-
-```bash
-python3 tools/nano_serial_ingest.py --port /dev/ttyACM0 --baud 115200 --out ./nano_logs
-```
-
-Outputs are written to one session directory per run and split by record class (`raw_serial.csvl`, `derived_smp.csv`, `canonical_swing.csv`, `canonical_pps.csv`, `status_sts.csvl`, `cfg.csvl`, `schema.csvl`, `malformed.csvl`, `ingest_events.csvl`, `session_manifest.json`).
-
-`raw_serial.csvl` is the forensic source of truth and is written before parsing/routing each record. Canonical mode emits `CSW`/`CPS` rows; derived mode emits `SMP` rows. The ingestor supports both.
+Run these commands from the repository root. `nano_serial_ingest.py` has been
+removed. The replacement uses USB `Serial` by default, requests metadata on
+startup and writes `PCPS.CSV` and `PCSW.CSV` directly into your chosen directory.
+See the linked guide for port selection, passive capture and file handling.

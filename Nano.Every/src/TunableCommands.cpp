@@ -131,7 +131,7 @@ void handleGetCommand(char* name) {
   emitTunableCommandAck(STS_TUNABLES_GET, descriptor);
 }
 
-void handleSetCommand(char* name, char* val, bool& headerPending) {
+void handleSetCommand(char* name, char* val) {
   if (!name || !val) {
     CMD_SERIAL.println(F("ERROR: set requires <param> and <value>"));
     sendStatus(StatusCode::InvalidParam, "set requires <param> and <value>");
@@ -144,12 +144,23 @@ void handleSetCommand(char* name, char* val, bool& headerPending) {
     return;
   }
 
+  const TunableConfig before = getCurrentConfig();
   bool tuningChanged = false;
-  if (!descriptor->parseAndSet(val, tuningChanged, headerPending)) {
+  if (!descriptor->parseAndSet(val, tuningChanged)) {
     return;
   }
 
-  Tunables::normalizePpsTunables();
+  const TunableConfig candidate = getCurrentConfig();
+  if (!validateConfig(candidate)) {
+    applyConfig(before);
+    sendStatus(StatusCode::InvalidValue, "inconsistent PPS settings: slow>=fast, blendHi>blendLo, unlock>=lock");
+    return;
+  }
+  if (!saveConfig(candidate)) {
+    applyConfig(before);
+    sendStatus(StatusCode::InternalError, "EEPROM verification failed; settings unchanged");
+    return;
+  }
 #if PPS_TUNING_TELEMETRY
   if (tuningChanged) emitPpsTuningConfigSnapshot();
 #endif
@@ -158,11 +169,10 @@ void handleSetCommand(char* name, char* val, bool& headerPending) {
   CMD_SERIAL.print(F(" = "));
   descriptor->printCurrent(CMD_SERIAL);
   CMD_SERIAL.println();
-  saveConfig(getCurrentConfig());
   emitTunableCommandAck(STS_TUNABLES_SET, descriptor);
 }
 
-void handleResetCommand(char* action, bool& headerPending) {
+void handleResetCommand(char* action) {
   if (!action) {
     CMD_SERIAL.println(F("ERROR: reset requires <action>"));
     sendStatus(StatusCode::InvalidParam, "reset requires <action>");
@@ -175,8 +185,13 @@ void handleResetCommand(char* action, bool& headerPending) {
     return;
   }
 
+  const TunableConfig before = getCurrentConfig();
   Tunables::restoreDefaults();
-  saveConfig(getCurrentConfig());
+  if (!saveConfig(getCurrentConfig())) {
+    applyConfig(before);
+    sendStatus(StatusCode::InternalError, "EEPROM verification failed; settings unchanged");
+    return;
+  }
   resetRuntimeStateAfterTunablesChange();
   emitTunableCommandAck(STS_TUNABLES_RESET);
   emitStatusTunables();
@@ -186,6 +201,19 @@ void handleResetCommand(char* action, bool& headerPending) {
   emitPpsTuningConfigSnapshot();
 #endif
   printCsvHeader();
-  headerPending = false;
   CMD_SERIAL.println(F("reset: defaults restored from firmware and saved to EEPROM"));
+}
+
+void handleRepairCommand(char* action) {
+  if (!action || !equalsIgnoreCaseAscii(action, "eeprom")) {
+    sendStatus(StatusCode::InvalidParam, "repair requires eeprom");
+    return;
+  }
+  if (!repairEeprom()) {
+    sendStatus(StatusCode::InternalError, "EEPROM repair failed: no valid source or write verification failed");
+    emitEepromLoadStatus();
+    return;
+  }
+  sendStatus(StatusCode::Ok, "repair,eeprom");
+  emitEepromLoadStatus();
 }

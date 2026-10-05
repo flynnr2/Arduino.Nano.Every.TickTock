@@ -70,6 +70,8 @@ private:
   uint32_t f_fast_ = 0;
   uint32_t f_slow_ = 0;
   uint32_t f_hat_ = 0;
+  uint64_t fast_q16_ = 0;
+  uint64_t slow_q16_ = 0;
   uint32_t r_ppm_ = 0;
   int32_t err_fast_ticks_ = 0;
   int32_t err_slow_ticks_ = 0;

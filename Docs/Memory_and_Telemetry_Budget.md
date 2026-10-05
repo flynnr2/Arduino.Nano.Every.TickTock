@@ -22,7 +22,7 @@ Use explicit compile-time budget controls and small, power-of-two rings as basel
 - swing row ring: `RING_SIZE_SWING_ROWS = 8`
 - IR edge ring: `RING_SIZE_IR_SENSOR = 32`
 - PPS ring: `RING_SIZE_PPS = 8`
-- PPS scale ring: `PPS_SCALE_RING_SIZE = 8`
+- each completed swing holds six uint32 values (24 bytes; 192 bytes for eight slots)
 
 Keep line formatting bounded:
 

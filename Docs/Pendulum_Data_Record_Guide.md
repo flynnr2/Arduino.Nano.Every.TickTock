@@ -1,33 +1,43 @@
 # Pendulum Data Record Guide
 
-Status and scope: interpretation guide for pendulum data records in both CANONICAL and DERIVED modes. `Protocol_Wire_Contract.md` remains the normative emitted-schema source.
+Use the [wire contract](Protocol_Wire_Contract.md) for exact field order, schema
+IDs and parser requirements. Captured timestamps are the evidence for all timing
+calculations.
 
-## Relationship to `Protocol_Wire_Contract.md`
+## Record interpretation
 
-Use this guide to interpret record meaning and analysis implications. Use `Protocol_Wire_Contract.md` for exact tags, field order, schema IDs, and contract-level parser requirements.
+`CSW` contains five consecutive swing boundaries on the shared TCB0 counter and
+cumulative drop counters. `CPS` contains each captured PPS boundary plus capture
+and GPS health context. `SCH` declares the field order. `CFG` identifies the
+protocol, nominal counter frequency, schemas and firmware version.
 
-## CANONICAL mode: `SCH` + `CSW`/`CPS`
+The firmware maps capture events onto the shared counter and compensates the
+configured input-filter delay. These timestamps are free-running counter values.
+The receiver or analysis calculates intervals and PPS-based clock calibration.
 
-In CANONICAL mode, hosts receive explicit schema declarations (`SCH`) and should parse:
-- `CSW` rows for canonical swing-boundary timing data
-- `CPS` rows for canonical PPS-boundary timing data
+With the current sensor polarity, edge0–edge1 and edge2–edge3 are open-beam
+intervals; edge1–edge2 and edge3–edge4 are blocked-beam intervals. Full swings
+span edge0–edge4, and half swings span edge0–edge2 and edge2–edge4. Differences
+must account for unsigned counter wrap.
 
-This mode is the preferred/default runtime path.
+The analysis suite reports nominal raw durations and PPS-calibrated durations
+separately. Calibration requires valid PPS coverage and unambiguous chronology.
+Unavailable calibration remains missing. Counter gaps, sequence resets and new
+drop-counter increments affect data eligibility.
 
-## DERIVED mode: `HDR_PART` + `SMP`
+`STS` contains device health and command diagnostics. Firmware PPS estimation
+supports GPS state and optional telemetry; it does not change the captured edge
+timestamps. Preserve metadata and raw captures for later analysis.
 
-In DERIVED mode, hosts receive segmented header declarations (`HDR_PART`) followed by derived `SMP` rows.
+## Analysis uses
 
-This mode is useful when host workflows are optimized around derived interval fields and legacy analysis expectations.
+- Beam-block/open interval and half-cycle asymmetry measurements.
+- Pendulum rate, stability and jitter.
+- Impulse-cycle and clock-family structure using an explicitly selected profile.
+- PPS capture quality and oscillator frequency variation.
+- Environmental association studies with valid, time-aligned measurements.
 
-## How hosts should choose which records to consume
-
-- Choose mode handling from metadata (`CFG em=...`).
-- Consume only the data families for the active mode.
-- Treat inactive-mode metadata as capability/context, not contradiction.
-
-## Common interpretation pitfalls
-
-- Do not treat this guide as schema authority; contract authority is `Protocol_Wire_Contract.md`.
-- Do not mix CANONICAL and DERIVED data families in one parser state without explicit contract rollover handling.
-- Keep parser behavior aligned with `Host_Parser_State_Machine.md` startup/readiness gating.
+Use [Host_Parser_State_Machine.md](Host_Parser_State_Machine.md) for readiness and
+replay. Use [Clock_Swing_Analysis.md](Clock_Swing_Analysis.md) for current analysis
+settings. Robust outlier exclusion must be labelled, and environmental
+correlations alone do not establish causation.

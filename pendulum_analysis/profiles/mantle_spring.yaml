@@ -1,0 +1,23 @@
+id: mantle_spring
+display_name: Spring-wound mantle
+description: Spring-wound mantle clock profile stub.
+nominal_period_s: null
+nominal_half_period_s: null
+phase:
+  primary_modulus: null
+  expected_moduli: []
+  event_unit: event
+  description: "TODO: configure movement-specific beat/train cadence if known."
+capabilities:
+  tick_tock: false
+  block_intervals: false
+  impulse_cycle: false
+  one_sided_impulse: false
+  electrical_drive: false
+  remontoire: false
+  train_impulse: true
+  balance_wheel: false
+harmonic_families: []
+annotations:
+  fft: []
+notes: "Stub only; no spring-motor or escapement harmonic interpretation is asserted."

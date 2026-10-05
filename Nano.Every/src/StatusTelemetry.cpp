@@ -78,17 +78,14 @@ void emitSchemaHeader() {
   if (!line) return;
   const int n = snprintf(line,
                          CSV_PAYLOAD_MAX,
-                         "%s,sts=%u,sample=%s,eeprom=%u,%s=%u,%s=%s,%s=%s",
+                         "%s,sts=%u,eeprom=%u,%s=%s,%s=%s",
                          STS_FAMILY_SCHEMA,
                          (unsigned int)STS_SCHEMA_VERSION,
-                         SAMPLE_SCHEMA_ID,
                          (unsigned int)EEPROM_CONFIG_VERSION_CURRENT,
-                         CFG_KEY_ADJ_SEMANTICS_VERSION,
-                         (unsigned int)ADJ_SEMANTICS_VERSION,
-                         CFG_KEY_HDR_MODE,
-                         HDR_MODE_ACTIVE,
-                         CFG_KEY_EMIT_MODE,
-                         emitModeToStr(ACTIVE_EMIT_MODE));
+                         CFG_KEY_CANONICAL_SWING_SCHEMA,
+                         CANONICAL_SWING_SCHEMA_ID,
+                         CFG_KEY_CANONICAL_PPS_SCHEMA,
+                         CANONICAL_PPS_SCHEMA_ID);
   if (n > 0) {
     sendStatusFromOwnedBuffer(FormatBufferOwner::StatusTelemetry,
                               StatusCode::ProgressUpdate,
@@ -306,61 +303,29 @@ void emitStatusPpsConfig() {
 void emitStatusSampleConfig() {
   char* line = prepareStatusLineBuf();
   if (!line) return;
-  // CFG carries metadata (including schema ID). Literal sample columns are emitted by HDR_PART sequence.
+  // The same capture contract is advertised in STS cfg and standalone CFG.
   const int n = snprintf(line,
                          CSV_PAYLOAD_MAX,
-                         "%s,%s=%u,%s=%lu,%s=%s,%s=%s,%s=%u,%s=%s,%s=%s,%s=%s,%s=%s,%s=%s,fw=%s",
+                         "%s,%s=%u,%s=%lu,%s=%s,%s=%s,%s=%s,%s=%s,fw=%s",
                          STS_FAMILY_CFG,
-                         CFG_KEY_PROTOCOL_VERSION,
-                         (unsigned int)PROTOCOL_VERSION,
-                         CFG_KEY_NOMINAL_HZ,
-                         (unsigned long)MAIN_CLOCK_HZ,
-                         CFG_KEY_SAMPLE_TAG,
-                         TAG_SMP,
-                         CFG_KEY_SAMPLE_SCHEMA,
-                         SAMPLE_SCHEMA_ID,
-                         CFG_KEY_ADJ_SEMANTICS_VERSION,
-                         (unsigned int)ADJ_SEMANTICS_VERSION,
-                         CFG_KEY_HDR_MODE,
-                         HDR_MODE_ACTIVE,
-                         CFG_KEY_EMIT_MODE,
-                         emitModeToStr(ACTIVE_EMIT_MODE),
-                         CFG_KEY_CANONICAL_SWING_TAG,
-                         TAG_CSW,
-                         CFG_KEY_CANONICAL_SWING_SCHEMA,
-                         CANONICAL_SWING_SCHEMA_ID,
-                         CFG_KEY_CANONICAL_PPS_TAG,
-                         TAG_CPS,
-                         CFG_KEY_CANONICAL_PPS_SCHEMA,
-                         CANONICAL_PPS_SCHEMA_ID,
+                         CFG_KEY_PROTOCOL_VERSION, (unsigned int)PROTOCOL_VERSION,
+                         CFG_KEY_NOMINAL_HZ, (unsigned long)MAIN_CLOCK_HZ,
+                         CFG_KEY_CANONICAL_SWING_TAG, TAG_CSW,
+                         CFG_KEY_CANONICAL_SWING_SCHEMA, CANONICAL_SWING_SCHEMA_ID,
+                         CFG_KEY_CANONICAL_PPS_TAG, TAG_CPS,
+                         CFG_KEY_CANONICAL_PPS_SCHEMA, CANONICAL_PPS_SCHEMA_ID,
                          FW_VERSION);
   if (n > 0) sendStatusFromOwnedBuffer(FormatBufferOwner::StatusTelemetry, StatusCode::ProgressUpdate, line);
 
   const int cfg_n = snprintf(line,
                              CSV_PAYLOAD_MAX,
-                             "%s=%u,%s=%lu,%s=%s,%s=%s,%s=%u,%s=%s,%s=%s,%s=%s,%s=%s,%s=%s,fw=%s",
-                             CFG_KEY_PROTOCOL_VERSION,
-                             (unsigned int)PROTOCOL_VERSION,
-                             CFG_KEY_NOMINAL_HZ,
-                             (unsigned long)MAIN_CLOCK_HZ,
-                             CFG_KEY_SAMPLE_TAG,
-                             TAG_SMP,
-                             CFG_KEY_SAMPLE_SCHEMA,
-                             SAMPLE_SCHEMA_ID,
-                             CFG_KEY_ADJ_SEMANTICS_VERSION,
-                             (unsigned int)ADJ_SEMANTICS_VERSION,
-                             CFG_KEY_HDR_MODE,
-                             HDR_MODE_ACTIVE,
-                             CFG_KEY_EMIT_MODE,
-                             emitModeToStr(ACTIVE_EMIT_MODE),
-                             CFG_KEY_CANONICAL_SWING_TAG,
-                             TAG_CSW,
-                             CFG_KEY_CANONICAL_SWING_SCHEMA,
-                             CANONICAL_SWING_SCHEMA_ID,
-                             CFG_KEY_CANONICAL_PPS_TAG,
-                             TAG_CPS,
-                             CFG_KEY_CANONICAL_PPS_SCHEMA,
-                             CANONICAL_PPS_SCHEMA_ID,
+                             "%s=%u,%s=%lu,%s=%s,%s=%s,%s=%s,%s=%s,fw=%s",
+                             CFG_KEY_PROTOCOL_VERSION, (unsigned int)PROTOCOL_VERSION,
+                             CFG_KEY_NOMINAL_HZ, (unsigned long)MAIN_CLOCK_HZ,
+                             CFG_KEY_CANONICAL_SWING_TAG, TAG_CSW,
+                             CFG_KEY_CANONICAL_SWING_SCHEMA, CANONICAL_SWING_SCHEMA_ID,
+                             CFG_KEY_CANONICAL_PPS_TAG, TAG_CPS,
+                             CFG_KEY_CANONICAL_PPS_SCHEMA, CANONICAL_PPS_SCHEMA_ID,
                              FW_VERSION);
   if (cfg_n > 0) {
     const size_t payload_len = strnlen(line, CSV_PAYLOAD_MAX);
@@ -478,7 +443,7 @@ void emitStatusSerialDiagnostics() {
 
 // REQUIRED protocol replay contract:
 // Always emit these rows even when diagnostics are compiled out. Hosts that
-// attach late rely on this set to discover protocol/schema and parse SMP/CSW/CPS.
+// attach late rely on this set to discover protocol/schema and parse CSW/CPS.
 void emitStatusProtocolReplayRequired() {
   emitSchemaHeader();
   emitStatusSampleConfig();

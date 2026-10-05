@@ -1,0 +1,102 @@
+name: Repository validation
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: validation-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  python:
+    name: Python ${{ matrix.python }} regressions
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.11', '3.14']
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install host dependencies
+        run: python -m pip install -e '.[test]' -e 'Raspberry.Pi[test]' 'Pillow>=10,<13'
+      - name: Record resolved environment
+        run: |
+          python --version > python-version.txt
+          python -m pip freeze > requirements-resolved.txt
+      - name: Python and Nano host regressions
+        run: python -m pytest -q -ra --junitxml=pytest-results.xml
+      - name: Deprecated Uno host regressions
+        if: matrix.python == '3.11'
+        run: python tests/uno_r4/run_host_tests.py
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: python-${{ matrix.python }}-validation
+          path: |
+            python-version.txt
+            requirements-resolved.txt
+            pytest-results.xml
+
+  dashboard-and-docs:
+    name: Dashboard and documentation
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+      - name: Dashboard regressions
+        run: |
+          node tests/raspberry_pi/test_charts.cjs
+          node tests/raspberry_pi/test_correlation.cjs
+          node tests/raspberry_pi/test_live.cjs
+          node tests/raspberry_pi/test_phase.cjs
+          node tests/raspberry_pi/test_forecast.cjs
+      - name: Documentation links and Markdown tables
+        run: |
+          python3 scripts/doc_audit.py
+          python3 scripts/markdown_tables.py
+
+  nano:
+    name: Nano Every board build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: arduino/setup-arduino-cli@7ef629dcdf0f458ab7ae83149d629443deac6eac # v2.0.0
+        with:
+          version: '1.4.1'
+      - name: Install tested board core
+        run: |
+          arduino-cli core update-index
+          arduino-cli core install arduino:megaavr@1.8.8
+      - name: Compile and retain flash/SRAM report
+        shell: bash
+        run: |
+          set -o pipefail
+          arduino-cli version > nano-toolchain.txt
+          arduino-cli core list >> nano-toolchain.txt
+          arduino-cli compile \
+            --fqbn arduino:megaavr:nona4809 \
+            --build-property compiler.cpp.extra_flags="-Os -ffunction-sections -fdata-sections -flto" \
+            --build-property compiler.c.extra_flags="-Os -ffunction-sections -fdata-sections -flto" \
+            --build-property compiler.elf.extra_flags="-Wl,--gc-sections -flto" \
+            --build-path build/nano-every Nano.Every 2>&1 | tee nano-build.txt
+          cat nano-build.txt >> "$GITHUB_STEP_SUMMARY"
+      - name: Capture reconstruction and linked instructions
+        run: python3 tools/capture_reconstruction/check_reconstruction.py --build-dir build/nano-every
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: nano-build-report
+          path: |
+            nano-toolchain.txt
+            nano-build.txt

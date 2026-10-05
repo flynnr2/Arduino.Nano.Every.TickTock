@@ -1,0 +1,23 @@
+id: ato
+display_name: ATO
+description: ATO electric pendulum clock profile stub.
+nominal_period_s: null
+nominal_half_period_s: null
+phase:
+  primary_modulus: null
+  expected_moduli: []
+  event_unit: event
+  description: "TODO: configure drive/contact cadence for the measured ATO variant."
+capabilities:
+  tick_tock: false
+  block_intervals: false
+  impulse_cycle: false
+  one_sided_impulse: false
+  electrical_drive: true
+  remontoire: false
+  train_impulse: false
+  balance_wheel: false
+harmonic_families: []
+annotations:
+  fft: []
+notes: "Stub only; no ATO-specific phase or harmonic interpretation is asserted."

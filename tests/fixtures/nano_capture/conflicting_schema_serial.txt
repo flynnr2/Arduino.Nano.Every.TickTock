@@ -1,0 +1,2 @@
+CFG,pv=3,nhz=16000000,cst=CSW,css=canonical_swing_v2,cpt=CPS,cps=canonical_pps_v1,fw=test
+CFG,pv=3,nhz=16000000,cst=CSW,css=canonical_swing_v3,cpt=CPS,cps=canonical_pps_v1,fw=test

@@ -1,0 +1,6 @@
+STS,OK,cfg,pv=3
+CFG,pv=3,nhz=16000000,cst=CSW,css=canonical_swing_v2,cpt=CPS,cps=canonical_pps_v1,fw=test
+SCH,CSW,canonical_swing_v2,seq,edge0_tcb0,edge1_tcb0,edge2_tcb0,edge3_tcb0,edge4_tcb0,drop_ir,drop_pps,drop_swing
+SCH,CPS,canonical_pps_v1,seq,edge_tcb0,gps_status,holdover_age_ms,cap16,latency16,now32,drop_pps
+CSW,1,100,120,150,180,205,0,0,0
+CPS,1,16000000,2,0,12345,9,16000004,0

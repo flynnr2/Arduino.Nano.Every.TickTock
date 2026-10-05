@@ -19,7 +19,6 @@ constexpr size_t CMD_BUFFER_SIZE = 64;      // serial command buffer length
 static char cmdBuf[CMD_BUFFER_SIZE];
 static uint8_t cmdIdx = 0;
 static bool cmdOverflowed = false;
-static bool headerPending = false;
 // Central non-ISR formatting scratch buffer ownership:
 // - SerialParser main loop formatter: owner id 1 (SerialParser)
 // - Boot/status telemetry formatter: owner id 2 (StatusTelemetry)
@@ -61,15 +60,16 @@ bool appendLit(char* out, size_t outLen, size_t& pos, const char* s) {
   return appendCStr(out, outLen, pos, s);
 }
 
-bool u64ToDec(char* out, size_t outLen, uint64_t v) {
+bool u32ToDec(char* out, size_t outLen, uint32_t v) {
   if (!out || outLen < 2U) return false;
 
-  char rev[21];  // max uint64_t: 20 digits + NUL
+  // CSV integer fields fit in 32 bits; avoid costly AVR 64-bit division.
+  char rev[11];  // max uint32_t: 10 digits + NUL
   size_t n = 0;
   do {
-    rev[n++] = static_cast<char>('0' + (v % 10ULL));
-    v /= 10ULL;
-  } while (v != 0ULL && n < sizeof(rev));
+    rev[n++] = static_cast<char>('0' + (v % 10UL));
+    v /= 10UL;
+  } while (v != 0U && n < sizeof(rev));
 
   if (n + 1U > outLen) return false;
   for (size_t i = 0; i < n; ++i) {
@@ -79,30 +79,14 @@ bool u64ToDec(char* out, size_t outLen, uint64_t v) {
   return true;
 }
 
-bool appendU64(char* out, size_t outLen, size_t& pos, uint64_t v) {
-  char numBuf[21];
-  if (!u64ToDec(numBuf, sizeof(numBuf), v)) return false;
-  return appendCStr(out, outLen, pos, numBuf);
-}
-
 bool appendU32(char* out, size_t outLen, size_t& pos, uint32_t v) {
-  return appendU64(out, outLen, pos, static_cast<uint64_t>(v));
+  char numBuf[11];
+  if (!u32ToDec(numBuf, sizeof(numBuf), v)) return false;
+  return appendCStr(out, outLen, pos, numBuf);
 }
 
 bool appendU16(char* out, size_t outLen, size_t& pos, uint16_t v) {
   return appendU32(out, outLen, pos, static_cast<uint32_t>(v));
-}
-
-bool appendI32(char* out, size_t outLen, size_t& pos, int32_t v) {
-  if (v < 0) {
-    const uint32_t mag = static_cast<uint32_t>(-(v + 1)) + 1U;
-    return appendChar(out, outLen, pos, '-') && appendU32(out, outLen, pos, mag);
-  }
-  return appendU32(out, outLen, pos, static_cast<uint32_t>(v));
-}
-
-bool appendI16(char* out, size_t outLen, size_t& pos, int16_t v) {
-  return appendI32(out, outLen, pos, static_cast<int32_t>(v));
 }
 
 bool appendComma(char* out, size_t outLen, size_t& pos) {
@@ -269,11 +253,21 @@ void processSerialCommands() {
             stopProcessingCommand = true;
           }
           if (!stopProcessingCommand) {
-            handleSetCommand(name, val, headerPending);
+            handleSetCommand(name, val);
           }
 #else
           CMD_SERIAL.println(F("ERROR: set is disabled by build policy"));
           sendStatus(StatusCode::InvalidParam, "set disabled by build policy");
+#endif
+        } else if (equalsIgnoreCaseAscii(token, "repair")) {
+#if CLI_ALLOW_MUTATIONS
+          char *action = strtok_r(NULL, " ", &save);
+          if (!rejectExtraArgs(F("ERROR: repair requires exactly eeprom"),
+                               "repair requires exactly eeprom")) {
+            handleRepairCommand(action);
+          }
+#else
+          sendStatus(StatusCode::InvalidParam, "repair disabled by build policy");
 #endif
         } else if (equalsIgnoreCaseAscii(token, CMD_RESET)) {
 #if CLI_ALLOW_MUTATIONS
@@ -284,7 +278,7 @@ void processSerialCommands() {
             stopProcessingCommand = true;
           }
           if (!stopProcessingCommand) {
-            handleResetCommand(action, headerPending);
+            handleResetCommand(action);
           }
 #else
           CMD_SERIAL.println(F("ERROR: reset is disabled by build policy"));
@@ -500,21 +494,6 @@ uint32_t serialPartialWriteFences() {
   }
   return value;
 }
-void sendTaggedCsvLine(const char* tag, const char* text) {
-  if (!tag) return;
-  if (!text) text = "";
-  char* lineBuf = tryAcquireFormatBuffer(FormatBufferOwner::SerialParser);
-  if (!lineBuf) return;
-
-  int len = snprintf(lineBuf, CSV_LINE_MAX, "%s,%s\n", tag, text);
-  if (len <= 0 || len >= (int)CSV_LINE_MAX) {
-    releaseFormatBuffer(FormatBufferOwner::SerialParser);
-    return;
-  }
-  queueCSVLine(lineBuf, len);
-  releaseFormatBuffer(FormatBufferOwner::SerialParser);
-}
-
 void sendStatusFromOwnedBuffer(FormatBufferOwner owner, StatusCode code, char* textBuf, EmissionReliability reliability) {
   if (!textBuf) return;
   if (textBuf != sharedFormatBuf) return;
@@ -571,136 +550,34 @@ void printCsvHeader() {
   }
   if (!lineBuf) return;
 
-  if (ACTIVE_EMIT_MODE == EmitMode::DERIVED) {
-    // HDR_PART emission contract:
-    // - emission order is deterministic by SAMPLE_SCHEMA_HDR_PARTS index (1..N on wire)
-    // - payloads are semantic/readability groups, not canonical SMP serialization order
-    // - hosts should reassemble/validate HDR_PART fields, then treat SAMPLE_SCHEMA
-    //   as the only authoritative canonical ordering
-    char schemaPartBuf[HDR_PART_MAX_PAYLOAD_LEN + 1U];
-    for (uint8_t i = 0; i < HDR_SEGMENTED_PART_COUNT; ++i) {
-      const char* schemaPart = flashStrAt(SAMPLE_SCHEMA_HDR_PARTS, i);
-      const size_t schemaPartLen = flashStrLen(schemaPart);
-      if (schemaPartLen == 0 || schemaPartLen >= sizeof(schemaPartBuf)) {
-        releaseFormatBuffer(FormatBufferOwner::SerialParser);
-        return;
-      }
-      copyFlashToRam(schemaPartBuf, schemaPart, schemaPartLen);
-      schemaPartBuf[schemaPartLen] = '\0';
-
-      int len = snprintf(lineBuf,
-                         CSV_LINE_MAX,
-                         "%s,%u,%u,%s\n",
-                         TAG_HDR_PART,
-                         static_cast<unsigned int>(i + 1U),
-                         static_cast<unsigned int>(HDR_SEGMENTED_PART_COUNT),
-                         schemaPartBuf);
-      if (len <= 0 || len >= static_cast<int>(CSV_LINE_MAX)) {
-        releaseFormatBuffer(FormatBufferOwner::SerialParser);
-        return;
-      }
-      queueCSVLine(lineBuf, len, EmissionReliability::Required);
-    }
-  } else {
-    char canonicalSwingSchema[sizeof(CANONICAL_SWING_SCHEMA)];
-    char canonicalPpsSchema[sizeof(CANONICAL_PPS_SCHEMA)];
-    copyFlashToRam(canonicalSwingSchema, CANONICAL_SWING_SCHEMA, sizeof(CANONICAL_SWING_SCHEMA));
-    copyFlashToRam(canonicalPpsSchema, CANONICAL_PPS_SCHEMA, sizeof(CANONICAL_PPS_SCHEMA));
-    int len = snprintf(lineBuf,
-                       CSV_LINE_MAX,
-                       "%s,%s,%s,%s\n",
-                       TAG_SCH,
-                       TAG_CSW,
-                       CANONICAL_SWING_SCHEMA_ID,
-                       canonicalSwingSchema);
-    if (len > 0 && len < static_cast<int>(CSV_LINE_MAX)) {
-      queueCSVLine(lineBuf, len, EmissionReliability::Required);
-    }
-    len = snprintf(lineBuf,
-                   CSV_LINE_MAX,
-                   "%s,%s,%s,%s\n",
-                   TAG_SCH,
-                   TAG_CPS,
-                   CANONICAL_PPS_SCHEMA_ID,
-                   canonicalPpsSchema);
-    if (len > 0 && len < static_cast<int>(CSV_LINE_MAX)) {
-      queueCSVLine(lineBuf, len, EmissionReliability::Required);
-    }
+  char canonicalSwingSchema[sizeof(CANONICAL_SWING_SCHEMA)];
+  char canonicalPpsSchema[sizeof(CANONICAL_PPS_SCHEMA)];
+  copyFlashToRam(canonicalSwingSchema, CANONICAL_SWING_SCHEMA, sizeof(CANONICAL_SWING_SCHEMA));
+  copyFlashToRam(canonicalPpsSchema, CANONICAL_PPS_SCHEMA, sizeof(CANONICAL_PPS_SCHEMA));
+  int len = snprintf(lineBuf,
+                     CSV_LINE_MAX,
+                     "%s,%s,%s,%s\n",
+                     TAG_SCH,
+                     TAG_CSW,
+                     CANONICAL_SWING_SCHEMA_ID,
+                     canonicalSwingSchema);
+  if (len > 0 && len < static_cast<int>(CSV_LINE_MAX)) {
+    queueCSVLine(lineBuf, len, EmissionReliability::Required);
   }
-  headerPending = false;
+  len = snprintf(lineBuf,
+                 CSV_LINE_MAX,
+                 "%s,%s,%s,%s\n",
+                 TAG_SCH,
+                 TAG_CPS,
+                 CANONICAL_PPS_SCHEMA_ID,
+                 canonicalPpsSchema);
+  if (len > 0 && len < static_cast<int>(CSV_LINE_MAX)) {
+    queueCSVLine(lineBuf, len, EmissionReliability::Required);
+  }
   releaseFormatBuffer(FormatBufferOwner::SerialParser);
-}
-
-bool sendSample(const PendulumSample &s) {
-  if (ACTIVE_EMIT_MODE != EmitMode::DERIVED) {
-    return false;
-  }
-  if (headerPending) {
-    printCsvHeader();
-  }
-
-  char* lineBuf = tryAcquireFormatBuffer(FormatBufferOwner::SerialParser);
-  if (!lineBuf) return false;
-
-  size_t pos = 0;
-  uint8_t emittedFieldCount = 0;
-  bool ok = true;
-  ok = ok && appendCStr(lineBuf, CSV_LINE_MAX, pos, TAG_SMP);
-  auto appendU32Field = [&](uint32_t v) {
-    const bool fieldOk = appendComma(lineBuf, CSV_LINE_MAX, pos) &&
-                         appendU32(lineBuf, CSV_LINE_MAX, pos, v);
-    ok = ok && fieldOk;
-    if (fieldOk) ++emittedFieldCount;
-  };
-  // SMP rows must follow canonical SAMPLE_SCHEMA / CsvField order exactly.
-  static_assert(CF_COUNT == 20, "Update sendSample() ordering for schema changes");
-
-  // CF_TICK .. CF_TICK_TOTAL_ADJ_DIAG
-  appendU32Field(s.tick);
-  appendU32Field(s.tick_adj);
-  appendU32Field(s.tick_block);
-  appendU32Field(s.tick_block_adj);
-  appendU32Field(s.tick_total_adj_direct);
-  appendU32Field(s.tick_total_adj_diag);
-
-  // CF_TOCK .. CF_TOCK_TOTAL_ADJ_DIAG
-  appendU32Field(s.tock);
-  appendU32Field(s.tock_adj);
-  appendU32Field(s.tock_block);
-  appendU32Field(s.tock_block_adj);
-  appendU32Field(s.tock_total_adj_direct);
-  appendU32Field(s.tock_total_adj_diag);
-
-  // CF_TICK_TOTAL_F_HAT_HZ .. CF_PPS_SEQ_ROW.
-  appendU32Field(s.tick_total_f_hat_hz);
-  appendU32Field(s.tock_total_f_hat_hz);
-  appendU32Field(s.gps_status);
-  appendU32Field(s.holdover_age_ms);
-  appendU32Field(s.dropped_events);
-  appendU32Field(s.adj_diag);
-  appendU32Field(s.adj_comp_diag);
-  appendU32Field(s.pps_seq_row);
-
-  if (emittedFieldCount != CF_REQUIRED_COUNT) {
-    releaseFormatBuffer(FormatBufferOwner::SerialParser);
-    sendStatus(StatusCode::InternalError, "smp field_count mismatch");
-    return false;
-  }
-
-  ok = ok && appendChar(lineBuf, CSV_LINE_MAX, pos, '\n');
-  const int len = static_cast<int>(pos);
-  if (!ok || len <= 0 || len >= (int)CSV_LINE_MAX) {
-    releaseFormatBuffer(FormatBufferOwner::SerialParser);
-    return false;
-  }
-  const bool sent = queueCSVLine(lineBuf, len);
-  releaseFormatBuffer(FormatBufferOwner::SerialParser);
-  return sent;
 }
 
 bool sendCanonicalSwingSample(const CanonicalSwingSample& s) {
-  if (ACTIVE_EMIT_MODE != EmitMode::CANONICAL) return false;
-  if (headerPending) printCsvHeader();
   char* lineBuf = tryAcquireFormatBuffer(FormatBufferOwner::SerialParser);
   if (!lineBuf) return false;
   size_t pos = 0;
@@ -714,8 +591,6 @@ bool sendCanonicalSwingSample(const CanonicalSwingSample& s) {
             appendComma(lineBuf, CSV_LINE_MAX, pos) && appendU32(lineBuf, CSV_LINE_MAX, pos, s.drop_ir) &&
             appendComma(lineBuf, CSV_LINE_MAX, pos) && appendU32(lineBuf, CSV_LINE_MAX, pos, s.drop_pps) &&
             appendComma(lineBuf, CSV_LINE_MAX, pos) && appendU32(lineBuf, CSV_LINE_MAX, pos, s.drop_swing) &&
-            appendComma(lineBuf, CSV_LINE_MAX, pos) && appendU16(lineBuf, CSV_LINE_MAX, pos, s.adj_diag) &&
-            appendComma(lineBuf, CSV_LINE_MAX, pos) && appendU16(lineBuf, CSV_LINE_MAX, pos, s.adj_comp_diag) &&
             appendChar(lineBuf, CSV_LINE_MAX, pos, '\n');
   const int len = static_cast<int>(pos);
   bool sent = false;
@@ -727,8 +602,6 @@ bool sendCanonicalSwingSample(const CanonicalSwingSample& s) {
 }
 
 bool sendCanonicalPpsSample(const CanonicalPpsSample& s) {
-  if (ACTIVE_EMIT_MODE != EmitMode::CANONICAL) return false;
-  if (headerPending) printCsvHeader();
   char* lineBuf = tryAcquireFormatBuffer(FormatBufferOwner::SerialParser);
   if (!lineBuf) return false;
   size_t pos = 0;

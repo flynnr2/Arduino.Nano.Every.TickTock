@@ -1,0 +1,26 @@
+id: synchronome
+display_name: Synchronome
+description: Synchronome free-pendulum master clock
+nominal_period_s: 2.0
+nominal_half_period_s: 1.0
+cycle_period_s: 30.0
+cycle_events: 15
+impulse_cycle_events: 15
+phase:
+  primary_modulus: 15
+  expected_moduli: [15, 30]
+  event_unit: swing
+  description: 15-swing impulse cycle
+capabilities:
+  tick_tock: true
+  block_intervals: true
+  impulse_cycle: true
+  one_sided_impulse: true
+  electrical_drive: false
+  remontoire: false
+  train_impulse: false
+  balance_wheel: false
+harmonic_families: [{"id": "impulse_cycle", "label": "Impulse cycle", "base_period_s": 30.0, "max_order": 12, "min_period_s": 2.0, "enabled_by_capability": "impulse_cycle"}]
+annotations:
+  fft: [{"id": "impulse_cycle_fundamental", "label": "Expected impulse-cycle fundamental", "period_s": 30.0, "enabled_by_capability": "impulse_cycle"}]
+notes: "2 s pendulum; impulse every 30 s; one-sided impulse interpretation."

@@ -39,6 +39,10 @@ const char RESET_name[] PROGMEM = "reset";
 const char RESET_syn[]  PROGMEM = "Restore defaults";
 const char RESET_use[]  PROGMEM = "reset defaults";
 
+const char REPAIR_name[] PROGMEM = "repair";
+const char REPAIR_syn[] PROGMEM = "Repair EEPROM redundancy from valid slot";
+const char REPAIR_use[] PROGMEM = "repair eeprom";
+
 const char EMIT_name[]  PROGMEM = "emit";
 const char EMIT_syn[]   PROGMEM = "Emit telemetry";
 const char EMIT_use[]   PROGMEM = "emit meta|startup";
@@ -49,6 +53,7 @@ const CmdHelp HELP_REGISTRY[] PROGMEM = {
   { SET_name, SET_syn, SET_use, CAT_tunables },
   { RESET_name, RESET_syn, RESET_use, CAT_tunables },
   { EMIT_name, EMIT_syn, EMIT_use, CAT_core },
+  { REPAIR_name, REPAIR_syn, REPAIR_use, CAT_tunables },
 };
 constexpr uint8_t HELP_N = sizeof(HELP_REGISTRY) / sizeof(HELP_REGISTRY[0]);
 constexpr uint8_t MAX_HELP_SUGGESTIONS = 5;

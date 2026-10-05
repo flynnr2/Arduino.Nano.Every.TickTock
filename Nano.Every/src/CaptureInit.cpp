@@ -20,7 +20,7 @@ void tcb0_init_free_running() {
   TCB0.CCMP     = 0xFFFF;                                       // not used, but keep at max
   TCB0.INTCTRL  = TCB_CAPT_bm;                                  // overflow interrupt on
   TCB0.INTFLAGS = TCB_CAPT_bm;                                  // clear flags
-  TCB0.CTRLA    = TCB_CLKSEL_CLKDIV1_gc | TCB_ENABLE_bm;        // turn on
+  TCB0.CTRLA    = TCB0_ENABLE;                                  // turn on
 }
 
 void tcb1_init_IR_capt() {
@@ -30,7 +30,7 @@ void tcb1_init_IR_capt() {
   TCB1.EVCTRL   = EVCTRL_CAPTURE_EDGE_LOW_TO_HIGH;                // capture events EDGE = 0, i.e. LOW -> HIGH (inverted)
   TCB1.INTCTRL  = TCB_CAPT_bm;                                  // capture interrupt
   TCB1.INTFLAGS = TCB_CAPT_bm;                                  // clear flags
-  TCB1.CTRLA    = TCB_CLKSEL_CLKDIV1_gc | TCB_ENABLE_bm;        // clock select still needed for state machine
+  TCB1.CTRLA    = TCB1_ENABLE;                                  // clock select still needed for state machine
 
 //PORTD.PIN0CTRL |= PORT_PULLUPEN_bm;                           // Enable pull-up on PD0 - EXTERNAL IS ASSUMED THOUGH
 }
@@ -38,8 +38,8 @@ void tcb1_init_IR_capt() {
 void tcb2_init_PPS_capt() {
   TCB2.CTRLA    = 0x0;                                          // turn off
   TCB2.CTRLB    = TCB_CNTMODE_CAPT_gc;                          // capture mode
-  TCB2.EVCTRL   = TCB_CAPTEI_bm;                                // capture events EDGE = 0
+  TCB2.EVCTRL   = EVCTRL_PPS_CAPTURE;                           // capture events EDGE = 0
   TCB2.INTCTRL  = TCB_CAPT_bm;                                  // capture interrupt
   TCB2.INTFLAGS = TCB_CAPT_bm             ;                     // clear flags
-  TCB2.CTRLA    = TCB_CLKSEL_CLKDIV1_gc | TCB_ENABLE_bm;        // clock select still needed for state machine
+  TCB2.CTRLA    = TCB2_ENABLE;                                  // clock select still needed for state machine
 }

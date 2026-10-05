@@ -1,162 +1,145 @@
 # Protocol Wire Contract (Normative)
 
-## 1) Normative source declaration
+## Source of truth
 
-This document is the single normative specification for emitted serial records consumed by host integrations.
+[Nano.Every/src/PendulumProtocol.h](../Nano.Every/src/PendulumProtocol.h) owns
+record tags, schema IDs, field order, version constants and shared data models.
+The Nano and receiving Uno must use byte-for-byte identical copies of this header.
+`SerialParser.cpp` and `StatusTelemetry.cpp` own serialization. Receiver-specific
+validation for the retained Uno belongs in its `PendulumProtocolReceiver.h`.
+The Python consumers implement this same wire layout in
+[`tools/nano_capture.py`](../tools/nano_capture.py) and
+[`Raspberry.Pi/pendulum_pi/protocol.py`](../Raspberry.Pi/pendulum_pi/protocol.py);
+consumer recovery policies are documented separately in the
+[host parser guide](Host_Parser_State_Machine.md).
 
-**Source-of-truth rule:** `Nano.Every/src/PendulumProtocol.h` is the authoritative wire-contract source. If this document and code ever differ, `PendulumProtocol.h` is correct and this document must be updated to match it. This includes tags, schema IDs, field order, version constants, and mode semantics.
+The firmware emits captured swing and PPS boundaries on a shared free-running
+TCB0 counter. Duration calculation and PPS calibration belong to the receiving
+host or offline analysis.
 
-## 2) Record-family contract tables
+## Record families
 
-### 2.1 `CFG`
+| Tag   | Grammar                               | Purpose                                                |
+| ----- | ------------------------------------- | ------------------------------------------------------ |
+| `CFG` | `CFG,<key>=<value>(,<key>=<value>)*`  | Capture contract and firmware identity                 |
+| `STS` | `STS,<status_code>[,<payload...>]`    | Boot, status, command replies and optional diagnostics |
+| `SCH` | `SCH,<tag>,<schema_id>,<csv_fields>`  | Complete declaration of one capture record schema      |
+| `CSW` | `CSW,<nine unsigned integer values>`  | Five edges of a completed swing and drop counters      |
+| `CPS` | `CPS,<eight unsigned integer values>` | One PPS capture and its health/capture context         |
 
-| Contract item | Value |
-|---|---|
-| Exact tag name | `CFG` |
-| Line shape / grammar | `CFG,<key>=<value>(,<key>=<value>)*` |
-| Cardinality | once/boot + on-demand (`emit meta`, `emit startup`) |
-| Mode applicability | CANONICAL and DERIVED |
+`CFG` and both `SCH` declarations are emitted at startup, delayed metadata replay,
+optional automatic startup replay, and on demand. The commands `emit meta` and
+`emit startup` replay metadata without restarting acquisition.
 
-Notes:
-- Key names are compact (`pv`, `nhz`, `st`, `ss`, `asv`, `hm`, `em`, `cst`, `css`, `cpt`, `cps`) per `CFG_KEY_*` constants.
+`STS` codes are `OK`, `UNKNOWN_COMMAND`, `INVALID_PARAM`, `INVALID_VALUE`,
+`INTERNAL_ERROR`, and `PROGRESS_UPDATE`. Payloads commonly start with a family,
+but command errors and progress messages may contain free text. Preserve the
+payload without assuming every status has key/value fields.
 
-### 2.2 `STS`
+## Swing records
 
-| Contract item | Value |
-|---|---|
-| Exact tag name | `STS` |
-| Line shape / grammar | `STS,<status_code>,<family>,<payload...>` |
-| Cardinality | once/boot + periodic + on-demand + event-driven |
-| Mode applicability | CANONICAL and DERIVED |
+`SCH,CSW,canonical_swing_v2,...` declares this exact field order:
 
-Notes:
-- Status codes are from `StatusCode` (`OK`, `UNKNOWN_COMMAND`, `INVALID_PARAM`, `INVALID_VALUE`, `INTERNAL_ERROR`, `PROGRESS_UPDATE`).
-- `STS_FAMILY_SCHEMA` and `STS_FAMILY_CFG` are explicit wire families.
+```text
+seq,edge0_tcb0,edge1_tcb0,edge2_tcb0,edge3_tcb0,edge4_tcb0,drop_ir,drop_pps,drop_swing
+```
 
-### 2.3 `SCH`
+All nine fields are unsigned 32-bit integers (`0..4294967295`). `seq` increments for each assembled
+swing, including rows lost to a full completed-swing ring. Adjacent swings share
+the previous `edge4_tcb0` as the next `edge0_tcb0`.
 
-| Contract item | Value |
-|---|---|
-| Exact tag name | `SCH` |
-| Line shape / grammar | `SCH,<tag>,<schema_id>,<csv_fields>` |
-| Cardinality | once/boot + on-demand |
-| Mode applicability | CANONICAL |
+Edges are projected onto TCB0 at capture time. Projection compensates capture
+age, aligns the timer reads, and subtracts the configured input-filter delay
+(four ticks for the default IR input). No host filter-delay correction is needed.
+See [Capture_Timebase_Architecture.md](Capture_Timebase_Architecture.md).
 
-Notes:
-- Used for canonical declarations of `CSW` and `CPS` schemas.
+`drop_ir`, `drop_pps`, and `drop_swing` are cumulative capture/assembly drop
+counters. A failed serial emission leaves the oldest completed swing pending
+for retry. A full swing ring drops a newly completed row and increments
+`drop_swing`. Serial loss must also be checked through sequence continuity.
 
-### 2.4 `CSW`
+## PPS records
 
-| Contract item | Value |
-|---|---|
-| Exact tag name | `CSW` |
-| Line shape / grammar | `CSW,<value_1>,<value_2>,...,<value_n>` |
-| Cardinality | per-sample |
-| Mode applicability | CANONICAL |
+`SCH,CPS,canonical_pps_v1,...` declares this exact field order:
 
-Notes:
-- Column order is declared via `SCH,CSW,canonical_swing_v1,...`.
+```text
+seq,edge_tcb0,gps_status,holdover_age_ms,cap16,latency16,now32,drop_pps
+```
 
-### 2.5 `CPS`
+`edge_tcb0` is the reconstructed shared-counter capture timestamp. `cap16` is
+the local captured 16-bit counter, `latency16` its modular capture age, and
+`now32` the shared timestamp aligned to the capture-counter read. The default
+PPS input has no filter delay. `gps_status` is `0=NO_PPS`, `1=ACQUIRING`,
+`2=LOCKED`, or `3=HOLDOVER` (an 8-bit enum restricted to these four values).
+`cap16` and `latency16` are unsigned 16-bit integers (`0..65535`);
+`seq`, `edge_tcb0`, `holdover_age_ms`, `now32`, and `drop_pps` are unsigned
+32-bit integers (`0..4294967295`). The wire contains decimal ASCII values, not
+the in-memory struct order or binary widths. Capture values are nonnegative
+integer tokens without signs, decimal points or scientific notation.
 
-| Contract item | Value |
-|---|---|
-| Exact tag name | `CPS` |
-| Line shape / grammar | `CPS,<value_1>,<value_2>,...,<value_n>` |
-| Cardinality | per-sample (per PPS event row) |
-| Mode applicability | CANONICAL |
+Each queued raw capture is emitted before classification. GPS state and holdover
+age therefore describe the preceding processing state; a row does not prove
+that its interval was accepted. Rejected extra captures remain visible. Failed
+PPS sends are not retried; `drop_pps` counts capture-ring insertion failures,
+not serial losses.
 
-Notes:
-- Column order is declared via `SCH,CPS,canonical_pps_v1,...`.
+The counter timestamps and sequence numbers wrap modulo 2^32. At 16 MHz a full
+counter wrap takes about 268.4 seconds. Reconstruct chronology from ordered
+records and sequence continuity; the shared counter is not UTC. `gps_status`
+describes Nano PPS health, not the Pi's chrony/gpsd status or UTC accuracy.
+See [Pi timekeeping](../Raspberry.Pi/TIMEKEEPING.md) for the separate host time
+sources and the current limit on associating captures with UTC.
 
-### 2.6 `HDR_PART`
+## Version constants
 
-| Contract item | Value |
-|---|---|
-| Exact tag name | `HDR_PART` |
-| Line shape / grammar | `HDR_PART,<part_index>,<part_count>,<csv_fields>` |
-| Cardinality | once/boot sequence + on-demand sequence |
-| Mode applicability | DERIVED |
+| Constant                       | Value                |
+| ------------------------------ | -------------------- |
+| `PROTOCOL_VERSION`             | `3`                  |
+| `STS_SCHEMA_VERSION`           | `5`                  |
+| `CANONICAL_SWING_SCHEMA_ID`    | `canonical_swing_v2` |
+| `CANONICAL_PPS_SCHEMA_ID`      | `canonical_pps_v1`   |
+| `PPS_TUNING_SEMANTICS_VERSION` | `2`                  |
 
-Notes:
-- Active mode identifier is `segmented_v1` with `HDR_SEGMENTED_PART_COUNT=4`.
-
-### 2.7 `SMP`
-
-| Contract item | Value |
-|---|---|
-| Exact tag name | `SMP` |
-| Line shape / grammar | `SMP,<value_1>,<value_2>,...,<value_n>` |
-| Cardinality | per-sample |
-| Mode applicability | DERIVED |
-
-Notes:
-- Canonical field order for `SMP` is defined by `SAMPLE_SCHEMA` and `CsvField`.
-
-## 3) Versioning contract
-
-### 3.1 Version constants
-
-- `PROTOCOL_VERSION = 1`
-- `STS_SCHEMA_VERSION = 4`
-- `SAMPLE_SCHEMA_ID = raw_cycles_hz_v7`
-- `CANONICAL_SWING_SCHEMA_ID = canonical_swing_v1`
-- `CANONICAL_PPS_SCHEMA_ID = canonical_pps_v1`
-
-### 3.2 Compatibility / breaking-change policy
-
-When wire compatibility changes, bump versions/schema IDs with the following minimum policy:
-
-1. **`PROTOCOL_VERSION` must be bumped** for any breaking change affecting wire-level interoperability across record families, including:
-   - tag renames/removals,
-   - required record grammar changes,
-   - changed meaning of previously emitted keys/fields where backward parsing is not safe.
-
-2. **`STS_SCHEMA_VERSION` must be bumped** when `STS` payload schema/order/required semantics change incompatibly for existing parsers.
-
-3. **Per-record schema IDs must be bumped** when field list/order/required interpretation changes for that family:
-   - `raw_cycles_hz_v7` for `SMP` (`SAMPLE_SCHEMA`/`CsvField`),
-   - `canonical_swing_v1` for `CSW`,
-   - `canonical_pps_v1` for `CPS`.
-
-4. **At least one of the above must change** for any incompatible field-order or field-semantics change. Never ship incompatible output while keeping all version/schema identifiers unchanged.
-
-5. Additive, backward-compatible changes should prefer additive key/value extension where parsers can safely ignore unknown fields; if parser safety is uncertain, treat as breaking and bump.
-
-## 4) Authoritative order vs segmented transport
-
-- `SAMPLE_SCHEMA` and `enum CsvField` define the **canonical** `SMP` field ordering contract.
-- `SAMPLE_SCHEMA_HDR_PARTS` define **segmented transport/readability groups** for `HDR_PART` emission.
-- `SAMPLE_SCHEMA_HDR_PARTS` may differ from canonical serialization ordering semantics and must **not** be used as the authoritative `SMP` order.
-- Host implementations should:
-  1. validate and reassemble the full `HDR_PART` sequence as transport metadata,
-  2. treat `SAMPLE_SCHEMA` as authoritative order for `SMP` parsing/storage logic.
-
-## 5) Host integrator target
-
-This document is the primary integration target for host implementers.
-
-- Repository root reference: `README.md`
-- Docs index reference: `Docs/README.md`
-
-Both should link here as the first stop for serial wire-contract integration.
+Increment the protocol version for breaking record or metadata changes, the
+status version for incompatible status payload changes, and a record's schema
+ID whenever its field order or meaning changes incompatibly.
 
 ## CFG records and keys
 
-This document is the primary documentation home for emitted serial records and CFG keys.
+| Key   | Meaning                                     |
+| ----- | ------------------------------------------- |
+| `pv`  | Protocol version (`3`)                      |
+| `nhz` | Nominal timer frequency in ticks per second |
+| `cst` | Swing tag (`CSW`)                           |
+| `css` | Swing schema ID (`canonical_swing_v2`)      |
+| `cpt` | PPS tag (`CPS`)                             |
+| `cps` | PPS schema ID (`canonical_pps_v1`)          |
+| `fw`  | Firmware version string                     |
 
-Current emitted compact keys: `pv`, `nhz`, `st`, `ss`, `asv`, `hm`, `em`, `cst`, `css`, `cpt`, `cps`.
+At nominal 16 MHz, the configuration record has this form (`<version>` is the
+build's `FW_VERSION`):
 
-- `pv`: protocol version
-- `nhz`: nominal timer frequency (ticks/sec)
-- `st` / `ss`: active derived sample tag/schema id
-- `asv`: adjustment semantics version
-- `hm`: header declaration mode
-- `em`: active emit mode (`CANONICAL` or `DERIVED`)
-- `cst` / `css`: canonical swing tag/schema id
-- `cpt` / `cps`: canonical PPS tag/schema id
+```text
+CFG,pv=3,nhz=16000000,cst=CSW,css=canonical_swing_v2,cpt=CPS,cps=canonical_pps_v1,fw=<version>
+```
 
-Host parser guidance:
-1. Parse `CFG` key-value pairs (optionally corroborate with `STS ... cfg`).
-2. Branch by `em` for accepted data families.
-3. Ignore unknown keys for forward compatibility; do not fail on extra keys.
+`STS,PROGRESS_UPDATE,cfg,...` mirrors the same key/value payload.
+`STS,PROGRESS_UPDATE,schema,sts=5,eeprom=<version>,css=canonical_swing_v2,cps=canonical_pps_v1`
+reports the status, EEPROM and capture schema versions. Optional `STS ... build`
+adds Git revision, build time, board and clock details.
+
+Hosts must validate `CFG` and both `SCH` declarations before accepting data.
+Replay of identical metadata is idempotent. A changed contract requires a new
+capture session or explicit parser recovery. Unknown extra CFG keys may be
+preserved as metadata. See [Host_Parser_State_Machine.md](Host_Parser_State_Machine.md).
+
+## Wire records versus recording files
+
+`SCH` declares the Nano's `CSW`/`CPS` fields only. It does not require every
+receiver's CSV file to have identical columns. The laptop capture tool writes
+those fields directly to `PCSW.CSV` and `PCPS.CSV`. The Pi appends environmental
+columns and retains empty `adj_diag`/`adj_comp_diag` compatibility columns in
+`PCSW.CSV`; those values are absent from protocol v3. The retained Uno appends
+its environmental fields to the capture schema. File schemas and missing-value
+semantics belong to the [laptop tool guide](../tools/README.md) and
+[Pi recording format](../Raspberry.Pi/DATA_FORMAT.md), not this wire contract.

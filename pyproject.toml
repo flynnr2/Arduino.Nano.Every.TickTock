@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pendulum-analysis"
+version = "0.1.0"
+description = "PCPS clock and sequence-correct swing metrology"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+  "matplotlib>=3.5",
+  "numpy>=1.21",
+  "pandas>=1.4",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=7"]
+
+[project.scripts]
+pendulum-analyze = "pendulum_analysis.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["pendulum_analysis*"]
+
+[tool.setuptools.package-data]
+pendulum_analysis = ["defaults.yaml", "profiles/*.yaml"]

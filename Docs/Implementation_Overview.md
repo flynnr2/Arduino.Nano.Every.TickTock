@@ -6,27 +6,19 @@ Companion subsystem docs:
 - `Docs/Memory_and_Telemetry_Budget.md` (memory/telemetry tradeoffs)
 - `Docs/Capture_Timebase_Architecture.md` (EVSYS/TCB and shared-timeline projection)
 - `Docs/Config_Defines_Guide.md` (src/Config.h #defines)
-- `Docs/Emit_Mode_Guide.md` (CANONICAL vs DERIVED behavior)
-- `Docs/Pendulum_CSV_Semantics.md` (DERIVED mode emission reference)
-- `Docs/Pendulum_Data_Record_Guide.md` (Guide to emitted pendulum data fields)
+- `Docs/Acquisition_Guide.md` (capture and host responsibilities)
+- `Docs/Pendulum_Data_Record_Guide.md` (pendulum record interpretation)
 - `Docs/PPS_Discipliner_Guide.md` (EWMA model, state machine, tuning workflow)
 
 ## Document status
 
-This document is **implementation-oriented** and should be kept. It describes module ownership and pipeline behavior that are still current, but some stream-contract details below describe DERIVED (`HDR_PART`/`SMP`) output as if it were always active.
+This document describes the capture, health monitoring and serial output pipeline.
+The firmware emits five swing boundaries and PPS captures on one shared counter.
+Hosts calculate durations and calibrate the clock from those boundaries.
 
-Current firmware defaults to **CANONICAL emit mode** (`SCH`/`CSW`/`CPS`) via `ACTIVE_EMIT_MODE` in `PendulumProtocol.h`; use `Docs/Emit_Mode_Guide.md` plus `PendulumProtocol.h` as the normative source for output mode and wire tags.
-
-## Scope & Terminology
-
-This document describes the current Nano Every firmware after the reduced-surface cleanup. The runtime now exposes one raw-cycle sample schema, one small tuning CLI, and a compact `STS` contract focused on boot/config/PPS state.
-
-Within the swing reconstruction pipeline:
-- **tick** = beam-unblocked interval between a rising edge and the next falling edge
-- **tock** = following beam-unblocked interval on the return side
-- **tick_block** / **tock_block** = durations for which the bob blocks the beam on each side
-
-Those four values are assembled into `FullSwing` records on the same 32-bit TCB0 timeline used by PPS capture.
+`FullSwing` holds a sequence number and five TCB0 timestamps. No frequency
+estimate changes these timestamps. The wire layout is defined in
+[Protocol_Wire_Contract.md](Protocol_Wire_Contract.md).
 
 ## Module Ownership Overview
 
@@ -40,13 +32,13 @@ Those four values are assembled into `FullSwing` records on the same 32-bit TCB0
 
 - **`PpsValidator.*`** classifies full 32-bit PPS intervals as `OK`, `GAP`, `DUP`, or `HARD_GLITCH` and seeds/reseeds the reference interval.
 - **`FreqDiscipliner.*`** maintains fast/slow frequency estimates plus the `FREE_RUN`, `ACQUIRE`, `DISCIPLINED`, and `HOLDOVER` state machine.
-- **`DisciplinedTime.*`** turns discipliner state into the active ticks-per-second denominator that host-side tooling should use for cycle-to-time conversion.
+- **`DisciplinedTime.*`** turns discipliner state into the frequency estimate used in optional tuning telemetry. The current host suite separately derives calibration from canonical PPS intervals.
 
 ### Runtime control, telemetry, and persistence
 
-- **`SerialParser.*`** owns command tokenization, mode-aware schema/sample emission (`SCH`/`CSW`/`CPS` or `HDR_PART`/`SMP`), and generic `STS` framing.
+- **`SerialParser.*`** owns command tokenization, capture schema/record emission (`SCH`/`CSW`/`CPS`), and generic `STS` framing.
 - **`TunableRegistry.*`** is the single source of truth for tunable names, parsing, validation, EEPROM mapping, and runtime help text.
-- **`TunableCommands.*`** wires `get` / `set` / `reset defaults` commands to the registry.
+- **`TunableCommands.*`** handles tunable reads/writes, default restoration, and EEPROM redundancy repair.
 - **`TunablesRuntime.cpp`** stores live tunable values and normalizes dependent settings.
 - **`StatusTelemetry.*`** emits retained boot/config `STS` records plus optional PPS tuning snapshots.
 - **`MemoryTelemetry.*`** computes current free SRAM on AVR (`__brkval`/`__heap_start` vs stack), tracks retained runtime minimum, and emits boot/periodic `mem` STS records.
@@ -54,7 +46,7 @@ Those four values are assembled into `FullSwing` records on the same 32-bit TCB0
 
 ### Top-level orchestration
 
-- **`PendulumCore.*`** coordinates setup, invokes the capture/PPS/swing/runtime modules, packages finished swings as raw-cycle samples, and publishes results.
+- **`PendulumCore.*`** coordinates setup, invokes the capture/PPS/swing/runtime modules, packages finished swings as capture records, and publishes results.
 - **`Nano.Every.ino`** is only a sketch wrapper calling `pendulumSetup()` / `pendulumLoop()`.
 
 ## Timing and Data Flow
@@ -86,10 +78,10 @@ The TCB2 ISR mirrors the IR path by capturing PPS edges, projecting them onto th
 
 In the main loop, `PendulumCore::process_pps()` then:
 1. drains queued PPS captures from `PendulumCapture`
-2. computes the full 32-bit interval between consecutive PPS edges
-3. classifies each interval with `PpsValidator`
+2. preserves consecutive raw PPS captures for telemetry
+3. uses `PpsEdgeFilter` and `PpsValidator` to select plausible one-second intervals
 4. feeds accepted/anomalous observations into `FreqDiscipliner`
-5. updates `DisciplinedTime` with the active denominator
+5. updates `DisciplinedTime` when optional tuning telemetry is enabled
 6. updates exported correction metrics and `gps_status`
 
 ## PPS Runtime Behavior
@@ -101,6 +93,23 @@ In the main loop, `PendulumCore::process_pps()` then:
 - classifies intervals as `OK`, `GAP`, `DUP`, or `HARD_GLITCH`
 - tracks health counters and ok-streaks for downstream lock logic
 
+`PpsEdgeFilter` keeps the measurement candidate separate from raw capture.
+Early rejected captures leave the candidate unchanged, so an extra capture
+between genuine PPS edges does not spoil the following one-second interval.
+Late rejected captures become recovery candidates; a subsequent acceptable
+interval resumes estimation. Early extras bypass validator health and discipliner
+updates, preserving lock/unlock streaks. Late/recovery observations still enter
+health accounting; rejected intervals cannot update frequency estimates.
+Freshness timeouts reset acquisition health. See the
+[PPS guide](PPS_Discipliner_Guide.md#1-model-overview) for these distinctions.
+
+Canonical `CPS` emission is attempted for every queued raw capture when output
+is ready, including rejected intervals. Failed PPS sends are not retried.
+Optional `PPS_BASE.d` and `PPS_BASE.c` describe consecutive raw intervals and their
+classification. After an extra edge these may differ from the interval accepted
+for calculations; the remaining discipliner fields and `TUNE_*` describe the
+filtered processing state. No wire columns are added or removed.
+
 ### Disciplining stage
 
 `FreqDiscipliner` maintains:
@@ -110,61 +119,63 @@ In the main loop, `PendulumCore::process_pps()` then:
 - **MAD residual ticks** = the jitter/quality gate used for lock/unlock decisions
 - transitions between `FREE_RUN`, `ACQUIRE`, `DISCIPLINED`, and `HOLDOVER`
 
-### Applied timebase stage
+Fast and slow filters retain Q16 fractional state internally and round only
+when exposing integer-Hz estimates. Small positive and negative frequency errors
+therefore accumulate instead of disappearing through integer shifts.
 
-`DisciplinedTime` is the runtime authority for “how many ticks equal one second right now.” The firmware now exports both raw cycle counts and authoritative per-interval PPS-adjusted cycle counts (`*_adj`) in nominal 16 MHz-equivalent ticks.
+Offline `canonical_metrology` uses PPS phase regression and is deliberately
+separate from firmware parity. `pendulum_analysis.pps.firmware_parity` provides
+`FirmwareParity`, `FirmwareConfig`, and `DiscState` for replaying the current
+Q16 discipliner:
 
-## Pendulum Sample Assembly and Output
+```python
+from pendulum_analysis.pps.firmware_parity import FirmwareParity, FirmwareConfig
 
-`PendulumCore::pendulumLoop()` performs the high-level runtime sequence:
-1. process serial commands
-2. process queued PPS captures and update disciplined time
-3. process queued IR captures via `SwingAssembler`
-4. pop completed `FullSwing` records
-5. copy raw swing fields and per-interval PPS-adjusted `*_adj` fields
-6. attach row-level context/diagnostics (`tick_total_f_hat_hz`, `tock_total_f_hat_hz`, `gps_status`, `holdover_age_ms`, `dropped`, and adjustment diagnostics)
-7. emit the sample through `SerialParser`
+replay = FirmwareParity(config=FirmwareConfig())
+replay.observe("OK", True, 16_000_014, now_ms=1000)
+print(replay.state, replay.fast, replay.slow, replay.applied)
+```
 
-### Raw-cycle sample contract (DERIVED mode)
+Exact replay requires the actual validator class, validity, foreground
+`now_ms`, anomaly flag, reset events and effective tunables for each call.
+PCPS captures alone omit queue timing and timeout calls, so they cannot establish
+exact firmware-state parity. Call `reset(nominal_hz)` on runtime resets and
+update `config` when tunables change. This replay models the current Q16 firmware,
+not historical integer-only estimator output. Cross-language tests compare its
+public telemetry and state transitions against production C++.
 
-When DERIVED mode is selected, the retained sample contract is:
+### Diagnostic frequency stage
 
-- `CFG,protocol_version=1,nominal_hz=<ticks/sec>,sample_tag=SMP,sample_schema=raw_cycles_hz_v7,adj_semantics_version=<n>,fw=<version>`
-- `HDR_PART,<part_index>,<part_count>,...` segmented schema declaration (always enabled)
-- `SMP,...` rows carrying values for exactly those columns
+`DisciplinedTime` tracks the current frequency estimate for health and optional
+telemetry. The shared TCB0 counter continues free-running. All swing calibration
+is performed by the host from captured PPS and swing timestamps.
 
-When CANONICAL mode is selected (the current default), the stream contract is:
+## Swing Assembly and Output
 
-- `CFG,...` / `STS,...` metadata including emit-mode/schema keys
-- `SCH,<tag>,<schema_id>,<csv_fields>` declarations
-- `CSW,...` canonical swing rows
-- `CPS,...` canonical PPS rows
+`PendulumCore::pendulumLoop()` processes commands, queued PPS captures and then
+IR edges. `SwingAssembler` groups alternating IR edges into five-boundary swings.
+Consecutive swings share their terminal/initial edge. Each completed row contains
+six uint32 values (24 bytes): the sequence number and five timestamps.
 
-Raw fields remain capture source truth. Component `*_adj` fields are authoritative PPS-aware sub-interval corrections. `*_total_adj_direct` fields are authoritative PPS-aware full half-swing corrections. `tick_total_f_hat_hz/tock_total_f_hat_hz` remains row-level context and must not be interpreted as a universal per-interval correction factor when exact adjusted fields are present.
+The foreground loop attaches cumulative drop counters and emits `CSW`. A failed
+send leaves the oldest row pending for retry. A full completed-swing ring drops
+the newly completed row and increments its drop counter. Queued raw PPS captures
+are emitted as `CPS` before their health classification.
 
-`adj_semantics_version` is the explicit wire contract for that authority split and diagnostic-family interpretation.
-
-Parser compatibility rule: `HDR_PART` payloads are segmented readability groups, but canonical `SMP` serialization order is `SAMPLE_SCHEMA` / `CsvField` in `PendulumProtocol.h`. Persist `sample_schema`, `adj_semantics_version`, and `hdr_mode` from `cfg`/`CFG` metadata before interpreting row values.
+The stream contains `CFG` and `STS` metadata, full `SCH` declarations, and
+`CSW`/`CPS` captures. See the [wire contract](Protocol_Wire_Contract.md).
 
 ## Serial Commands and Telemetry
 
 ### Command surface
 
-`SerialParser` recognizes only:
-- `help` / `?`
-- `help <command>`
-- `help tunables`
-- `get <param>`
-- `set <param> <value>`
-- `reset defaults`
-- `emit meta`
-- `emit startup`
+`SerialParser` supports help, tunable reads/writes, `reset defaults`,
+`repair eeprom`, and metadata replay (`emit meta` / `emit startup`). The
+[command contract](Command_Interface_Contract.md) owns the complete grammar,
+argument checks, replies and mutation policy.
 
-There is no separate metrics/debug command surface in the reduced firmware.
-
-When `CLI_ALLOW_MUTATIONS=0`, the parser remains readable but mutating commands are blocked:
-- allowed: `help`, `get`, `emit`
-- blocked: `set`, `reset defaults` (returns explicit invalid-param status)
+When `CLI_ALLOW_MUTATIONS=0`, `set`, `reset`, and `repair` return explicit
+invalid-param status; `help`, `get`, and `emit` remain available.
 
 ### Tunable handling
 
@@ -176,72 +187,62 @@ Responsibilities are intentionally split:
 
 ### Retained STS contract
 
-`StatusTelemetry` emits these boot-time `STS,PROGRESS_UPDATE,...` payload families:
+Startup always emits reset-cause/boot-sequence status, `schema`, and mirrored
+`cfg` metadata, followed by capture schema declarations. With
+`ENABLE_DIAGNOSTIC_TELEMETRY=1`, the boot replay additionally includes:
 
-- `rstfr`
 - `build`
-- `schema`
 - `flags`
-- `mem`
+- `PREV_BOOT` when restart breadcrumbs are enabled
+- `mem` when `ENABLE_MEMORY_TELEMETRY_STS=1` (off in the default profile)
+- clock and serial diagnostics subject to their individual gates
 - four tunables snapshot lines emitted as `<param>,<value>,...` pairs:
   - line 1: `ppsFastShift`, `ppsSlowShift`, `ppsBlendLoPpm`, `ppsBlendHiPpm`, `ppsLockRppm`
   - line 2: `ppsLockMadTicks`, `ppsUnlockRppm`, `ppsUnlockMadTicks`, `ppsLockCount`, `ppsUnlockCount`
   - line 3: `ppsHoldoverMs`, `ppsStaleMs`, `ppsIsrStaleMs`, `ppsCfgReemitDelayMs`, `ppsAcquireMinMs`
   - line 4: `ppsMetrologyGraceMs`
-- `cfg`
 - `pps_cfg`
 - `pps_freshness`
 
-Optional families compiled in only when explicitly enabled:
+Other optional families are controlled by their individual flags and profile
+defaults (see [Config_Defines_Guide.md](Config_Defines_Guide.md)):
 
 - `TUNE_CFG`, `TUNE_WIN`, `TUNE_EVT` when `PPS_TUNING_TELEMETRY=1`
 - `PPS_BASE` when `ENABLE_PPS_BASELINE_TELEMETRY=1`
-- `mem_warn` when `ENABLE_MEMORY_LOW_WATER_WARN_STS=1` and free SRAM crosses `MEMORY_LOW_WATER_WARN_BYTES`
+- `mem_warn` when memory telemetry and low-water warnings are enabled and free SRAM crosses `MEMORY_LOW_WATER_WARN_BYTES`
 
 ### Boot record details
 
 - `build` identifies the binary (`git`, dirty bit, UTC, board, MCU, raw toolchain clock, selected main clock source/rate, baud)
-- `schema` states the current `STS` schema version, sample schema name, and EEPROM schema version
+- `schema` states the current `STS` schema version, capture schema IDs, and EEPROM schema version
 - `flags` advertises which intentional compile-time runtime modes were compiled in
 - `mem` reports `free_now`, retained low-water `free_min`, and `phase` (`boot` at startup, `periodic` thereafter at `MEMORY_TELEMETRY_PERIOD_MS`); sampling updates continuously in `pendulumLoop()` to preserve a runtime watermark between emissions
 - the four tunables snapshot lines summarize retained tunables as `param,value` pairs
-- `schema` also publishes `adj_semantics_version` so host parsers can bind adjusted-field meaning before row parsing
-- `cfg` publishes `nominal_hz`, the active sample row tag, the sample schema name, and `adj_semantics_version` for host recovery
-- `CFG` mirrors that sample-stream metadata as a top-level line-tagged record for host recovery, including `adj_semantics_version`
+- `cfg` publishes protocol/schema IDs, nominal counter frequency and firmware identity.
+- `CFG` mirrors that metadata as a top-level record.
 - `pps_cfg` publishes PPS validator acceptance windows and seeding thresholds
 - `pps_freshness` documents the meaning of `ppsStaleMs` vs `ppsIsrStaleMs`
 - `serial_diag` (when emitted) includes both aggregate and required-only emission-drop counters (`fmt_acq_fail_required`, `required_drop`) to make best-effort vs required telemetry loss visible
-
-### Adjusted semantics authority and bump policy
-
-- Authority split:
-  - component `*_adj` fields are authoritative for component/sub-interval analysis
-  - direct-total `*_total_adj_direct` fields are authoritative for full half-swing/period analysis
-- Diagnostic split:
-  - `adj_diag` applies to component adjusted fields only
-  - `adj_comp_diag` encodes per-component degradation (`missing/degraded/multi`) for `tick`, `tick_block`, `tock`, `tock_block`
-  - `*_total_adj_diag` applies to direct-total adjusted fields only
-- Versioning rule:
-  - increment `adj_semantics_version` whenever authority meaning or diagnostic interpretation changes, even if all field names stay the same.
 
 ## Configuration and Persistence
 
 ### Compile-time defaults and supported modes
 
-`Config.h` now contains only active defaults plus intentional supported modes:
+`Config.h` contains runtime defaults, supported mode controls, and some retained
+or reserved flags (see [Config_Defines_Guide.md](Config_Defines_Guide.md)):
 - semantic main clock configuration (`MAIN_CLOCK_HZ`, `USE_EXTCLK_MAIN`)
 - timebase selection (`USE_ARDUINO_TIMEBASE`, `DISABLE_ARDUINO_TCB3_TIMEBASE`)
 - optional telemetry (`PPS_TUNING_TELEMETRY`, `ENABLE_PPS_BASELINE_TELEMETRY`)
 - memory telemetry controls (`ENABLE_MEMORY_TELEMETRY_STS`, `MEMORY_TELEMETRY_PERIOD_MS`, optional `ENABLE_MEMORY_LOW_WATER_WARN_STS` / `MEMORY_LOW_WATER_WARN_BYTES`)
 - serial behavior (`ENABLE_PERIODIC_FLUSH`, `FLUSH_PERIOD_MS`, `LED_ACTIVITY_ENABLE`, `LED_ACTIVITY_DIV`)
-- command mutability (`CLI_ALLOW_MUTATIONS`, where `0` locks `set`/`reset defaults`)
+- command mutability (`CLI_ALLOW_MUTATIONS`, where `0` locks `set`/`reset defaults`/`repair eeprom`)
 - build metadata (`GIT_SHA`, `BUILD_UTC`, `BUILD_DIRTY`)
 
 Historical compile-time leftovers for deleted coherent-now checks and unused fixed-point conversion paths have been removed.
 
-`MAIN_CLOCK_HZ` is the firmware's semantic nominal clock contract for runtime math, validation, and emitted `nominal_hz`/`main_clock_hz` telemetry. It must match the board/toolchain `F_CPU`.
+`MAIN_CLOCK_HZ` is the firmware's semantic nominal clock contract for runtime math, validation, and emitted `nhz`/`main_clock_hz` telemetry. It must match the board/toolchain `F_CPU`.
 
-When `USE_EXTCLK_MAIN=1`, the sketch performs a one-shot boot-time handoff to the ATmega4809 `EXTCLK` input on **PA0 / Arduino D2** before serial and timer initialization. This mode is opt-in, consumes D2/PA0 as the driven clock input, requires the external clock to already be present at boot, and should not be switched dynamically after startup.
+With the default `USE_EXTCLK_MAIN=1`, the early clock initialization performs a one-shot boot-time handoff to the ATmega4809 `EXTCLK` input on **PA0 / Arduino D2** before serial and timer initialization. It consumes D2/PA0 as the driven clock input and requires an external clock at boot matching `F_CPU`. Build with `USE_EXTCLK_MAIN=0` for the internal-clock path; do not switch dynamically after startup.
 
 ### Runtime tunables
 
@@ -252,10 +253,28 @@ The live tunables are only the active discipliner settings:
 - holdover/stale timers (`ppsStaleMs` for queued PPS sample processing freshness, `ppsIsrStaleMs` for ISR-edge freshness)
 - PPS config re-emit delay
 - minimum acquire dwell
+- metrology grace duration (`ppsMetrologyGraceMs`)
 
 ### EEPROM config path
 
-`EEPROMConfig` serializes the tunables through the registry, stores schema-versioned records in alternating slots, validates them with CRC, and only accepts the current schema version. Older layouts fall back to compiled defaults until a fresh `set` or `reset defaults` rewrites EEPROM.
+`EEPROMConfig` serializes the tunables through the registry into two
+schema-versioned, CRC-protected slots. Loading selects the newest semantically
+valid record of the current schema. If neither slot is valid, startup uses
+compiled defaults; there is no automatic migration of older layouts.
+
+`set` validates the candidate against the same semantic rules as EEPROM loading.
+`set` and `reset defaults` acknowledge success only after EEPROM readback verifies
+the header, payload and final commit marker. A failed save returns an error and
+restores the previous live settings, leaving the other valid slot untouched.
+`reset defaults` resets PPS acquisition only after saving succeeds.
+
+`repair eeprom` copies the newest valid saved configuration into an invalid slot
+and verifies it without changing live tunables or PPS acquisition. It is a no-op
+success when both slots are valid and fails without writing when neither is valid.
+See the [command contract](Command_Interface_Contract.md#tunable-command-ack-payload-formats-emittunablecommandack)
+for replies and the [PPS guide](PPS_Discipliner_Guide.md#eeprom-diagnosis-and-repair)
+for slot diagnosis. A missing acknowledgement leaves the host uncertain whether a
+command executed; it does not establish that the save failed.
 
 ## Practical Extension Points
 

@@ -17,7 +17,7 @@ struct TunableDescriptor {
   const char* exampleText;
   const char* helpText;
   void (*printCurrent)(Print& out);
-  bool (*parseAndSet)(const char* value, bool& tuningChanged, bool& headerPending);
+  bool (*parseAndSet)(const char* value, bool& tuningChanged);
   void (*writeToConfig)(TunableConfig& cfg);
   void (*applyFromConfig)(const TunableConfig& cfg);
 };

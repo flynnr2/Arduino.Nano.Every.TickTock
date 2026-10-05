@@ -1,208 +1,135 @@
 # Host Parser State Machine
 
-This document defines a deterministic host-side ingestion state machine for the firmware serial stream across startup, late attach, and replay/on-demand metadata flows.
+This document describes the common readiness requirements and the implemented
+recovery policies of the laptop capture tool and Pi acquisition service for the
+[wire contract](Protocol_Wire_Contract.md). The state names below are conceptual;
+the consumers do not expose one shared state-machine implementation. The retained
+Uno has its own parser in `Uno.R4.Deprecated/src/NanoComm.cpp`.
 
-It complements `Docs/Emit_Mode_Guide.md` and should be applied together with `CFG`/`STS` metadata parsing.
+## Common readiness requirements
 
----
+| State         | Behavior                                                                                            |
+| ------------- | --------------------------------------------------------------------------------------------------- |
+| `WAIT_CFG`    | Preserve available raw evidence; await a supported CFG contract                                     |
+| `WAIT_SCHEMA` | Await complete, supported CSW and CPS SCH declarations                                              |
+| `READY`       | Accept valid capture rows, subject to the consumer's sequence policy                                |
+| `RECOVER`     | Pause structured capture while restoring metadata, or end the laptop run on a fatal contract change |
 
-## 1) Deterministic states
+Data acceptance requires supported `CFG` and valid `SCH` declarations for both
+capture families. Both consumers can cache schemas before CFG. Neither
+backfills pre-readiness captures into structured files. Valid rows have the
+expected field count and decimal unsigned values within the
+[wire field ranges](Protocol_Wire_Contract.md#pps-records). Both Python parsers
+limit each capture value to ten digits.
 
-Recommended parser states:
+`emit meta` emits mirrored `STS ... cfg`, standalone `CFG`, and both `SCH`
+declarations. `emit startup` additionally replays boot/status metadata. The
+Python consumers use standalone CFG/SCH for readiness; they do not require the
+status-schema record. Identical metadata replay alone is idempotent. No consumer
+should silently reinterpret existing CSV columns after a contract change.
 
-- `WAIT_CFG`
-  - Ignore data rows.
-  - Accept and cache `STS` lines.
-  - Transition only after a valid `CFG` is seen.
-- `WAIT_SCHEMA`
-  - `CFG` is known; `emit_mode` branch is known.
-  - Accept only mode-appropriate schema declaration rows:
-    - CANONICAL: `SCH`
-    - DERIVED: full `HDR_PART` set
-- `READY`
-  - Schema readiness satisfied for active mode.
-  - Accept data rows:
-    - CANONICAL: `CSW` and `CPS`
-    - DERIVED: `SMP`
-- `RECOVER`
-  - Entered on malformed or out-of-order contract violations.
-  - Drop/ignore data rows until parser regains `CFG + schema` readiness.
+## Consumer recovery policies
 
-### Startup/attach gating rule (hard requirement)
+The Pi service is designed to rejoin a continuous deployment. The laptop tool
+owns one output directory and stops on an incompatible or changed contract.
+These distinctions are observable behaviour, not alternative interpretations of
+the wire schema.
 
-A host MUST begin accepting data rows only after both are true:
+| Input or event                                   | Laptop capture tool                               | Pi acquisition service                                                               |
+| ------------------------------------------------ | ------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| Identical CFG and SCH replay                     | Preserve readiness and files                      | Preserve readiness, session and sequence tracking                                    |
+| Supported CFG changes `nhz` or `fw`              | End run with an error                             | Open a new session, cache new CFG, await both schemas                                |
+| Added or changed extra CFG keys                  | Preserve metadata; continue in same files         | Any dictionary change opens a new session and requires schemas again                 |
+| Unsupported protocol or complete SCH declaration | End run with an error                             | Reject and clear readiness; start a new session if previously ready                  |
+| Malformed CFG or SCH                             | Clear readiness; await valid CFG and both schemas | Clear readiness; start a new session if previously ready                             |
+| Malformed CSW, CPS or STS                        | Count and skip; keep readiness                    | Count and skip; keep readiness                                                       |
+| Unknown tag or ordinary text                     | Count as malformed and skip; keep readiness       | Unknown tag clears readiness; recognized command text is ignored after raw retention |
+| Duplicate capture sequence                       | Write row unchanged                               | Count and exclude from structured captures                                           |
+| Forward sequence gap                             | Write row unchanged                               | Record missing count and accept current row                                          |
+| Backward/reordered sequence after readiness      | Write row unchanged                               | Open a new session and require fresh metadata; triggering row stays raw only         |
+| Serial disconnect                                | End run; no reconnect                             | Recover and reopen serial connection; rejoin with metadata                           |
+| Receiver queue overflow                          | No independent receive queue                      | Record loss and open a new session requiring fresh metadata                          |
 
-1. `CFG` has been parsed successfully, and
-2. Mode-specific schema readiness has been reached:
-   - CANONICAL: at least one valid `SCH` for each emitted family used by host logic (`CSW`, `CPS`).
-   - DERIVED: one complete `HDR_PART` sequence that can be assembled into the active sample header.
+The Pi interprets a modular sequence step of zero as a duplicate, `1..2^31-1`
+as forward progress (including normal wrap), and `2^31..2^32-1` as a restart or
+reorder. This is detected independently for CSW and CPS; a reset is not guaranteed
+to be recognized if its first observed sequence looks forward. A Nano reset that
+replays identical metadata alone does not rotate either consumer's recording.
+The laptop preserves reset evidence in the original sequence/drop counters;
+the Pi rotates once a backward sequence is observed.
 
-Until then, rows that look like samples are ignored as preamble noise.
+Pi recognized text is an empty line or a line starting with `get:`, `set:`,
+`reset:`, `ERROR:`, `help`, or `Usage:`. Other human help lines may therefore
+trigger recovery. The laptop validates STS codes against the six wire tokens;
+the Pi requires only a nonempty status code and preserves the payload.
 
----
+## Framing and metadata limits
 
-## 2) Replay / on-demand flow
+| Detail                           | Laptop capture tool                                                 | Pi acquisition service                                                                                 |
+| -------------------------------- | ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| Text decoding                    | UTF-8; unsupported text is counted/skipped                          | ASCII; rejects NUL and embedded CR/LF                                                                  |
+| CFG nominal frequency            | `1..4294967295` ticks/s                                             | `1000..4294967295` ticks/s; at most ten digits                                                         |
+| CFG extra values                 | Nonempty values required                                            | Empty values allowed for extra keys                                                                    |
+| Oversized input                  | More than 4096 bytes before LF clears readiness and is counted once | Framer emits bounded 2048-byte fragments; fragments are counted and skipped without clearing readiness |
+| Incomplete final line            | Retained raw and counted as malformed                               | Retained as a fragment when transport closes                                                           |
+| Initial serial line              | Parse if complete and valid                                         | Treat first line as a fragment even if apparently complete                                             |
+| Metadata requests in serial mode | Immediately, then at about 3 and 6 seconds; fail at 10 seconds      | Immediately while unready, then every 5 seconds without a readiness deadline                           |
+| Passive/replay operation         | `--passive` sends nothing and has no readiness deadline             | File replay sends nothing and uses file metadata                                                       |
+| Reconnect delay                  | Not implemented                                                     | About 2 seconds between serial open attempts                                                           |
 
-The command plane supports replay without reboot.
+The laptop's 4096-byte check excludes LF but includes any preceding CR. The Pi
+framer checks LF before its size bound: a line ending with LF as byte 2048 is a
+complete frame; 2048 non-LF bytes begin discarded fragments until the next LF.
+Pi queue capacity is configurable; a full queue can lose raw bytes as well as
+structured rows. Pi raw retention also depends on logging/storage availability.
+See [Pi recording guarantees](../Raspberry.Pi/DATA_FORMAT.md) for those limits.
 
-### After `emit meta`
-
-Treat emitted lines as metadata refresh:
-
-- Expect replayed `STS` metadata records.
-- Expect `CFG` replay.
-- Expect mode schema declaration replay (`SCH` or `HDR_PART` set).
-- Keep current state, but re-validate cached contract values.
-
-If replayed metadata is identical, remain `READY` with no reset of sample counters.
-If any contract-defining value changes (mode/schema id/header composition), perform a contract rollover:
-
-1. Mark prior contract closed.
-2. Re-enter `WAIT_SCHEMA` (or `WAIT_CFG` if `CFG` became invalid/missing).
-3. Resume data acceptance only after readiness is re-established.
-
-### After `emit startup`
-
-Treat this as startup stream replay in-band:
-
-- Replayed boot/config `STS` are informational.
-- Replayed `CFG` + schema declarations are authoritative for current contract.
-- Apply the same rollover rule as `emit meta` when contract-defining values differ.
-
-### Duplicate/replayed `STS`, config, and schema rows
-
-- `STS`: idempotent; safe to deduplicate by `(tag,family,payload)` or accept as append-only telemetry.
-- `CFG`: idempotent only when values match current contract.
-- `SCH` / `HDR_PART`: idempotent only when declaration content matches currently active schema cache.
-- Non-identical duplicates are **schema/config change events**, not harmless duplicates.
-
----
-
-## 3) Mode branch logic
-
-Branch strictly by `emit_mode` from `CFG` (or mirrored `STS cfg`).
-
-### CANONICAL path
-
-Expected order:
-
-1. `CFG ... em=CANONICAL`
-2. `SCH,...` declarations (for canonical families)
-3. data rows: `CSW,...` and/or `CPS,...`
-
-Acceptance rules:
-
-- Reject/ignore `SMP` while in CANONICAL mode.
-- If a new `SCH` changes declared canonical schema mid-stream, pause data acceptance and perform rollover to `WAIT_SCHEMA` then `READY`.
-
-### DERIVED path
-
-Expected order:
-
-1. `CFG ... em=DERIVED`
-2. full `HDR_PART` set (all segments needed for complete header)
-3. data rows: `SMP,...`
-
-Acceptance rules:
-
-- Reject/ignore `CSW`/`CPS` while in DERIVED mode.
-- Any incomplete or mismatched `HDR_PART` assembly keeps parser in `WAIT_SCHEMA`.
-
----
-
-## 4) Recovery rules
-
-### Malformed line
-
-- If line cannot be tokenized/validated for its tag, increment parse error counter and drop line.
-- Stay in current state unless malformed line is a contract line (`CFG`, `SCH`, `HDR_PART`) required for readiness; then move to `RECOVER`.
-
-### Out-of-order line
-
-- Data row before readiness (`CFG + schema`) => drop row, count as out-of-order, remain waiting.
-- Wrong-family row for active mode => drop row, count mode violation.
-
-### Schema/config changes mid-stream
-
-Trigger rollover when any of these change:
-
-- `emit_mode`
-- schema id/version identifiers
-- canonical `SCH` definition affecting consumed families
-- assembled DERIVED header text from `HDR_PART`
-
-Rollover algorithm:
-
-1. Emit host-side event `contract_changed` with old/new fingerprints.
-2. Freeze data ingestion.
-3. Re-enter `WAIT_CFG` or `WAIT_SCHEMA` as appropriate.
-4. Resume in `READY` only after fresh readiness criteria pass.
-
----
-
-## 5) Minimal conformance sequence snippets
-
-Snippets below show the required ordering constraints; payload fields abbreviated with `...`.
-
-### A) Fresh boot
-
-CANONICAL:
+## Example sequence
 
 ```text
 STS,...build...
+STS,...schema...
 STS,...cfg...
-CFG,...em=CANONICAL,...
-SCH,...canonical_swing_v1...
-SCH,...canonical_pps_v1...
+CFG,pv=3,nhz=16000000,cst=CSW,css=canonical_swing_v2,cpt=CPS,cps=canonical_pps_v1,fw=<version>
+SCH,CSW,canonical_swing_v2,seq,edge0_tcb0,edge1_tcb0,edge2_tcb0,edge3_tcb0,edge4_tcb0,drop_ir,drop_pps,drop_swing
+SCH,CPS,canonical_pps_v1,seq,edge_tcb0,gps_status,holdover_age_ms,cap16,latency16,now32,drop_pps
 CSW,...
 CPS,...
 ```
 
-DERIVED:
+A host attaching during a run may initially see data before metadata. Preserve
+those lines as raw input and request `emit meta` to reach readiness. The bundled
+capture tool requests this replay automatically unless `--passive` is selected.
 
-```text
-STS,...build...
-STS,...cfg...
-CFG,...em=DERIVED,...
-HDR_PART,1/N,...
-...
-HDR_PART,N/N,...
-SMP,...
-```
+## Bundled laptop capture tool
 
-### B) Late host attach
+The [Nano capture tool](../tools/README.md) writes received bytes to
+`wire_raw.log` before parsing, including malformed input and original line
+endings. It counts malformed and pre-readiness rows and continues waiting.
+Unknown tags are counted and skipped. Valid data rows must have the declared
+field count and unsigned integer values within the firmware fields' ranges.
 
-If attach occurs mid-run and first observed row is data, host waits:
+The policies and deadlines in the tables above apply throughout the run. After
+a fatal error, start another recording in a new directory; the tool neither
+changes output schemas nor creates sessions itself. The old reference logger and
+ingest example have been replaced by this single entry point.
 
-```text
-CSW,...              # ignored until readiness
-STS,...cfg...        # cached
-CFG,...em=CANONICAL,...
-SCH,...canonical_swing_v1...
-SCH,...canonical_pps_v1...
-CSW,...              # first accepted data row
-```
+Persist protocol/schema IDs, nominal frequency and firmware identity alongside
+each recording. Check sequence gaps and cumulative drop-counter changes as well
+as host parse-error counts; no single counter reports every possible loss.
 
-Equivalent DERIVED behavior requires a complete `HDR_PART` set before first accepted `SMP`.
+## Implementation and verification owners
 
-### C) On-demand metadata refresh
+- [`tools/nano_capture.py`](../tools/nano_capture.py): framing, readiness,
+  fatal contract changes, output files and serial request deadline.
+- [`Raspberry.Pi/pendulum_pi/protocol.py`](../Raspberry.Pi/pendulum_pi/protocol.py):
+  decoding, contract comparison, framing and modular sequence classification.
+- [`Raspberry.Pi/pendulum_pi/service.py`](../Raspberry.Pi/pendulum_pi/service.py):
+  recovery, session boundaries, raw retention and sequence acceptance.
+- [`Raspberry.Pi/pendulum_pi/transport.py`](../Raspberry.Pi/pendulum_pi/transport.py):
+  metadata retries, reconnects and bounded receive queue.
 
-```text
-... READY ingesting data ...
-(Host/user issues: emit meta)
-STS,...cfg...
-CFG,...
-SCH,...   or HDR_PART,...
-... READY continues (if unchanged) ...
-```
-
-If refreshed declarations differ, parser performs rollover and resumes only after new readiness.
-
----
-
-## 6) Host implementation notes
-
-- Compute a compact **contract fingerprint** from (`emit_mode`, schema identifiers, full declaration text).
-- Store the active fingerprint alongside captured rows.
-- Segment output files/partitions at fingerprint changes to prevent mixed-contract analytics.
-- Keep counters for dropped pre-readiness rows, malformed rows, and mode violations for observability.
+Existing checks are in `tests/test_nano_capture.py`,
+`tests/test_capture_protocol.py`, and `tests/raspberry_pi/test_acquisition.py`.
+They complement code inspection; hardware reconnect and logging acceptance are
+separate checks in [Pi hardware tests](../Raspberry.Pi/HARDWARE_TESTS.md).

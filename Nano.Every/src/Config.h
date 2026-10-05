@@ -73,7 +73,8 @@ static_assert(static_cast<uint32_t>(MAIN_CLOCK_HZ) == static_cast<uint32_t>(F_CP
 // delta_ccmp = tcb1_ccmp - tcb2_ccmp in different local TCB domains,
 // so it includes true path delay + fixed TCB1/TCB2 counter phase offset.
 // delta_ext = tcb1_ext - tcb2_ext after both are reconstructed into the
-// shared TCB0 timeline, so it is the more meaningful cross-path edge delta.
+// shared TCB0 timeline with configured filter delay removed, so it is the
+// more meaningful cross-path edge delta.
 // Neither value is PPS disciplining correction.
 #ifndef DUAL_PPS_PROFILING
 #define DUAL_PPS_PROFILING 1
@@ -100,7 +101,7 @@ static_assert(static_cast<uint32_t>(MAIN_CLOCK_HZ) == static_cast<uint32_t>(F_CP
 // - Keep diagnostics on by default while environmental sensors remain off.
 // - Sensor-specific flags stay disabled until sensor integration lands.
 #ifndef ENABLE_DIAGNOSTIC_TELEMETRY
-#define ENABLE_DIAGNOSTIC_TELEMETRY 0
+#define ENABLE_DIAGNOSTIC_TELEMETRY 1
 #endif
 
 #ifndef ENABLE_ENV_SENSORS
@@ -286,7 +287,6 @@ const uint8_t ledPin = static_cast<uint8_t>(LED_BUILTIN);
 constexpr uint8_t  RING_SIZE_SWING_ROWS             = 8;       // completed full-swing row ring depth (slower-rate queue than edge capture)
 constexpr uint8_t  RING_SIZE_IR_SENSOR              = 32;      // IR edge ring depth (4x swing-row depth to absorb ISR bursts)
 constexpr uint8_t  RING_SIZE_PPS                    = 8;       // PPS capture ring depth
-constexpr uint8_t  PPS_SCALE_RING_SIZE              = 8;       // finalized PPS-second scale spans retained for interval correction
 constexpr uint8_t  PPS_FAST_SHIFT_DEFAULT           = 3;       // fast EWMA gain (~8 s)
 constexpr uint8_t  PPS_SLOW_SHIFT_DEFAULT           = 8;       // slow EWMA gain (~4.3 min)
 constexpr uint8_t  PPS_SHIFT_MIN                    = 1;       // smallest supported EWMA shift

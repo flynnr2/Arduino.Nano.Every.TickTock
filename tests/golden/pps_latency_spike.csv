@@ -1,0 +1,5 @@
+seq,pps_t_s,valid_pps_interval,latency16,cap16,gps_status
+0,0.0,true,97,0,2
+1,1.0,true,97,4096,2
+2,2.0,true,1254,8192,2
+3,3.0,true,97,12288,2

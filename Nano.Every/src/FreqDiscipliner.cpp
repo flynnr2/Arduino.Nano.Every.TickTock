@@ -3,6 +3,18 @@
 namespace {
 static constexpr uint8_t kMadWindowSize = 31;
 
+// Q16 retains sub-tick EWMA corrections for every supported shift (1..15).
+// Shifting the unsigned magnitude truncates toward zero on both sides; signed
+// right shift would introduce a negative-error bias. The update is a convex
+// combination in [0, UINT32_MAX << 16], so intermediates fit in int64_t.
+static uint32_t update_frequency(uint64_t& state_q16, uint32_t sample, uint8_t shift) {
+  const int64_t target = (int64_t)((uint64_t)sample << 16);
+  const int64_t error = target - (int64_t)state_q16;
+  const uint64_t step = (uint64_t)(error < 0 ? -error : error) >> shift;
+  state_q16 = (error < 0) ? state_q16 - step : state_q16 + step;
+  return (uint32_t)((state_q16 + 32768ULL) >> 16);
+}
+
 static uint32_t abs_i32(int32_t v) {
   return (uint32_t)(v >= 0 ? v : -v);
 }
@@ -47,6 +59,8 @@ void FreqDiscipliner::reset(uint32_t f_cpu_nominal) {
   f_fast_ = f_cpu_nominal;
   f_slow_ = f_cpu_nominal;
   f_hat_ = f_cpu_nominal;
+  fast_q16_ = (uint64_t)f_cpu_nominal << 16;
+  slow_q16_ = (uint64_t)f_cpu_nominal << 16;
   r_ppm_ = 0;
   err_fast_ticks_ = 0;
   err_slow_ticks_ = 0;
@@ -99,11 +113,8 @@ void FreqDiscipliner::observe(PpsValidator::SampleClass cls, bool pps_valid, uin
 
   const bool sample_ok = (cls == PpsValidator::SampleClass::OK);
   if (pps_valid && sample_ok) {
-    const int32_t err_fast = (int32_t)n_k - (int32_t)f_fast_;
-    f_fast_ = (uint32_t)((int32_t)f_fast_ + (err_fast >> Tunables::ppsFastShiftActive()));
-
-    const int32_t err_slow = (int32_t)n_k - (int32_t)f_slow_;
-    f_slow_ = (uint32_t)((int32_t)f_slow_ + (err_slow >> Tunables::ppsSlowShiftActive()));
+    f_fast_ = update_frequency(fast_q16_, n_k, Tunables::ppsFastShiftActive());
+    f_slow_ = update_frequency(slow_q16_, n_k, Tunables::ppsSlowShiftActive());
 
     const uint32_t abs_diff = (f_fast_ > f_slow_) ? (f_fast_ - f_slow_) : (f_slow_ - f_fast_);
     r_ppm_ = (f_slow_ > 0) ? (uint32_t)((1000000ULL * abs_diff) / f_slow_) : 0;

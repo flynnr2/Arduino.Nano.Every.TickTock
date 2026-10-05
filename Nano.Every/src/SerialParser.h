@@ -17,11 +17,14 @@ constexpr size_t   CSV_STS_WRAP_WORST_CASE =
     1 +                         // comma between tag and status code
     CSV_STS_STATUS_TOKEN_MAX +  // status code token
     1 +                         // comma before message text payload
-    1 +                         // trailing '\n' from sendTaggedCsvLine(...)
+    1 +                         // trailing '\n' from status framing
     1;                          // terminating '\0' in line buffer
-// printCsvHeader() emits TAG_HDR_PART lines.
-static_assert(CSV_LINE_MAX > HDR_PART_LINE_MAX_ENCODED_LEN,
-              "CSV_LINE_MAX must fit the full encoded HDR_PART line plus NUL terminator");
+static_assert(CSV_LINE_MAX >= sizeof(TAG_SCH) + sizeof(TAG_CSW) +
+                  sizeof(CANONICAL_SWING_SCHEMA_ID) + sizeof(CANONICAL_SWING_SCHEMA) + 1U,
+              "CSV_LINE_MAX must fit the full swing SCH declaration");
+static_assert(CSV_LINE_MAX >= sizeof(TAG_SCH) + sizeof(TAG_CPS) +
+                  sizeof(CANONICAL_PPS_SCHEMA_ID) + sizeof(CANONICAL_PPS_SCHEMA) + 1U,
+              "CSV_LINE_MAX must fit the full PPS SCH declaration");
 static_assert(CSV_STS_WRAP_MAX >= CSV_STS_WRAP_WORST_CASE,
               "CSV_STS_WRAP_MAX is too small for worst-case STS wrapper length");
 static_assert(CSV_PAYLOAD_MAX > 0, "CSV_PAYLOAD_MAX must leave room for STS wrapper");
@@ -57,8 +60,6 @@ void processSerialCommands();
 // Reentry is only supported within foreground callers; ISR callers must defer work.
 bool queueCSVLine(const char* buf, int len,
                   EmissionReliability reliability = EmissionReliability::BestEffort);
-void sendTaggedCsvLine(const char* tag, const char* text);
-bool sendSample(const PendulumSample &s);
 bool sendCanonicalSwingSample(const CanonicalSwingSample& s);
 bool sendCanonicalPpsSample(const CanonicalPpsSample& s);
 void sendStatus(StatusCode code, const char* text,

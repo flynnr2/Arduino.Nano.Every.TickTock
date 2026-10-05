@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Pendulum analysis clock profile",
+  "type": "object",
+  "required": ["id", "display_name", "capabilities"],
+  "properties": {
+    "id": {"type": "string"},
+    "display_name": {"type": "string"},
+    "description": {"type": "string"},
+    "nominal_period_s": {"type": ["number", "null"]},
+    "nominal_half_period_s": {"type": ["number", "null"]},
+    "cycle_period_s": {"type": ["number", "null"]},
+    "cycle_events": {"type": ["integer", "null"]},
+    "impulse_cycle_events": {"type": ["integer", "null"]},
+    "phase": {
+      "type": "object",
+      "properties": {
+        "primary_modulus": {"type": ["integer", "null"]},
+        "expected_moduli": {"type": "array", "items": {"type": "integer"}},
+        "event_unit": {"type": "string"},
+        "description": {"type": "string"}
+      },
+      "additionalProperties": true
+    },
+    "expected_phase_moduli": {"type": "array", "items": {"type": "integer"}},
+    "harmonic_families": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["base_period_s"],
+        "properties": {
+          "id": {"type": "string"},
+          "name": {"type": "string"},
+          "label": {"type": "string"},
+          "base_period_s": {"type": "number"},
+          "max_order": {"type": "integer"},
+          "min_period_s": {"type": ["number", "null"]},
+          "max_period_s": {"type": ["number", "null"]},
+          "enabled_by_capability": {"type": "string"}
+        },
+        "additionalProperties": true
+      }
+    },
+    "capabilities": {
+      "type": "object",
+      "additionalProperties": {"type": "boolean"}
+    },
+    "annotations": {
+      "type": "object",
+      "properties": {
+        "fft": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "label"],
+            "properties": {
+              "id": {"type": "string"},
+              "label": {"type": "string"},
+              "period_s": {"type": ["number", "null"]},
+              "frequency_hz": {"type": ["number", "null"]},
+              "enabled_by_capability": {"type": "string"}
+            },
+            "additionalProperties": true
+          }
+        }
+      },
+      "additionalProperties": true
+    },
+    "notes": {"type": "string"},
+    "analysis_defaults": {"type": "object"}
+  },
+  "additionalProperties": true
+}

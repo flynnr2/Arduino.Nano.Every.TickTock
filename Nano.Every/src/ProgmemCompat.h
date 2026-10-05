@@ -13,22 +13,6 @@
 #include <avr/pgmspace.h>
 #endif
 
-inline const char* flashStrAt(const char* const* table, uint8_t index) {
-#ifdef __AVR__
-  return reinterpret_cast<const char*>(pgm_read_ptr(&table[index]));
-#else
-  return table[index];
-#endif
-}
-
-inline size_t flashStrLen(const char* text) {
-#ifdef __AVR__
-  return text ? strlen_P(text) : 0;
-#else
-  return text ? strlen(text) : 0;
-#endif
-}
-
 inline int cmpRamToFlash(const char* ramText, const char* flashText) {
   if (!ramText || !flashText) return (ramText == flashText) ? 0 : 1;
 #ifdef __AVR__

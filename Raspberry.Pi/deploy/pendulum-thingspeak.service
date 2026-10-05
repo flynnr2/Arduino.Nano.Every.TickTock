@@ -1,0 +1,28 @@
+[Unit]
+Description=Optional hourly Pendulum ThingSpeak clock diary
+After=systemd-tmpfiles-setup.service
+ConditionPathExists=/var/lib/pendulum/thingspeak.json
+
+[Service]
+Type=oneshot
+User=pendulum
+Group=pendulum
+WorkingDirectory=/var/lib/pendulum
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecCondition=/opt/pendulum/venv/bin/python -m pendulum_pi thingspeak --config /var/lib/pendulum/config.json --publisher-config /var/lib/pendulum/thingspeak.json --check-ready
+ExecStart=/opt/pendulum/venv/bin/python -m pendulum_pi thingspeak --config /var/lib/pendulum/config.json --publisher-config /var/lib/pendulum/thingspeak.json
+TimeoutStartSec=20
+TimeoutStopSec=2
+KillMode=control-group
+Restart=no
+Nice=19
+IOSchedulingClass=idle
+UMask=0077
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateDevices=true
+PrivateTmp=true
+ReadWritePaths=/run/pendulum/thingspeak /var/lib/pendulum/thingspeak
+

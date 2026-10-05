@@ -1,0 +1,25 @@
+id: generic
+display_name: Generic event clock
+description: Generic clock or pendulum timing stream with no clock-family interpretation.
+nominal_period_s: null
+nominal_half_period_s: null
+cycle_period_s: null
+cycle_events: null
+phase:
+  primary_modulus: null
+  expected_moduli: []
+  event_unit: event
+  description: ""
+harmonic_families: []
+capabilities:
+  tick_tock: false
+  block_intervals: false
+  impulse_cycle: false
+  one_sided_impulse: false
+  electrical_drive: false
+  remontoire: false
+  train_impulse: false
+  balance_wheel: false
+annotations:
+  fft: []
+notes: "Generic timing profile: event intervals, rate, stability, residuals, and data quality only."

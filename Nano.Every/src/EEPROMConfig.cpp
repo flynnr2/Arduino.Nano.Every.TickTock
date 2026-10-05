@@ -119,7 +119,9 @@ static void decodePayload(const uint8_t* payload, TunableConfig& cfgOut) {
   cfgOut.ppsMetrologyGraceMs = readU32LE(payload + PAYLOAD_OFF_METROLOGY_GRACE_MS);
 }
 
-static bool validateSemantics(const TunableConfig& cfg) {
+} // namespace
+
+bool validateConfig(const TunableConfig& cfg) {
   if (cfg.ppsFastShift < PPS_SHIFT_MIN || cfg.ppsFastShift > PPS_SHIFT_MAX) return false;
   if (cfg.ppsSlowShift < PPS_SHIFT_MIN || cfg.ppsSlowShift > PPS_SHIFT_MAX) return false;
   if (cfg.ppsSlowShift < cfg.ppsFastShift) return false;
@@ -145,6 +147,8 @@ static bool validateSemantics(const TunableConfig& cfg) {
 
   return true;
 }
+
+namespace {
 
 static bool isSeqNewer(uint32_t a, uint32_t b) {
   return (int32_t)(a - b) > 0;
@@ -200,7 +204,7 @@ static DecodedRecord readRecordAt(uint8_t addr) {
   }
 
   decodePayload(payload, out.cfg);
-  if (!validateSemantics(out.cfg)) {
+  if (!validateConfig(out.cfg)) {
     out.code = EepromSlotCode::Sem;
     return out;
   }
@@ -235,6 +239,8 @@ uint16_t computeCRC16(const uint8_t* data, size_t len) {
 }
 
 const EepromLoadDiag& getEepromLoadDiag() {
+  TunableConfig ignored;
+  loadConfig(ignored);
   return gLoadDiag;
 }
 
@@ -302,11 +308,11 @@ bool loadConfig(TunableConfig &out) {
   return false;
 }
 
-void saveConfig(TunableConfig cfg) {
+bool saveConfig(TunableConfig cfg) {
   uint8_t payload[EEPROM_PAYLOAD_SIZE];
   encodePayload(cfg, payload);
-  if (!validateSemantics(cfg)) {
-    return;
+  if (!validateConfig(cfg)) {
+    return false;
   }
 
   const DecodedRecord a = readRecordAt(EEPROM_SLOT_NANO_A_ADDR);
@@ -329,10 +335,28 @@ void saveConfig(TunableConfig cfg) {
   header[HEADER_OFF_RESERVED1] = 0U;
   header[HEADER_OFF_RESERVED2] = 0U;
 
-  // Transactional write order: uncommitted header, payload, committed marker last.
+  // Invalidate FIRST, before changing even a sequence/header byte. The other
+  // valid slot remains untouched if power fails or this slot cannot be written.
+  EEPROM.update((int)addr + HEADER_OFF_COMMITTED, EEPROM_UNCOMMITTED_MARKER);
+  if (EEPROM.read((int)addr + HEADER_OFF_COMMITTED) != EEPROM_UNCOMMITTED_MARKER) return false;
   eepromUpdateBytes(addr, header, EEPROM_HEADER_SIZE);
   eepromUpdateBytes((uint8_t)(addr + EEPROM_HEADER_SIZE), payload, EEPROM_PAYLOAD_SIZE);
+  // Verify every byte before publishing the new record.
+  for (uint8_t i = 0; i < EEPROM_HEADER_SIZE; ++i) {
+    if (EEPROM.read((int)addr + i) != header[i]) return false;
+  }
+  for (uint8_t i = 0; i < EEPROM_PAYLOAD_SIZE; ++i) {
+    if (EEPROM.read((int)addr + EEPROM_HEADER_SIZE + i) != payload[i]) return false;
+  }
   EEPROM.update((int)addr + (int)HEADER_OFF_COMMITTED, EEPROM_COMMITTED_MARKER);
-
+  if (EEPROM.read((int)addr + HEADER_OFF_COMMITTED) != EEPROM_COMMITTED_MARKER) return false;
   currentSeq = nextSeq;
+  return true;
+}
+
+bool repairEeprom() {
+  TunableConfig saved;
+  if (!loadConfig(saved)) return false;
+  if (gLoadDiag.slotA == EepromSlotCode::Ok && gLoadDiag.slotB == EepromSlotCode::Ok) return true;
+  return saveConfig(saved);
 }

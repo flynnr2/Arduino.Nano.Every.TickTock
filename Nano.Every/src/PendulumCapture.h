@@ -13,9 +13,7 @@ struct PpsCapture {
   uint32_t seq;
   uint32_t edge32;
   uint32_t now32;
-  uint16_t ovf;
   uint16_t cap16;
-  uint16_t cnt;
   uint16_t latency16;
 #if ENABLE_PROFILING && DUAL_PPS_PROFILING
   uint32_t rise_seq;
@@ -84,12 +82,10 @@ uint32_t tcb0NowCoherentMainLoop();
 // Foreground-safe coherent 64-bit read (uses ATOMIC_BLOCK internally).
 uint64_t tcb0NowCoherent64();
 
-uint32_t captureDroppedEvents();
 uint32_t captureDroppedIrEvents();
 uint32_t captureDroppedPpsEvents();
 uint32_t captureDroppedSwingRows();
 uint32_t capturePpsSeen();
-void captureRecordDroppedEvent();
 void captureRecordSwingRowDrop();
 
 #if ENABLE_PROFILING && DUAL_PPS_PROFILING

@@ -1,0 +1,29 @@
+[Unit]
+Description=Arduino Pendulum Timer environmental sensors
+After=systemd-tmpfiles-setup.service pendulum-i2c-recovery.service
+Wants=pendulum-i2c-recovery.service
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=pendulum
+Group=pendulum
+SupplementaryGroups=dialout i2c
+WorkingDirectory=/var/lib/pendulum
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/opt/pendulum/venv/bin/python -m pendulum_pi sensors --config /var/lib/pendulum/config.json
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=15
+KillMode=control-group
+WatchdogSec=30
+NotifyAccess=main
+UMask=0027
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/pendulum /run/pendulum /run/pendulum-i2c
+
+[Install]
+WantedBy=multi-user.target
