@@ -29,6 +29,7 @@ class SensorHistory:
             self.connection.execute('PRAGMA synchronous=NORMAL')
             self.connection.execute('PRAGMA max_page_count=16384')  # 64 MiB with default pages.
             self.connection.execute('CREATE TABLE IF NOT EXISTS samples (boot TEXT, mono REAL, epoch REAL, payload TEXT, PRIMARY KEY(boot,mono))')
+            self.connection.execute('CREATE INDEX IF NOT EXISTS sample_epoch ON samples(epoch)')
         with self.connection:
             pages = self.connection.execute('PRAGMA page_count').fetchone()[0]
             free = self.connection.execute('PRAGMA freelist_count').fetchone()[0]
@@ -39,7 +40,9 @@ class SensorHistory:
             if now - self.last_prune >= 60:
                 # Two days comfortably exceed the bounded serial backlog. Values
                 # joined to captures are retained with those captures thereafter.
-                self.connection.execute('DELETE FROM samples WHERE epoch < ?', (time.time() - 2 * 86400,))
+                self.connection.execute('DELETE FROM samples WHERE rowid IN '
+                                        '(SELECT rowid FROM samples WHERE epoch < ? ORDER BY epoch LIMIT 2048)',
+                                        (time.time() - 2 * 86400,))
                 self.last_prune = now
         self.last = now
 

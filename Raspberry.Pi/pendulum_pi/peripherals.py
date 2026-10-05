@@ -17,6 +17,8 @@ from .common import atomic_json, read_json, utc_now, notify_watchdog
 from .i2c_bus import BusCoordinator, BusBusy, BusSuspended
 from .oled import ChangedPagesOLED, OledView, oled_lines
 
+BMP280_SETTLING_SECONDS = .1
+
 
 def _close(bus):
     if bus is not None:
@@ -76,12 +78,14 @@ class SensorChannel:
     pressure_reference: float | None = None
     pressure_constant_since: float | None = None
     pressure_constant_suspect: bool = False
+    warming_up: bool = False
     coordinator: object = None
     generation: str | None = None
 
     def close(self):
         _close(self.bus)
         self.bus = self.sensor = None
+        self.warming_up = False
 
     def poll(self, settings, now, factory=None, clock=None):
         if self.coordinator is None:
@@ -105,6 +109,17 @@ class SensorChannel:
                     self.generation = generation
                 if self.sensor is None:
                     self.bus, self.sensor = factory(self.name, settings)
+                    if self.name == "bmp280":
+                        # Start/discard a conversion, then release the bus while
+                        # it settles. Startup register contents never become a
+                        # measured value, timestamp or constant-pressure baseline.
+                        self.sensor.pressure
+                        self.warming_up = True
+                        self.ok, self.error = False, None
+                        self.pressure_reference = self.pressure_constant_since = None
+                        self.pressure_constant_suspect = False
+                        self.next_attempt = clock() + BMP280_SETTLING_SECONDS
+                        return
                 if self.name == "sht4x":
                     temperature, humidity = map(float, self.sensor.measurements)
                     if not (math.isfinite(temperature) and -40 <= temperature <= 125
@@ -129,6 +144,7 @@ class SensorChannel:
             self.values = values
             self.last_good_monotonic = finished
             self.ok, self.error, self.consecutive_failures = True, None, 0
+            self.warming_up = False
             self.next_attempt = finished + settings.sensor_interval_seconds
         except BusBusy:
             return
@@ -147,6 +163,7 @@ class SensorChannel:
                   "i2c_recovery": self.coordinator.status if self.coordinator else {}}
         if self.name == "bmp280":
             health["pressure_constant_suspect"] = self.pressure_constant_suspect
+            health["warming_up"] = self.warming_up
         return health
 
 

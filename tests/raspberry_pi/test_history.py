@@ -234,6 +234,64 @@ def test_retention_and_size_only_remove_derived_observations(tmp_path):
     connection.close()
 
 
+@pytest.mark.parametrize('selected_session', [None, 'edge-session'])
+def test_reduced_partial_minutes_keep_edge_extrema_and_exact_range(tmp_path, selected_session):
+    config = settings(tmp_path)
+    writer, connection = open_writer(config)
+    writer.session = 'edge-session'
+    for second in range(0, 4031, 10):
+        value = sample(second)
+        # The excluded edges are more extreme than the in-range edge extrema.
+        temperature = {0: -99., 10: -10., 4020: 40., 4030: 99.}.get(second, 21.)
+        value['environment']['temperature_C'] = temperature
+        writer._write(connection, value, config)
+    connection.close()
+    result = query_history(config.data_dir, BASE + 7, BASE + 4023,
+                           session=selected_session, series=['temperature_C'], max_points=32)
+    assert result['reduced']
+    points = result['points']
+    assert len(points) <= 32
+    assert points[0]['time'] == BASE + 10
+    assert points[-1]['time'] == BASE + 4020
+    assert min(p['temperature_C'] for p in points) == -10.
+    assert max(p['temperature_C'] for p in points) == 40.
+
+
+def test_seven_day_reduction_does_not_rescan_raw_range_for_every_metric(tmp_path, monkeypatch):
+    # SQLite work is deterministic enough to bound repeated range scans without
+    # timing assertions that depend on the machine or its disk cache.
+    connection = _connect(tmp_path / DATABASE)
+    count = 7 * 8640
+    with connection:
+        connection.executemany(
+            'INSERT INTO observations (time,session,segment,source,payload,window_period_s) VALUES (?,?,?,?,?,?)',
+            ((BASE + i * 10, 's', 'a', 'demo', json.dumps(dict(time=BASE+i*10, session='s', segment='a',
+                                                           session_start_time=BASE, window_period_s=2.)), 2.)
+             for i in range(count)))
+        connection.execute('''INSERT INTO minutes
+            (bucket,segment,session,first_id,last_id,min_window_period_s,max_window_period_s,
+             min_window_period_s_id,max_window_period_s_id)
+            SELECT CAST(time/60 AS INTEGER)*60,segment,session,MIN(id),MAX(id),
+                   2.,2.,MIN(id),MAX(id) FROM observations GROUP BY CAST(time/60 AS INTEGER)''')
+    connection.close()
+    calls = 0
+    real_connect = sqlite3.connect
+    class Meter(sqlite3.Connection):
+        def set_progress_handler(self, callback, steps):
+            def progress():
+                nonlocal calls
+                calls += 1
+                return callback()
+            super().set_progress_handler(progress, steps)
+    monkeypatch.setattr(sqlite3, 'connect', lambda *args, **kwargs: real_connect(*args, **kwargs, factory=Meter))
+    result = query_history(tmp_path, BASE+7, BASE+7*86400-7, max_points=1200)
+    assert result['reduced'] and result['points']
+    assert all(p['window_period_s'] == 2. for p in result['points'])
+    # The old edge filters execute roughly 19 million instructions here. The
+    # indexed seeks plus summary/metadata reads should stay below 8 million.
+    assert calls * 2000 < 8_000_000
+
+
 def test_missing_database_and_invalid_requests(tmp_path):
     assert query_history(tmp_path, BASE, BASE + 1)['points'] == []
     assert not (tmp_path / DATABASE).exists()

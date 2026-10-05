@@ -38,6 +38,12 @@ class EnvironmentalRelationships {
  selected(){return this.data?.segments?.find(group=>this.key(group)===this.el('correlation-segment').value);}
  fmt(value,digits=3){return Number.isFinite(value)?value.toFixed(digits):'—';}
  precise(value){return Number.isFinite(value)?value.toPrecision(3):'—';}
+ emptyMessage(){
+  if(this.data?.state==='unavailable' || /unavailable/i.test(this.message||''))return 'Environmental comparison unavailable';
+  if(this.data?.state==='busy')return 'Waiting for environmental analysis…';
+  if(this.data?.state==='updating' || /^(Loading|Calculating)/.test(this.message||''))return 'Calculating environmental relationships…';
+  return this.data?'No complete paired observations':'Waiting for environmental data';
+ }
  slope(value,unit){return Number.isFinite(value)?`${value>0?'+':''}${this.precise(value)} ${unit}`:'—';}
  interval(values,unit){return values?.length===2&&values.every(Number.isFinite)?`${this.precise(values[0])} to ${this.precise(values[1])} ${unit}`:'Unavailable';}
  render(){
@@ -79,7 +85,7 @@ class EnvironmentalRelationships {
   canvas.width=Math.round(width*dpr);canvas.height=Math.round(height*dpr);const ctx=canvas.getContext('2d');ctx.scale(dpr,dpr);ctx.font='11px system-ui';this.hits[id]=[];
   const left=65,right=16,top=26,bottom=48,w=Math.max(1,width-left-right),h=height-top-bottom;
   ctx.fillStyle='#6b7c73';ctx.textAlign='left';ctx.fillText(options.ylabel,left,13);
-  if(!points.length){ctx.textAlign='center';ctx.fillText('No paired averages to plot',left+w/2,top+h/2);return;}
+  if(!points.length){ctx.textAlign='center';ctx.fillText(this.emptyMessage(),left+w/2,top+h/2);return;}
   const yvalue=options.y||(p=>(p.period_s-options.mean)*1e6),xs=points.map(options.x),ys=points.map(yvalue);
   if(options.fitted)ys.push(...points.map(p=>(p.fitted_period_s-options.mean)*1e6));if(options.zero)ys.push(0);
   const xmin=Math.min(...xs),xmax=Math.max(...xs),ymin=Math.min(...ys),ymax=Math.max(...ys);

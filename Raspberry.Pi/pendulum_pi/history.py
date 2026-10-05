@@ -71,6 +71,8 @@ def _connect(path):
         segment TEXT NOT NULL, source TEXT NOT NULL, payload TEXT NOT NULL,{columns})''')
     connection.execute('CREATE INDEX IF NOT EXISTS observation_time ON observations(time)')
     connection.execute('CREATE INDEX IF NOT EXISTS observation_session_time ON observations(session,time)')
+    # Range/session labels must not pull every large provenance payload off disk.
+    connection.execute('CREATE INDEX IF NOT EXISTS observation_range_metadata ON observations(time,session,source)')
     extrema = ','.join(f'min_{name} REAL,max_{name} REAL,min_{name}_id INTEGER,max_{name}_id INTEGER'
                        for name in EXTREMA)
     connection.execute(f'''CREATE TABLE IF NOT EXISTS minutes (
@@ -455,15 +457,18 @@ def query_history(data_dir, start_epoch, end_epoch, *, session=None, series=None
         if session is not None:
             where += ' AND session = ?'
             parameters.append(session)
-        bounds = connection.execute('SELECT MIN(time),MAX(time) FROM observations').fetchone()
+        bounds = connection.execute('SELECT (SELECT MIN(time) FROM observations),'
+                                    '(SELECT MAX(time) FROM observations)').fetchone()
         result.update(available_start=bounds[0], available_end=bounds[1])
         # Limit process-session metadata independently of sample count.
         result['sessions'] = [dict(row) for row in connection.execute(
             'SELECT session,source,MIN(time) AS start,MAX(time) AS end FROM observations '
             f'WHERE {where} GROUP BY session,source ORDER BY end DESC LIMIT 100', parameters)]
         for entry in result['sessions']:
-            bounds = connection.execute('SELECT MIN(time),MAX(time) FROM observations WHERE session=?',
-                                        (entry['session'],)).fetchone()
+            bounds = connection.execute(
+                'SELECT (SELECT MIN(time) FROM observations WHERE session=?),'
+                '(SELECT MAX(time) FROM observations WHERE session=?)',
+                (entry['session'], entry['session'])).fetchone()
             first = connection.execute('SELECT payload FROM observations WHERE session=? ORDER BY time LIMIT 1',
                                        (entry['session'],)).fetchone()
             if first:
@@ -471,10 +476,11 @@ def query_history(data_dir, start_epoch, end_epoch, *, session=None, series=None
                 # so retention and selecting a shorter range do not relabel it.
                 origin = json.loads(first['payload']).get('session_start_time', bounds[0])
                 entry.update(start=origin, end=bounds[1], retained_start=bounds[0])
-        raw = connection.execute(f'SELECT id,payload FROM observations WHERE {where} ORDER BY time,id LIMIT ?',
+        raw = connection.execute(f'SELECT id FROM observations WHERE {where} ORDER BY time,id LIMIT ?',
                                  [*parameters, max_points + 1]).fetchall()
         if len(raw) <= max_points:
-            rows = raw
+            rows = connection.execute(f'SELECT id,payload FROM observations WHERE {where} ORDER BY time,id LIMIT ?',
+                                      [*parameters, max_points]).fetchall()
         else:
             result['reduced'] = True
             metrics = list(dict.fromkeys(selected))
@@ -501,17 +507,25 @@ def query_history(data_dir, start_epoch, end_epoch, *, session=None, series=None
                         col = f'{direction}_{metric}'
                         for row in connection.execute(f'SELECT {col}_id AS id,{direction.upper()}({col}) AS value FROM minutes WHERE {clause} AND {col} IS NOT NULL GROUP BY {group}', [*args, start_epoch, width]):
                             ids.add(row['id'])
-                edge_where = where + ' AND (time < ? OR time >= ?)'
-                edge_params = [*parameters, lower, upper]
+                # Two index seeks, rather than scanning the entire range for
+                # every endpoint/metric and discarding all complete minutes.
+                session_clause = ' AND session = ?' if session is not None else ''
+                session_args = [session] if session is not None else []
+                edge_columns = ','.join(['id', 'time', *metrics])
+                edge_table = (f'(SELECT {edge_columns} FROM observations WHERE time >= ? AND time < ?{session_clause} '
+                              f'UNION ALL SELECT {edge_columns} FROM observations WHERE time >= ? AND time <= ?{session_clause})')
+                edge_params = [start_epoch, min(lower, end_epoch), *session_args,
+                               max(upper, start_epoch), end_epoch, *session_args]
             else:
-                edge_where, edge_params = where, parameters
+                edge_table = f'(SELECT * FROM observations WHERE {where})'
+                edge_params = parameters
             group = 'CAST((time - ?) / ? AS INTEGER)'
             for expression in ('MIN(id)', 'MAX(id)'):
-                for row in connection.execute(f'SELECT {expression} AS id FROM observations WHERE {edge_where} GROUP BY {group}', [*edge_params, start_epoch, width]):
+                for row in connection.execute(f'SELECT {expression} AS id FROM {edge_table} GROUP BY {group}', [*edge_params, start_epoch, width]):
                     ids.add(row['id'])
             for metric in metrics:
                 for direction in ('MIN', 'MAX'):
-                    for row in connection.execute(f'SELECT id,{direction}({metric}) FROM observations WHERE {edge_where} AND {metric} IS NOT NULL GROUP BY {group}', [*edge_params, start_epoch, width]):
+                    for row in connection.execute(f'SELECT id,{direction}({metric}) FROM {edge_table} WHERE {metric} IS NOT NULL GROUP BY {group}', [*edge_params, start_epoch, width]):
                         ids.add(row['id'])
             # Edge buckets can overlap summary buckets; reduce once more if needed.
             rows = []

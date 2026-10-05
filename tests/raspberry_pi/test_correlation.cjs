@@ -3,8 +3,8 @@
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');
 const directory=path.resolve(__dirname,'../../Raspberry.Pi/pendulum_pi/static');
 const html=fs.readFileSync(path.join(directory,'index.html'),'utf8');
-let arcs=0,strokes=[],current=[];
-const drawing={scale(){},fillText(){},beginPath(){current=[];},moveTo(x,y){current.push(['move',x,y]);},lineTo(x,y){current.push(['line',x,y]);},stroke(){strokes.push({color:this.strokeStyle,path:current});},save(){},restore(){},rect(){},clip(){},setLineDash(){},arc(){arcs++;},fill(){}};
+let arcs=0,strokes=[],current=[],labels=[];
+const drawing={scale(){},fillText(text){labels.push(text);},beginPath(){current=[];},moveTo(x,y){current.push(['move',x,y]);},lineTo(x,y){current.push(['line',x,y]);},stroke(){strokes.push({color:this.strokeStyle,path:current});},save(){},restore(){},rect(){},clip(){},setLineDash(){},arc(){arcs++;},fill(){}};
 const nodes=Object.fromEntries([...html.matchAll(/id="([^"]+)"/g)].map(match=>[match[1],{
  value:'',textContent:'',disabled:false,options:[],clientWidth:600,clientHeight:280,
  replaceChildren(){this.options=[];this.value='';},add(option){this.options.push(option);},
@@ -69,5 +69,12 @@ const response={bucket_seconds:60,segments:[group('a',3),group('b',4)]};
  const failed=chart.load(0,1000,'',6);pending[2].reject(new Error('History busy'));await failed;
  assert.equal(nodes['environment-r2'].textContent,'—');assert.match(nodes['correlation-state'].textContent,/unavailable.*History busy/);
  assert(Object.values(chart.hits).every(points=>points.length===0));assert.equal(nodes['environment-humidity-adjusted-ci'].textContent,'Unavailable');
+ chart.request=async()=>({state:'unavailable',segments:[],message:'Environmental calculation took too long. Try a shorter range.'});
+ labels=[];await chart.load(0,86400,'',7);
+ assert.match(nodes['correlation-state'].textContent,/took too long.*shorter range/);
+ assert(labels.includes('Environmental comparison unavailable'));
+ assert(!labels.includes('No complete paired observations'));
+ chart.invalidate();labels=[];chart.render();
+ assert(labels.includes('Calculating environmental relationships…'));
  console.log('PASS: environmental plots, shared selection, gaps, uncertainty, errors and throttling.');
 })().catch(error=>{console.error(error);process.exitCode=1;});

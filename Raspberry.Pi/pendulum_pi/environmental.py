@@ -1,6 +1,7 @@
 """Aligned environmental associations, with no additional Pi dependencies."""
 from __future__ import annotations
 
+from collections import deque
 import json
 import math
 from pathlib import Path
@@ -123,82 +124,189 @@ def environmental_fit(points, *, bucket_seconds):
         uncertainty=uncertainty)
 
 
-def query_environmental_relationships(data_dir, start, end, *, session=None):
-    """Trailing 600-second environmental means, then complete paired bucket means.
+class _TrailingEnvironment:
+    """One segment's causal window; a bad observation ages out naturally."""
+    def __init__(self):
+        self.rows = deque()
+        self.totals = [0., 0., 0.]
+        self.invalid = self.sparse = self.updates = 0
+        self.last_time = None
 
-    SQL windows include learning observations for environmental warm-up. Null,
-    stale, gap or sparse history invalidates a window; no interpolation or joins
-    across continuity identities. Queries retain the existing four-second budget.
+    def add(self, row, gap):
+        now = row['time']
+        while self.rows and self.rows[0][0] < now - WINDOW:
+            _, values, invalid, sparse = self.rows.popleft()
+            for j, value in enumerate(values):
+                self.totals[j] -= value
+            self.invalid -= invalid
+            self.sparse -= sparse
+        values = tuple(_number(row[name]) for name in VARIABLES)
+        invalid = int(gap is not None or any(value is None for value in values))
+        sparse = int(self.last_time is not None and now - self.last_time > COVERAGE_TOLERANCE)
+        values = tuple(value if value is not None else 0. for value in values)
+        self.rows.append((now, values, invalid, sparse))
+        for j, value in enumerate(values):
+            self.totals[j] += value
+        self.invalid += invalid
+        self.sparse += sparse
+        self.last_time = now
+        self.updates += 1
+        # Bound round-off after repeated additions/removals, without rescanning
+        # every window for every observation.
+        if self.updates % 128 == 0:
+            self.totals = [math.fsum(entry[1][j] for entry in self.rows) for j in range(3)]
+
+    def ready(self, now):
+        return (self.rows and now - self.rows[0][0] >= WINDOW - COVERAGE_TOLERANCE
+                and not self.invalid and not self.sparse)
+
+
+class EnvironmentalQuery:
+    """Incremental range calculation with bounded reads and a budget per step.
+
+    The views worker advances this job between heartbeat/phase publications.
+    Long ranges can finish across several steps without holding up that worker
+    or failing solely because their total work exceeds four seconds.
     """
-    if (any(_number(value) is None for value in (start, end))
-            or not 0 <= start < end or end-start > 366*86400):
-        raise ValueError('Use a finite range up to 366 days with start before end')
-    if session is not None and (not isinstance(session, str) or not re.fullmatch(r'[A-Za-z0-9_.:-]{1,128}', session)):
-        raise ValueError('Invalid history session')
-    width = max(60, math.ceil((end-start)/600/60)*60)
-    result = dict(start=start, end=end, estimate='window', bucket_seconds=width,
-                  environmental_window_seconds=WINDOW, coverage_tolerance_seconds=COVERAGE_TOLERANCE,
-                  segments=[], tracking_only=True)
-    path = Path(data_dir)/DATABASE
-    if not path.exists():
-        return result
-    connection = sqlite3.connect(f'{path.resolve().as_uri()}?mode=ro', uri=True, timeout=.2)
-    connection.row_factory = sqlite3.Row
-    deadline = time.monotonic()+4
-    connection.set_progress_handler(lambda: int(time.monotonic() > deadline), 2000)
-    try:
-        if connection.execute('PRAGMA user_version').fetchone()[0] != SCHEMA_VERSION:
-            raise ValueError('Unsupported history schema')
-        session_condition = 'AND session = ?' if session else ''
-        params = [max(0, start-WINDOW-COVERAGE_TOLERANCE), end, *([session] if session else []), width, start, MAX_AVERAGES+1]
-        rows = connection.execute(f'''
-          WITH raw AS (
-            SELECT time,session,segment,source,temperature_C,humidity_pct,pressure_hPa,window_period_s,
-              json_extract(payload,'$.quality.window_learning') AS learning,
-              COALESCE(json_extract(payload,'$.settings.window_seconds'),{WINDOW}) AS period_window,
-              json_extract(payload,'$.quality.timebase') AS timebase,
-              json_extract(payload,'$.settings') AS settings,
-              time-LAG(time) OVER (PARTITION BY session,segment ORDER BY time) AS spacing,
-              CASE WHEN temperature_C IS NULL OR humidity_pct IS NULL OR pressure_hPa IS NULL
-                OR json_extract(payload,'$.gap_reason') IS NOT NULL THEN 1 ELSE 0 END AS invalid
-            FROM observations WHERE time >= ? AND time <= ? {session_condition}
-          ), rolling AS (
-            SELECT *, AVG(temperature_C) OVER trailing AS temperature_mean,
-              AVG(humidity_pct) OVER trailing AS humidity_mean, AVG(pressure_hPa) OVER trailing AS pressure_mean,
-              MIN(time) OVER trailing AS first_time, MAX(invalid) OVER trailing AS invalid_window,
-              MAX(COALESCE(spacing,0)) OVER trailing AS max_spacing
-            FROM raw WINDOW trailing AS (PARTITION BY session,segment ORDER BY time
-              RANGE BETWEEN {WINDOW} PRECEDING AND CURRENT ROW)
-          ), eligible AS (
-            SELECT * FROM rolling WHERE window_period_s > 0 AND learning = 0 AND period_window = {WINDOW}
-              AND time-first_time >= {WINDOW-COVERAGE_TOLERANCE}
-              AND invalid_window = 0 AND max_spacing <= {COVERAGE_TOLERANCE}
-          )
-          SELECT session,segment,source,CAST(time / ? AS INTEGER) AS bucket,
-            MIN(time) AS start,MAX(time) AS end,AVG(time) AS time,COUNT(*) AS samples,
-            AVG(temperature_mean) AS temperature_C,AVG(humidity_mean) AS humidity_pct,
-            AVG(pressure_mean) AS pressure_hPa,AVG(window_period_s) AS period_s,
-            timebase,settings
-          FROM eligible WHERE time >= ? GROUP BY session,segment,bucket ORDER BY start LIMIT ?
-        ''', params).fetchall()
-        if len(rows) > MAX_AVERAGES:
-            raise ValueError('Too many measurement segments; choose a shorter range or one session')
-        groups = {}
-        for row in rows:
-            if any(_number(row[key]) is None for key in (*VARIABLES, 'period_s')):
+    def __init__(self, data_dir, start, end, *, session=None):
+        if (any(_number(value) is None for value in (start, end))
+                or not 0 <= start < end or end-start > 366*86400):
+            raise ValueError('Use a finite range up to 366 days with start before end')
+        if session is not None and (not isinstance(session, str) or not re.fullmatch(r'[A-Za-z0-9_.:-]{1,128}', session)):
+            raise ValueError('Invalid history session')
+        self.path = Path(data_dir) / DATABASE
+        self.start, self.end, self.session = start, end, session
+        self.width = max(60, math.ceil((end-start)/600/60)*60)
+        self.deadline = 0.
+        self.processed_records = 0
+        self.result = None
+        self._work = self._run()
+
+    def step(self):
+        if self.result is not None:
+            return True
+        self.deadline = time.monotonic() + 4
+        try:
+            next(self._work)
+        except StopIteration as done:
+            self.result = done.value
+            return True
+        return False
+
+    def close(self):
+        self._work.close()
+
+    def _collect(self, peers, now, windows, buckets):
+        # All equal-time peers have entered their windows before any is scored,
+        # matching SQLite RANGE semantics even with overlapping sessions.
+        for key, peer in peers.items():
+            window = windows[key]
+            if not window.ready(now):
                 continue
-            group = groups.setdefault((row['session'], row['segment']), dict(
-                session=row['session'], segment=row['segment'], source=row['source'], timebase=row['timebase'],
-                settings=json.loads(row['settings'] or '{}'), start=row['start'], end=row['end'], samples=0, points=[]))
+            bucket = int(now / self.width)
+            identity = (*key, bucket)
+            if identity not in buckets:
+                if len(buckets) >= MAX_AVERAGES:
+                    raise ValueError('Too many measurement segments; choose a shorter range or one session')
+                buckets[identity] = dict(session=key[0], segment=key[1], source=peer['source'],
+                    timebase=peer['timebase'], settings=peer['settings'], bucket=bucket,
+                    start=now, end=now, samples=0, totals=[0.] * 5)
+            entry = buckets[identity]
+            count = peer['count']
+            entry['end'] = now
+            entry['samples'] += count
+            values = [now, *(value / len(window.rows) for value in window.totals)]
+            for j, value in enumerate(values):
+                entry['totals'][j] += value * count
+            entry['totals'][4] += peer['period_sum']
+
+    def _run(self):
+        result = dict(start=self.start, end=self.end, estimate='window', bucket_seconds=self.width,
+                      environmental_window_seconds=WINDOW, coverage_tolerance_seconds=COVERAGE_TOLERANCE,
+                      segments=[], tracking_only=True)
+        if not self.path.exists():
+            return result
+        connection = sqlite3.connect(f'{self.path.resolve().as_uri()}?mode=ro', uri=True, timeout=.2)
+        connection.row_factory = sqlite3.Row
+        connection.set_progress_handler(lambda: int(time.monotonic() > self.deadline), 2000)
+        windows, buckets = {}, {}
+        try:
+            if connection.execute('PRAGMA user_version').fetchone()[0] != SCHEMA_VERSION:
+                raise ValueError('Unsupported history schema')
+            session_condition = 'AND session = ?' if self.session else ''
+            params = [max(0, self.start-WINDOW-COVERAGE_TOLERANCE), self.end,
+                      *([self.session] if self.session else [])]
+            # One time-index scan. Extract only small metadata once, avoiding
+            # full-payload Python decoding and SQL sorts/window intermediates.
+            rows = connection.execute(f'''
+                SELECT time,session,segment,source,temperature_C,humidity_pct,pressure_hPa,window_period_s,
+                    json_extract(payload,'$.quality.window_learning','$.settings.window_seconds',
+                        '$.quality.timebase','$.settings','$.gap_reason') AS metadata
+                FROM observations WHERE time >= ? AND time <= ? {session_condition}
+                ORDER BY time,id
+            ''', params)
+            peers, previous_time = {}, None
+            for row in rows:
+                now = row['time']
+                if previous_time is not None and now != previous_time:
+                    self._collect(peers, previous_time, windows, buckets)
+                    peers = {}
+                key = (row['session'], row['segment'])
+                if key not in windows:
+                    windows[key] = _TrailingEnvironment()
+                learning, period_window, timebase, settings, gap = json.loads(row['metadata'])
+                windows[key].add(row, gap)
+                period = _number(row['window_period_s'])
+                if (now >= self.start and period is not None and period > 0 and learning == 0
+                        and (WINDOW if period_window is None else period_window) == WINDOW):
+                    peer = peers.setdefault(key, dict(count=0, period_sum=0., source=row['source'],
+                                                      timebase=timebase, settings=settings or {}))
+                    peer['count'] += 1
+                    peer['period_sum'] += period
+                previous_time = now
+                self.processed_records += 1
+                if self.processed_records % 512 == 0:
+                    # Retain the prior timestamp for gap detection if a segment
+                    # reappears, but release windows that cannot affect a future
+                    # observation in this time-ordered scan.
+                    for window in windows.values():
+                        if window.rows and window.last_time < now - WINDOW:
+                            window.rows.clear()
+                            window.totals = [0., 0., 0.]
+                            window.invalid = window.sparse = 0
+                    yield
+            if previous_time is not None:
+                self._collect(peers, previous_time, windows, buckets)
+        finally:
+            connection.close()
+        # Release the read snapshot before fitting or yielding between segments.
+        groups = {}
+        for row in sorted(buckets.values(), key=lambda value: (value['start'], value['session'], value['segment'])):
+            key = (row['session'], row['segment'])
+            group = groups.setdefault(key, dict(session=row['session'], segment=row['segment'],
+                source=row['source'], timebase=row['timebase'], settings=row['settings'],
+                start=row['start'], end=row['end'], samples=0, points=[]))
             group['end'] = max(group['end'], row['end'])
             group['samples'] += row['samples']
-            group['points'].append({key: row[key] for key in ('time', *VARIABLES, 'period_s', 'samples')})
-            group['points'][-1]['bucket_start'] = row['bucket']*width
+            point = dict(zip(('time', *VARIABLES, 'period_s'),
+                             (value / row['samples'] for value in row['totals'])))
+            point.update(samples=row['samples'], bucket_start=row['bucket'] * self.width)
+            group['points'].append(point)
         for group in groups.values():
-            group['individual'], group['joint'] = environmental_fit(group['points'], bucket_seconds=width)
+            group['individual'], group['joint'] = environmental_fit(group['points'], bucket_seconds=self.width)
             group['spans'] = {name: [min(p[name] for p in group['points']), max(p[name] for p in group['points'])]
                               for name in VARIABLES}
+            yield
         result['segments'] = list(groups.values())
         return result
+
+
+def query_environmental_relationships(data_dir, start, end, *, session=None):
+    """Synchronous adapter; the production worker advances EnvironmentalQuery."""
+    job = EnvironmentalQuery(data_dir, start, end, session=session)
+    try:
+        while not job.step():
+            pass
+        return job.result
     finally:
-        connection.close()
+        job.close()

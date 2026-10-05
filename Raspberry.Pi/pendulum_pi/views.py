@@ -17,7 +17,7 @@ import time
 
 from .common import atomic_json, read_json
 from .config import load_settings
-from .environmental import query_environmental_relationships
+from .environmental import EnvironmentalQuery
 from .phase import PhaseSnapshots
 
 MAX_JOBS = 8
@@ -36,7 +36,7 @@ def request_environment(settings, start, end, session=None):
     if first >= last:
         first, last = start, end
     job = dict(start=first, end=last, session=session)
-    key = hashlib.sha256(json.dumps(job, sort_keys=True).encode()).hexdigest()
+    key = hashlib.sha256(json.dumps(dict(job, algorithm=2), sort_keys=True).encode()).hexdigest()
     root = settings.runtime_dir / 'views'
     root.mkdir(parents=True, exist_ok=True)
     cached = read_json(root / (key + '.result.json'), {}) or {}
@@ -73,34 +73,55 @@ def run_views(settings, config_path, stop=None):
         if isinstance(previous, dict) and previous.get('segment') and previous.get('charts'):
             phases.key = (str(settings.data_dir), previous['segment'])
             phases.result = previous
-        last_phase = float('-inf')
-        while not stop.is_set():
-            try:
-                settings = load_settings(config_path)
-                if time.monotonic() - last_phase >= 1:
-                    # get() starts at most one bounded background job on its own
-                    # schedule; visitors never trigger it.
-                    phase = phases.get(settings)
-                    phase['published_monotonic'] = time.monotonic()
-                    atomic_json(settings.runtime_dir / 'phase.json', phase)
-                    last_phase = time.monotonic()
-                jobs = sorted(root.glob('*.job.json'), key=lambda p: p.stat().st_mtime)
-                if jobs:
-                    job_path = jobs[0]
-                    job = read_json(job_path, {})
-                    try:
-                        result = query_environmental_relationships(settings.data_dir, **job)
-                        value = dict(result=result, state='ready', generated_epoch=time.time())
-                    except (OSError, ValueError, sqlite3.Error) as error:
-                        value = dict(result={'segments': []}, state='unavailable',
-                                     generated_epoch=time.time(), message=str(error))
-                    atomic_json(root / job_path.name.replace('.job.json', '.result.json'), value)
-                    job_path.unlink(missing_ok=True)
-                cache = sorted(root.glob('*.result.json'), key=lambda p: p.stat().st_mtime, reverse=True)
-                for path in cache[MAX_CACHE:]:
-                    path.unlink(missing_ok=True)
-                atomic_json(settings.runtime_dir / 'views-health.json',
-                            {'state': 'running', 'updated_monotonic': time.monotonic(), 'error': None})
-            except (OSError, ValueError, TypeError) as error:
-                atomic_json(settings.runtime_dir / 'views-health.json', {'state': 'error', 'updated_monotonic': time.monotonic(), 'error': str(error)})
-            stop.wait(1)
+        last_phase = last_maintenance = float('-inf')
+        active = None
+        try:
+            while not stop.is_set():
+                try:
+                    settings = load_settings(config_path)
+                    if time.monotonic() - last_phase >= 1:
+                        phase = phases.get(settings)
+                        phase['published_monotonic'] = time.monotonic()
+                        atomic_json(settings.runtime_dir / 'phase.json', phase)
+                        last_phase = time.monotonic()
+                    if active is None:
+                        jobs = sorted(root.glob('*.job.json'), key=lambda p: p.stat().st_mtime)
+                        if jobs:
+                            path = jobs[0]
+                            active = (path, None)
+                    if active is not None:
+                        job_path, job = active
+                        value = None
+                        try:
+                            if job is None:
+                                job = EnvironmentalQuery(settings.data_dir, **read_json(job_path, {}))
+                                active = (job_path, job)
+                            if job.step():
+                                value = dict(result=job.result, state='ready', generated_epoch=time.time())
+                        except (OSError, ValueError, TypeError, sqlite3.Error) as error:
+                            message = ('Environmental calculation took too long. Try a shorter range.'
+                                       if isinstance(error, sqlite3.Error)
+                                       and getattr(error, 'sqlite_errorcode', None) == sqlite3.SQLITE_INTERRUPT
+                                       else str(error))
+                            value = dict(result={'segments': []}, state='unavailable',
+                                         generated_epoch=time.time(), message=message)
+                        if value is not None:
+                            atomic_json(root / job_path.name.replace('.job.json', '.result.json'), value)
+                            job_path.unlink(missing_ok=True)
+                            if job is not None:
+                                job.close()
+                            active = None
+                    if time.monotonic() - last_maintenance >= 1:
+                        cache = sorted(root.glob('*.result.json'), key=lambda p: p.stat().st_mtime, reverse=True)
+                        for path in cache[MAX_CACHE:]:
+                            path.unlink(missing_ok=True)
+                        last_maintenance = time.monotonic()
+                    atomic_json(settings.runtime_dir / 'views-health.json',
+                                {'state': 'running', 'updated_monotonic': time.monotonic(), 'error': None})
+                except (OSError, ValueError, TypeError) as error:
+                    atomic_json(settings.runtime_dir / 'views-health.json',
+                                {'state': 'error', 'updated_monotonic': time.monotonic(), 'error': str(error)})
+                stop.wait(.05 if active is not None else 1)
+        finally:
+            if active is not None and active[1] is not None:
+                active[1].close()

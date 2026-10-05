@@ -27,6 +27,14 @@ flowchart LR
   the most recent snapshot preceding a capture receipt, within the same Pi boot.
   The journal retains up to two days, bounded by 64 MiB; pressure can shorten
   that horizon. Joined readings are retained in capture and analysis records.
+  Timestamp cleanup uses an epoch index and deletes at most 2,048 expired
+  snapshots per maintenance tick. The deployed sensor unit enables Python
+  fault traces so a watchdog abort identifies the blocked Python call in the
+  journal; a kernel I/O stall can still delay signal handling.
+  Each BMP280 initialization discards its first pressure conversion, releases
+  the bus, and waits at least 100 ms before publishing a reading. During this
+  warm-up the channel is not healthy and any retained reading keeps its old
+  timestamp. Sensor recovery repeats the same warm-up.
 - `pendulum-analyze` follows `ANALYSIS.jsonl` in recording order. It owns the PPS
   clock, 600-second mean, causal forecast and history. Results, complete model
   state and replay offsets are saved in one SQLite transaction per batch.
@@ -100,6 +108,18 @@ Charts refresh every ten seconds. Phase calculations refresh at most once per
 minute; environmental fits are cached for a minute. Small capture-health requests
 continue every second. Slow or unavailable analysis leaves saved history readable.
 Pausing recording also pauses new saved measurement results.
+
+Long chart ranges use minute extrema, with separate indexed seeks for partial
+edge minutes. Session labels use a covering time/session/source index rather
+than loading every observation payload. The dashboard requests only its five
+displayed series. Environmental fits calculate trailing 600-second means in one
+ordered scan, retaining only active windows and at most 2,000 paired averages.
+The views worker advances the scan in batches of 512 observations and yields
+between segment fits, continuing phase and health publication between steps.
+The four-second SQLite budget applies to each step rather than the whole range,
+so 24-hour and seven-day jobs can finish over multiple steps. Missing, stale or
+sparse readings still invalidate their trailing windows; segments and sessions
+remain separate. The panel distinguishes calculation failures from empty data.
 
 The finite receive queue and shared SD card remain practical limits. Recording
 errors, receiver overflow, analysis errors and storage pressure stay visible;

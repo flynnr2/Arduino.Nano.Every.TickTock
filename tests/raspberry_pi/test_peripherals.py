@@ -69,6 +69,7 @@ def test_sensor_retry_backoff_is_bounded_and_does_not_refresh_last_good():
 def test_pressure_invalid_reading_is_never_published(pressure):
     channel = SensorChannel("bmp280")
     channel.poll(Settings(), 0, factory=lambda *args: (Bus(), SimpleNamespace(pressure=pressure)), clock=lambda: 0)
+    channel.poll(Settings(), .1, factory=lambda *args: (Bus(), SimpleNamespace(pressure=pressure)), clock=lambda: .1)
     assert not channel.ok
     assert not channel.values
 
@@ -85,13 +86,55 @@ def test_pressure_constant_is_diagnostic_and_resets_after_movement():
     channel = SensorChannel("bmp280")
     source = SimpleNamespace(pressure=1000)
     factory = lambda *args: (Bus(), source)
-    for now in (0, 599, 600):
+    for now in (0, .1, 599.1, 600.1):
         channel.poll(Settings(), now, factory=factory, clock=lambda: now)
     assert channel.health()["pressure_constant_suspect"]
     assert channel.ok and channel.values["pressure_hPa"] == 1000
     source.pressure = 1001
-    channel.poll(Settings(), 601, factory=factory, clock=lambda: 601)
+    channel.poll(Settings(), 601.1, factory=factory, clock=lambda: 601.1)
     assert not channel.health()["pressure_constant_suspect"]
+
+
+def test_bmp280_discards_startup_pressure_and_waits_without_publishing():
+    from contextlib import contextmanager
+    from pendulum_pi.peripherals import BMP280_SETTLING_SECONDS
+    channel = SensorChannel('bmp280')
+    bus = Bus()
+    reads = []
+    locked = False
+    class Coordinator:
+        status = {}
+        def refresh(self): return self.status
+        @contextmanager
+        def transaction(self):
+            nonlocal locked
+            locked = True
+            try: yield None
+            finally: locked = False
+    channel.coordinator = Coordinator()
+    class Sensor:
+        @property
+        def pressure(self):
+            assert locked
+            reads.append(1)
+            return 350. if len(reads) == 1 else 1023.
+    factory = lambda *_: (bus, Sensor())
+    channel.poll(Settings(), 0, factory=factory, clock=lambda: 0)
+    assert len(reads) == 1 and not locked
+    assert channel.health()['warming_up'] and not channel.ok
+    assert channel.values == {} and channel.last_good_monotonic is None
+    assert channel.pressure_reference is None
+    channel.poll(Settings(), BMP280_SETTLING_SECONDS/2, factory=factory, clock=lambda: .05)
+    assert len(reads) == 1
+    channel.poll(Settings(), BMP280_SETTLING_SECONDS, factory=factory, clock=lambda: .1)
+    assert channel.values == {'pressure_hPa': 1023.}
+    assert channel.last_good_monotonic == .1 and channel.ok
+    assert not channel.health()['warming_up'] and not locked
+    # Reinitialization after a driver error must also discard its first result.
+    channel.close()
+    channel.poll(Settings(), 1.1, factory=factory, clock=lambda: 1.1)
+    assert len(reads) == 3 and channel.health()['warming_up']
+    assert channel.last_good_monotonic == .1 and not channel.ok
 
 
 def test_slow_read_uses_completion_time_for_freshness():

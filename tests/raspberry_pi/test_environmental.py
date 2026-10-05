@@ -2,10 +2,11 @@
 import json
 import math
 import random
+import tracemalloc
 
 import pytest
 
-from pendulum_pi.environmental import environmental_fit, query_environmental_relationships, VARIABLES
+from pendulum_pi.environmental import environmental_fit, query_environmental_relationships, EnvironmentalQuery, VARIABLES
 from pendulum_pi.history import _connect, DATABASE
 
 BASE = 1800000000
@@ -191,3 +192,105 @@ def test_query_validation_missing_store_and_bounds(tmp_path, monkeypatch):
     monkeypatch.setattr('pendulum_pi.environmental.MAX_AVERAGES',2)
     with pytest.raises(ValueError,match='shorter range'):
         query_environmental_relationships(tmp_path,BASE+600,BASE+1000)
+
+
+def test_equal_time_peers_share_the_same_trailing_environment(tmp_path):
+    connection = _connect(tmp_path / DATABASE)
+    for second in range(0, 601, 10):
+        add(connection, second, temperature=10.)
+    add(connection, 600, temperature=40.)
+    connection.commit(); connection.close()
+    point = query_environmental_relationships(tmp_path, BASE+600, BASE+601)['segments'][0]['points'][0]
+    assert point['samples'] == 2
+    assert point['temperature_C'] == pytest.approx((61*10+40)/62)
+
+
+def test_streaming_windows_match_independent_complete_case_reference(tmp_path):
+    connection = _connect(tmp_path / DATABASE)
+    raw = []
+    for second in range(0, 3601, 10):
+        for session in ('s', 'other'):
+            if session == 's' and 900 <= second <= 960:
+                continue
+            segment = 'b' if 1200 <= second < 2400 else 'a'
+            for duplicate in range(2 if second in (600, 1800) else 1):
+                t = 20 + math.sin(second/90) + duplicate
+                h = 50 + math.cos(second/70)
+                p = None if second == 2700 else 1000 + math.sin(second/110)
+                gap = 'test_gap' if second == 3000 else None
+                learning = second < 600 or second == 800
+                add(connection, second, session=session, segment=segment, temperature=t,
+                    humidity=h, pressure=p, gap=gap, learning=learning)
+                raw.append(dict(time=BASE+second, key=(session, segment), values=(t, h, p),
+                                invalid=p is None or gap is not None, learning=learning,
+                                period=2+second*1e-8))
+    connection.commit(); connection.close()
+    # Deliberately rescan each window rather than sharing the streaming sums.
+    # Include equal-time peers and the spacing preceding the oldest window row.
+    previous = {}
+    for row in raw:
+        row['spacing'] = row['time'] - previous.get(row['key'], row['time'])
+        previous[row['key']] = row['time']
+    expected = {}
+    start, end = BASE+600, BASE+3600
+    result = query_environmental_relationships(tmp_path, start, end)
+    width = result['bucket_seconds']
+    for row in raw:
+        if row['time'] < start or row['learning']:
+            continue
+        window = [r for r in raw if r['key'] == row['key']
+                  and row['time']-600 <= r['time'] <= row['time']]
+        if (row['time']-window[0]['time'] < 570 or any(r['invalid'] for r in window)
+                or max(r['spacing'] for r in window) > 30):
+            continue
+        values = [row['time'], *(math.fsum(r['values'][j] for r in window)/len(window)
+                                for j in range(3)), row['period']]
+        identity = (*row['key'], int(row['time']/width)*width)
+        expected.setdefault(identity, []).append(values)
+    actual = { (group['session'], group['segment'], p['bucket_start']): p
+              for group in result['segments'] for p in group['points'] }
+    assert actual.keys() == expected.keys()
+    for key, values in expected.items():
+        assert actual[key]['samples'] == len(values)
+        for j, name in enumerate(('time', *VARIABLES, 'period_s')):
+            assert actual[key][name] == pytest.approx(math.fsum(v[j] for v in values)/len(values), abs=1e-8)
+
+
+def test_seven_days_complete_across_budgeted_steps_without_loading_raw_rows(tmp_path, monkeypatch):
+    connection = _connect(tmp_path / DATABASE)
+    payload = json.dumps(dict(quality=dict(window_learning=False, timebase='PPS'), settings=dict(window_seconds=600)))
+    count = 7 * 8640
+    with connection:
+        connection.executemany('''INSERT INTO observations
+            (time,session,segment,source,payload,temperature_C,humidity_pct,pressure_hPa,window_period_s)
+            VALUES (?,?,?,?,?,?,?,?,?)''',
+            ((BASE+i*10,'s','a','demo',payload,20+i*.00001,50+math.sin(i/200),1000+math.cos(i/300),2+i*1e-10)
+             for i in range(count)))
+    connection.close()
+    # A long job must survive more than four seconds of total wall time while
+    # returning control regularly so the views worker can publish its health.
+    clock = [0.]
+    monkeypatch.setattr('pendulum_pi.environmental.time.monotonic', lambda: clock[0])
+    job = EnvironmentalQuery(tmp_path, BASE, BASE+7*86400)
+    tracemalloc.start()
+    steps = 0
+    try:
+        while True:
+            before = job.processed_records
+            done = job.step()
+            assert job.processed_records - before <= 512
+            steps += 1
+            clock[0] += 5
+            if done:
+                break
+        _, peak = tracemalloc.get_traced_memory()
+    finally:
+        tracemalloc.stop()
+        job.close()
+    assert steps > 100 and job.processed_records == count
+    assert peak < 8 * 1024**2
+    group = job.result['segments'][0]
+    assert group['start'] == BASE+570
+    assert group['end'] == BASE+(count-1)*10
+    assert sum(p['samples'] for p in group['points']) == count-57
+    assert len(group['points']) <= 600

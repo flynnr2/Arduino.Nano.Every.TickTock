@@ -244,7 +244,9 @@ def test_generation_forces_other_sensor_to_reopen(coordinated):
     channel.poll(Settings(), 0, factory=factory, clock=lambda: 0)
     atomic_json(coordinated / 'status.json', {'state': 'verifying', 'blocked': False, 'generation': 'new'})
     channel.poll(Settings(), 1, factory=factory, clock=lambda: 1)
-    assert len(buses) == 2 and buses[0].closed and channel.ok
+    assert len(buses) == 2 and buses[0].closed and channel.warming_up
+    channel.poll(Settings(), 1.1, factory=factory, clock=lambda: 1.1)
+    assert channel.ok and not channel.warming_up
 
 
 def test_missing_device_node_error_is_not_swallowed_by_lock_fallback(coordinated):

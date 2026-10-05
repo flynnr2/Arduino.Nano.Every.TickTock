@@ -33,7 +33,7 @@ class ObservatoryHistory {
   if(this.busy){this.reloadPending=true;return;}this.busy=true;const version=this.version;
   const [start,end]=this.bounds(),session=this.el('history-session').value;
   this.environment.load(start,end,session,this.version);
-  const query=new URLSearchParams({start:String(start),end:String(end),max_points:'1200'});if(session)query.set('session',session);
+  const query=new URLSearchParams({start:String(start),end:String(end),max_points:'1200',series:'window_period_s,window_rate_s_day,temperature_C,humidity_pct,pressure_hPa'});if(session)query.set('session',session);
   try{
    const data=await this.request(`/api/history?${query}`);if(version!==this.version)return;
    this.data=data;this.points=Array.isArray(data.points)?data.points:[];this.loadedBounds=[start,end];

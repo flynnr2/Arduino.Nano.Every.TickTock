@@ -98,6 +98,10 @@ sudo i2cdetect -y 1 0x3c 0x3d
       another diagnostic tool use the bus during these scans.
 - [ ] The service account can open serial and I²C devices without running the
       application as root.
+- [ ] Restart `pendulum-sensors` and check the BMP280 channel is warming up
+      before its first fresh pressure reading. Confirm the discarded startup
+      conversion does not appear in sensor history or plots. Repeat after bus
+      recovery; compare the first published pressure with subsequent readings.
 - [ ] Wi-Fi and SSH work with the GPIO UART/Bluetooth configuration applied.
 
 ### GPS/PPS and chrony acceptance

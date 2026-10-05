@@ -12,6 +12,7 @@ SupplementaryGroups=dialout i2c
 WorkingDirectory=/var/lib/pendulum
 Environment=PYTHONUNBUFFERED=1
 Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=PYTHONFAULTHANDLER=1
 ExecStart=/opt/pendulum/venv/bin/python -m pendulum_pi sensors --config /var/lib/pendulum/config.json
 Restart=on-failure
 RestartSec=3
