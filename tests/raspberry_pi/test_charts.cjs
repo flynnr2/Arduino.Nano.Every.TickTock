@@ -6,7 +6,7 @@ const path = require('node:path');
 const vm = require('node:vm');
 
 const staticDirectory = path.resolve(__dirname, '../../Raspberry.Pi/pendulum_pi/static');
-const context = vm.createContext({window: {devicePixelRatio: 1}});
+const context = vm.createContext({window: {devicePixelRatio: 1},document:{querySelectorAll:()=>[]}});
 vm.runInContext(
   fs.readFileSync(path.join(staticDirectory, 'charts.js'), 'utf8') +
   '\nglobalThis.History = ObservatoryHistory;', context,
@@ -75,17 +75,24 @@ assert.match(chart.summary({budget_limited: true}), /narrower range/i);
 // History uses retained canonical values; no recomputation or EWMA fallback.
 const meanPoint={window_period_s:2,window_rate_s_day:43.2,
  quality:{window_learning:true},settings:{target_period_s:2,estimator_model:'swing_mean_600s_pps_dual_ewma_v1'}};
+const startup={checked:false};chart.el=()=>startup;
+assert.equal(chart.timingValue(meanPoint,'window',false,false),null,'Learning period is hidden by default');
+assert.equal(chart.timingValue(meanPoint,'window',true,false),null,'Learning rate is hidden by default');
+startup.checked=true;
 assert.equal(chart.timingValue(meanPoint,'window',false,false),2);
 assert.equal(chart.timingValue(meanPoint,'window',true,false),43.2);
 assert.equal(chart.timingValue(meanPoint,'window',true,true),1.8);
 assert.equal(chart.learning(meanPoint,'window'),true);
 assert.equal(chart.timingValue({short_period_s:2,long_period_s:2},'window',false,false),null);
-const cursor={textContent:''};chart.el=id=>id==='chart-cursor'?cursor:{value:id==='chart-metric'?'period':'day'};
+const cursor={textContent:''};chart.el=id=>id==='chart-cursor'?cursor:id==='show-startup-estimates'?startup:{value:id==='chart-metric'?'period':'day'};
 chart.axisValue=point=>point.time;chart.formatTime=String;chart.points=[{...meanPoint,time:1}];chart.inspect(1);
 assert.match(cursor.textContent,/600-second mean 2.000000 s/);
 assert.match(cursor.textContent,/estimator swing_mean_600s_pps_dual_ewma_v1/);
 assert.doesNotMatch(cursor.textContent,/Short|Long|Blended|half-lives/);
-console.log('PASS: chart gaps, learning, budget disclosure and canonical mean history.');
+startup.checked=false;chart.inspect(1);
+assert.match(cursor.textContent,/startup estimate hidden/);
+assert.doesNotMatch(cursor.textContent,/600-second mean 2\.000000 s/);
+assert.equal(chart.timingValue({...meanPoint,quality:{window_learning:false,timebase:'HOLDOVER'}},'window',false,false),2,'Settled holdover is retained');
 
 const unrelated=[point(0,{continuity:{timing:'t',sht4x:'s'}}),point(1,{segment:'b',continuity:{timing:'t',sht4x:'s'}})];
 assert.equal(renderPoints(unrelated,{continuity:'timing'}).length,1,'Unrelated sensor boundary does not break valid period');
@@ -99,3 +106,62 @@ assert.equal(renderPoints([legacy,legacyTimeout]).length,1,'Old recorded diagnos
 assert.equal(renderPoints([legacy,{...legacyTimeout,boundary:['observation_gap']}]).length,1,'Old short publication pause can be joined');
 assert.equal(renderPoints([legacy,{...legacyTimeout,monotonic:140}]).length,0,'Long old observation gap remains a gap');
 assert.equal(renderPoints([legacy,{...legacyTimeout,boundary:['capture_loss','utc_quality_changed']}]).length,0,'Old real capture loss remains a gap');
+
+// Use the production render path for both metrics, including vertical axes.
+function historyView(points,metric='rate',unit='day'){
+ const chart=Object.create(context.History.prototype), elements={}, drawings={};
+ chart.points=points;chart.rangeSeconds=604800;chart.loadedBounds=[0,12];chart.live=false;
+ chart.el=id=>{
+  if(!elements[id])elements[id]={value:id==='chart-metric'?metric:id==='rate-unit'?unit:'host',checked:false,textContent:''};
+  return elements[id];
+ };
+ for(const id of ['timing-chart','temperature-chart','pressure-chart','humidity-chart']){
+  const labels=[],strokes=[];let dash=[];
+  const drawing={scale(){},save(){},restore(){},rect(){},clip(){},arc(){},fill(){},beginPath(){},moveTo(){},lineTo(){},
+   fillText(value){labels.push(value);},setLineDash(value){dash=Array.from(value);},
+   stroke(){if(this.strokeStyle==='#356fa0')strokes.push([...dash]);}};
+  elements[id]={clientWidth:600,clientHeight:200,getContext:()=>drawing};drawings[id]={labels,strokes};
+ }
+ chart.formatTime=String;
+ const render=()=>{for(const d of Object.values(drawings)){d.labels.length=0;d.strokes.length=0;}chart.render();};
+ return {chart,elements,drawings,render};
+}
+const settled=time=>point(time,{window_period_s:2.00002+time*1e-7,window_rate_s_day:-.8-time*.01,
+ temperature_C:20+time,humidity_pct:50+time,pressure_hPa:1020+time,quality:{window_learning:false,timebase:'PPS'}});
+const warm={...settled(2),window_period_s:1.9998467531705069,window_rate_s_day:6.620770340131088,quality:{window_learning:true,timebase:'PPS'}};
+for(const [metric,unit] of [['period','day'],['rate','day'],['rate','hour']]){
+ const view=historyView([settled(0),settled(1),warm,settled(3),settled(4)],metric,unit);
+ view.render();const hiddenTicks=view.drawings['timing-chart'].labels.slice(0,4);
+ assert.equal(view.drawings['timing-chart'].strokes.length,2,'Hidden learning observation breaks the timing trace');
+ const reference=historyView([settled(0),settled(1),{...warm,window_period_s:null,window_rate_s_day:null},settled(3),settled(4)],metric,unit);
+ reference.render();assert.deepEqual(hiddenTicks,reference.drawings['timing-chart'].labels.slice(0,4),'Hidden outlier cannot set the vertical scale');
+ const environment=view.drawings['temperature-chart'].labels.slice();
+ view.elements['show-startup-estimates'].checked=true;view.render();
+ assert.notDeepEqual(hiddenTicks,view.drawings['timing-chart'].labels.slice(0,4),'Opt-in restores startup scale');
+ assert.deepEqual(view.drawings['timing-chart'].strokes,[[],[5,4],[5,4],[]],'Opt-in restores dashed learning transitions');
+ assert.deepEqual(environment,view.drawings['temperature-chart'].labels,'Environment readings and scale stay visible');
+ assert.match(view.elements['history-learning-note'].textContent,/startup estimates or PPS holdover/);
+ view.elements['show-startup-estimates'].checked=false;view.render();
+ assert.deepEqual(hiddenTicks,view.drawings['timing-chart'].labels.slice(0,4),'Turning the control off restores settled scale');
+}
+const filling=historyView([warm]);filling.render();
+assert.ok(filling.drawings['timing-chart'].labels.includes('Startup estimates hidden'),'All-learning range explains the empty chart');
+const noTarget=historyView([{...warm,window_rate_s_day:null}]);noTarget.render();
+assert.ok(noTarget.drawings['timing-chart'].labels.includes('No rate values — a recorded target is required'),'Unset target keeps its own explanation');
+const holding=historyView([settled(0),{...settled(1),quality:{window_learning:false,timebase:'HOLDOVER'}}]);holding.render();
+assert.deepEqual(holding.drawings['timing-chart'].strokes,[[5,4]],'Holdover stays visible and dashed without opting into startup estimates');
+const html=fs.readFileSync(path.join(staticDirectory,'index.html'),'utf8');
+assert.match(html,/<label class="startup-control"><input id="show-startup-estimates" type="checkbox">Show startup estimates<\/label>/,'Startup control is labelled and unchecked by default');
+// Toggling a seven-day view must not submit more history/environment jobs.
+const controls=historyView([]);let historyRequests=0,environmentRequests=0;
+context.document.getElementById=id=>controls.chart.el(id);
+context.EnvironmentalRelationships=class{load(){environmentRequests++;}invalidate(){}};
+context.ResizeObserver=class{observe(){}};context.setInterval=()=>0;
+context.URLSearchParams=URLSearchParams;
+const browserChart=new context.History(()=>{historyRequests++;return new Promise(()=>{});});
+browserChart.points=[settled(0),warm];browserChart.loadedBounds=[0,604800];
+controls.elements['show-startup-estimates'].checked=true;controls.elements['show-startup-estimates'].onchange();
+controls.elements['show-startup-estimates'].checked=false;controls.elements['show-startup-estimates'].onchange();
+assert.equal(historyRequests,1,'Startup toggle uses the already loaded history');
+assert.equal(environmentRequests,1,'Startup toggle leaves environmental analysis alone');
+console.log('PASS: startup visibility, axes, gaps, holdover, environment, cursor and canonical mean history.');

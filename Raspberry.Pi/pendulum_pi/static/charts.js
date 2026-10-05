@@ -13,6 +13,7 @@ class ObservatoryHistory {
   this.el('custom-toggle').onclick=()=>{const open=this.el('history-custom').hidden;this.el('history-custom').hidden=!open;this.el('custom-toggle').setAttribute('aria-expanded',String(open));};
   this.el('history-custom').onsubmit=event=>{event.preventDefault();const start=new Date(this.el('history-start').value).getTime()/1000,end=new Date(this.el('history-end').value).getTime()/1000;if(!(end>start)){this.el('history-state').textContent='Choose an end after the start.';return;}this.live=false;this.fixed=[start,end];this.resetRange=[start,end];this.changed();};
   this.el('chart-metric').onchange=()=>this.render();
+  this.el('show-startup-estimates').onchange=()=>{this.el('chart-cursor').textContent='Move across a chart to inspect aligned readings. Drag across a chart to zoom.';this.inspect(this.cursor);this.render();};
   this.el('chart-axis').onchange=()=>{if(this.el('chart-axis').value==='elapsed' && !this.el('history-session').value){const session=this.sessions[this.sessions.length-1];if(session)this.el('history-session').value=session.session;}this.changed();};
   this.el('history-session').onchange=()=>{if(!this.el('history-session').value)this.el('chart-axis').value='host';this.changed();};
   this.el('return-live').onclick=()=>{this.live=true;this.fixed=null;this.resetRange=null;this.changed();};
@@ -56,6 +57,7 @@ class ObservatoryHistory {
  axisValue(point){return this.el('chart-axis').value==='elapsed' ? point.elapsed_seconds : point.time;}
  formatTime(value){if(this.el('chart-axis').value==='elapsed'){const sign=value<0?'-':'';const seconds=Math.abs(value);return `${sign}${Math.floor(seconds/3600)}h ${Math.floor(seconds%3600/60)}m ${Math.floor(seconds%60)}s`;}return new Date(value*1000).toLocaleString(undefined,{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',second:this.domain&&this.domain[1]-this.domain[0]<3600?'2-digit':undefined});}
  timingValue(point,name,rate,hourly){
+  if(this.learning(point,name) && !this.el('show-startup-estimates').checked)return null;
   const value=point[`${name}_${rate?'rate_s_day':'period_s'}`];
   return Number.isFinite(value)?value/(rate&&hourly?24:1):null;
  }
@@ -82,13 +84,15 @@ class ObservatoryHistory {
   this.el('history-live').textContent=this.live?'Live range':'Historical range';
   document.querySelectorAll('[data-range]').forEach(button=>button.setAttribute('aria-pressed',String(this.live && Number(button.dataset.range)===this.rangeSeconds)));
   this.el('timing-chart-title').textContent=rate?'Gain / loss':'Full period';this.el('timing-chart-unit').textContent=rate?(hourly?'seconds/hour':'seconds/day'):'seconds';
+  this.el('history-learning-note').textContent=this.el('show-startup-estimates').checked?'Dashed: startup estimates or PPS holdover':'Startup estimates hidden · dashed: PPS holdover';
   this.el('history-provenance').textContent=`${elapsed?'Axis: elapsed monotonic observation time within the selected session.':'Axis: Pi observation time; cross-session ordering is uncertain when host UTC is unverified. Wall-clock corrections create boundaries.'} These are sampled display estimates, not exact Nano event UTC. Historical rates retain each point’s recorded target and estimator identity. Only recorded 600-second means are shown; older EWMA values are not converted. Calibration method changes create segment boundaries. Environmental association does not establish causation.`;
   const coordinates=this.points.map(point=>this.axisValue(point)).filter(Number.isFinite);
   this.domain=elapsed?(coordinates.length?[Math.min(...coordinates),Math.max(...coordinates)]:[0,this.rangeSeconds]):(this.loadedBounds || this.bounds());
   if(this.domain[0]===this.domain[1])this.domain=[this.domain[0]-.5,this.domain[1]+.5];
   const timingValue=(point,horizon)=>this.timingValue(point,horizon,rate,hourly);
+  const hiddenStartup=this.points.some(p=>this.learning(p,'window') && !p.gap_reason && Number.isFinite(p[rate?'window_rate_s_day':'window_period_s'])) && !this.el('show-startup-estimates').checked;
   const specs=[
-   {id:'timing-chart',continuity:'timing',zero:rate,flatPad:rate?(hourly?.1/24:.1):.000001,series:[{color:'#356fa0',name:'600-second mean',value:p=>timingValue(p,'window'),learning:p=>this.learning(p,'window') || p.quality?.timebase==='HOLDOVER'}]},
+   {id:'timing-chart',continuity:'timing',zero:rate,flatPad:rate?(hourly?.1/24:.1):.000001,emptyMessage:hiddenStartup?'Startup estimates hidden':null,series:[{color:'#356fa0',name:'600-second mean',value:p=>timingValue(p,'window'),learning:p=>this.learning(p,'window') || p.quality?.timebase==='HOLDOVER'}]},
    {id:'temperature-chart',continuity:'sht4x',environment:true,minPad:.05,decimals:2,series:[{color:'#b86d3e',value:p=>p.temperature_C}]},
    {id:'pressure-chart',continuity:'bmp280',environment:true,minPad:.1,decimals:2,series:[{color:'#547e99',value:p=>p.pressure_hPa}]},
    {id:'humidity-chart',continuity:'sht4x',environment:true,minPad:.1,decimals:1,series:[{color:'#6a8462',value:p=>p.humidity_pct}]}
@@ -127,7 +131,7 @@ class ObservatoryHistory {
   if(Number.isFinite(this.cursor)){ctx.strokeStyle='#344f45';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(x(this.cursor),top);ctx.lineTo(x(this.cursor),height-bottom);ctx.stroke();}
   if(this.drag){ctx.fillStyle='rgba(35,118,99,.12)';const x1=x(this.drag.start),x2=x(this.drag.end);ctx.fillRect(Math.min(x1,x2),top,Math.abs(x2-x1),h);}
   ctx.restore();
-  if(!values.length){ctx.fillStyle='#708179';ctx.textAlign='center';ctx.fillText(spec.zero?'No rate values — a recorded target is required':'No available readings in this range',left+w/2,top+h/2);}
+  if(!values.length){ctx.fillStyle='#708179';ctx.textAlign='center';ctx.fillText(spec.emptyMessage || (spec.zero?'No rate values — a recorded target is required':'No available readings in this range'),left+w/2,top+h/2);}
   return {canvas,left,w,x};
  }
  position(canvas,event){const rect=canvas.getBoundingClientRect(),plot=this.plots.find(item=>item.canvas===canvas);if(!plot)return null;const fraction=Math.max(0,Math.min(1,(event.clientX-rect.left-plot.left)/plot.w));return this.domain[0]+fraction*(this.domain[1]-this.domain[0]);}
@@ -145,11 +149,12 @@ class ObservatoryHistory {
   };
  }
  inspect(value){
+  if(!Number.isFinite(value))return;
   const points=this.points.filter(point=>Number.isFinite(this.axisValue(point)));if(!points.length){this.el('chart-cursor').textContent='No observations in this selection.';return;}
   const point=points.reduce((a,b)=>Math.abs(this.axisValue(a)-value)<Math.abs(this.axisValue(b)-value)?a:b);
   const nearest=this.axisValue(point),rate=this.el('chart-metric').value==='rate',hourly=this.el('rate-unit').value==='hour';
   const fmt=(v,digits=3)=>Number.isFinite(v)?v.toFixed(digits):'—';
-  const timing=name=>`${fmt(this.timingValue(point,name,rate,hourly),rate?3:6)} ${rate?(hourly?'s/hour':'s/day'):'s'}${this.learning(point,name)?' (learning)':''}`;
+  const timing=name=>this.learning(point,name) && !this.el('show-startup-estimates').checked?'startup estimate hidden':`${fmt(this.timingValue(point,name,rate,hourly),rate?3:6)} ${rate?(hourly?'s/hour':'s/day'):'s'}${this.learning(point,name)?' (learning)':''}`;
   this.el('chart-cursor').textContent=`Nearest observation: ${this.formatTime(nearest)} · ${point.source || 'unknown source'} · ${point.gap_reason?`Gap: ${point.gap_reason.replaceAll('_',' ')}`:`600-second mean ${timing('window')} · ${fmt(point.temperature_C,2)} °C · ${fmt(point.pressure_hPa,2)} hPa · ${fmt(point.humidity_pct,1)} % RH`} · estimator ${point.settings?.estimator_model || 'legacy mean / unspecified'} · target ${fmt(point.settings?.target_period_s,6)} s · ${point.quality?.timebase || 'unknown timebase'}${Number.isFinite(point.quality?.calibration_age_seconds)?` · calibration ${fmt(point.quality.calibration_age_seconds,1)} s old`:''}`;
  }
 }

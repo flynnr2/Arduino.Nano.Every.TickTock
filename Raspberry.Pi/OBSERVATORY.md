@@ -114,6 +114,14 @@ derived from each period estimate as `86400 * (target / measured_period - 1)`
 seconds per day, without additional averaging; divide by 24 for seconds per hour.
 An unset target leaves rate unavailable. Gain/loss is a rate estimate, not accumulated clock error.
 
+Period and gain/loss history charts hide estimates flagged as learning by
+default, including them in neither the trace nor its vertical scale. Select
+**Show startup estimates** to inspect these provisional values as dashed traces.
+The control redraws loaded history without another database request; observations
+remain stored. Hidden startup intervals remain gaps, environmental charts keep
+their readings, and settled PPS holdover estimates remain visible as dashed
+traces. Environmental fits continue to require period learning to be complete.
+
 History contains sampled capture-time display estimates and environmental readings, not raw
 metrology. It follows recording enablement, persists without an open browser,
 and has independent retention and size limits (30 days / 256 MiB by default).
