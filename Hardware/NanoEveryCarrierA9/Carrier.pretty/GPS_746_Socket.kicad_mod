@@ -1,0 +1,205 @@
+(footprint "GPS_746_Socket"
+  (version 20260206)
+  (generator "pcbnew")
+  (generator_version "10.0")
+  (layer "F.Cu")
+  (property "Reference" ""
+    (at 0 0 0)
+    (layer "F.SilkS")
+    (uuid "43528b80-f6a8-4e73-9bab-ba8ea2692338")
+    (effects
+      (font
+        (size 1.27 1.27)))
+    (hide yes))
+  (property "Value" ""
+    (at 0 0 0)
+    (layer "F.Fab")
+    (uuid "a6d720c8-b512-40bd-a7a0-cda5897b6716")
+    (effects
+      (font
+        (size 1.27 1.27)))
+    (hide yes))
+  (property "Datasheet" ""
+    (at 0 0 0)
+    (layer "F.Fab")
+    (hide yes)
+    (uuid "b0a9d7c4-f568-4762-9586-adcde4dd9c4f")
+    (effects
+      (font
+        (size 1.27 1.27))))
+  (property "Description" ""
+    (at 0 0 0)
+    (layer "F.Fab")
+    (hide yes)
+    (uuid "7a9dfb8d-72ad-49c4-beea-c11d58265de6")
+    (effects
+      (font
+        (size 1.27 1.27))))
+  (attr through_hole)
+  (duplicate_pad_numbers_are_jumpers no)
+  (fp_line
+    (start -23.36 -32.758)
+    (end 3.04 -32.758)
+    (stroke
+      (width 0.05)
+      (type default))
+    (layer "F.CrtYd")
+    (uuid "fe366088-f4f4-48f5-94eb-3cdc8487c51b"))
+  (fp_line
+    (start -23.36 2.532)
+    (end -23.36 -32.758)
+    (stroke
+      (width 0.05)
+      (type default))
+    (layer "F.CrtYd")
+    (uuid "40ac1677-250c-4b0c-8f1c-1255febb9442"))
+  (fp_line
+    (start 3.04 -32.758)
+    (end 3.04 2.532)
+    (stroke
+      (width 0.05)
+      (type default))
+    (layer "F.CrtYd")
+    (uuid "3655abbb-670a-4616-929b-cedd6c4ba95e"))
+  (fp_line
+    (start 3.04 2.532)
+    (end -23.36 2.532)
+    (stroke
+      (width 0.05)
+      (type default))
+    (layer "F.CrtYd")
+    (uuid "40dd5a05-3708-47eb-b4eb-1fa2fa96ff40"))
+  (fp_line
+    (start -22.86 -32.258)
+    (end 2.54 -32.258)
+    (stroke
+      (width 0.1)
+      (type default))
+    (layer "F.Fab")
+    (uuid "a079ce7d-7b61-45f6-8432-9130c20ef49f"))
+  (fp_line
+    (start -22.86 2.032)
+    (end -22.86 -32.258)
+    (stroke
+      (width 0.1)
+      (type default))
+    (layer "F.Fab")
+    (uuid "27192618-8e50-4813-94a7-c0a7f23445c9"))
+  (fp_line
+    (start 2.54 -32.258)
+    (end 2.54 2.032)
+    (stroke
+      (width 0.1)
+      (type default))
+    (layer "F.Fab")
+    (uuid "3674738f-030e-4d09-9437-8fdea6a7b9a8"))
+  (fp_line
+    (start 2.54 2.032)
+    (end -22.86 2.032)
+    (stroke
+      (width 0.1)
+      (type default))
+    (layer "F.Fab")
+    (uuid "9034a3d3-fd6d-4502-8d9c-1534a8e02f8e"))
+  (pad "" np_thru_hole circle
+    (at -20.32 -29.718)
+    (size 2.7 2.7)
+    (drill 2.7)
+    (layers "*.Cu" "*.Mask")
+    (uuid "d1d676d1-ab02-4ade-b2f1-2089e50d99d1")
+    (zone_connect 2))
+  (pad "" np_thru_hole circle
+    (at 0 -29.718)
+    (size 2.7 2.7)
+    (drill 2.7)
+    (layers "*.Cu" "*.Mask")
+    (uuid "35580b91-5aed-4385-bbbf-c23c7ffad379")
+    (zone_connect 2))
+  (pad "1" thru_hole rect
+    (at 0 0)
+    (size 1.8 1.8)
+    (drill 1)
+    (layers "*.Cu" "*.Mask")
+    (remove_unused_layers no)
+    (thermal_bridge_angle 45)
+    (uuid "dab5862e-3ac4-40cd-a702-c803a53bbcb0")
+    (zone_connect 2))
+  (pad "2" thru_hole circle
+    (at -2.54 0)
+    (size 1.8 1.8)
+    (drill 1)
+    (layers "*.Cu" "*.Mask")
+    (remove_unused_layers no)
+    (uuid "cc796580-94cd-4eba-9afc-668119524301")
+    (zone_connect 2))
+  (pad "3" thru_hole circle
+    (at -5.08 0)
+    (size 1.8 1.8)
+    (drill 1)
+    (layers "*.Cu" "*.Mask")
+    (remove_unused_layers no)
+    (uuid "748b6ae3-3d38-4d11-8f64-372db42fd801")
+    (zone_connect 2))
+  (pad "4" thru_hole circle
+    (at -7.62 0)
+    (size 1.8 1.8)
+    (drill 1)
+    (layers "*.Cu" "*.Mask")
+    (remove_unused_layers no)
+    (uuid "ac398cbc-5d36-4530-9f2e-6dbab45dc48a")
+    (zone_connect 2))
+  (pad "5" thru_hole circle
+    (at -10.16 0)
+    (size 1.8 1.8)
+    (drill 1)
+    (layers "*.Cu" "*.Mask")
+    (remove_unused_layers no)
+    (uuid "caf29cdc-cc7c-4c7b-8727-2f6fbb219cc4")
+    (zone_connect 2))
+  (pad "6" thru_hole circle
+    (at -12.7 0)
+    (size 1.8 1.8)
+    (drill 1)
+    (layers "*.Cu" "*.Mask")
+    (remove_unused_layers no)
+    (uuid "5c13ae4b-237a-4e9c-be96-da6f3f1fb1a6")
+    (zone_connect 2))
+  (pad "7" thru_hole circle
+    (at -15.24 0)
+    (size 1.8 1.8)
+    (drill 1)
+    (layers "*.Cu" "*.Mask")
+    (remove_unused_layers no)
+    (uuid "10a4a349-2dab-44b9-9020-8a58ee9e4f50")
+    (zone_connect 2))
+  (pad "8" thru_hole circle
+    (at -17.78 0)
+    (size 1.8 1.8)
+    (drill 1)
+    (layers "*.Cu" "*.Mask")
+    (remove_unused_layers no)
+    (uuid "366321d0-5a01-4b41-bc84-59e29df36d96")
+    (zone_connect 2))
+  (pad "9" thru_hole circle
+    (at -20.32 0)
+    (size 1.8 1.8)
+    (drill 1)
+    (layers "*.Cu" "*.Mask")
+    (remove_unused_layers no)
+    (uuid "7fa3dec7-953b-46a4-86c7-26936a697840")
+    (zone_connect 2))
+  (embedded_fonts no)
+  (model "${KIPRJMOD}/Carrier.3dshapes/GPS_Socket.wrl"
+    (offset
+      (xyz 0 0 0))
+    (scale
+      (xyz 0.3937007874 0.3937007874 0.3937007874))
+    (rotate
+      (xyz 0 0 0)))
+  (model "${KIPRJMOD}/Carrier.3dshapes/GPS_746_Envelope.wrl"
+    (offset
+      (xyz 0 0 0))
+    (scale
+      (xyz 0.3937007874 0.3937007874 0.3937007874))
+    (rotate
+      (xyz 0 0 0))))

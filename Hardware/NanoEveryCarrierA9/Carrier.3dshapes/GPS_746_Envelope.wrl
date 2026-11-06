@@ -1,0 +1,6 @@
+#VRML V2.0 utf8
+# Customer GPS module only; nominal socket/male-header stack. Physical battery clearance must be checked.
+Transform { translation -10.16 15.113 11.85 children [ Shape { appearance Appearance { material Material { diffuseColor 0.04 0.23 0.39 } } geometry Box { size 25.4 34.29 1.6 } } ] }
+Transform { translation -10.16 0 9.78 children [ Shape { appearance Appearance { material Material { diffuseColor 0.06 0.065 0.07 } } geometry Box { size 22.86 2.54 2.54 } } ] }
+Transform { translation -10.668 15.494 14.7 children [ Shape { appearance Appearance { material Material { diffuseColor 0.85 0.75 0.59 } } geometry Box { size 16 16 4.1 } } ] }
+Transform { translation -10.16 25.019 9.55 children [ Shape { appearance Appearance { material Material { diffuseColor 0.65 0.67 0.7 } } geometry Box { size 12.5 12.5 3 } } ] }

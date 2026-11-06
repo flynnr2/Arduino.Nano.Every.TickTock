@@ -1,0 +1,20 @@
+A.9 MODEL NOTES — 5 NOVEMBER 2026
+
+The Nano footprint includes two female sockets and an illustrative stock Nano envelope.
+Its USB end lies at local+Y, between D12/pad15 and D13/pad16;180-degree placement faces the top board edge.
+The orientation label/arrow between the rows is visible before insertion and covered by the Nano afterwards.
+Model stacking height and cable/enclosure clearances need checking against actual sockets, Nano and cable.
+
+New custom envelopes: Wurth691210910005 five-way terminal13.1x6.5x8.5mm;
+Wurth7447785004 inductor5.9x6.2x3.3mm; TI_RPW0010A2x2x1mm package envelope.
+These simplified envelopes omit screw heads, wire openings, lead detail and manufacturing tolerances.
+All other used package models are vendored KiCad STEP or inherited original envelopes.
+Unused inherited model files remain as library assets; they do not specify A.9 fitted parts.
+JST GH/XH and former pluggable sensor connector assets are NOT A.9 assembly choices.
+
+J7 is DNP and hidden by the default render. Jumpers in renders do not establish shunt settings;
+the assembly guide/default table controls. U14 is the onboard SOT-223 GNSS regulator. Its tab is OUTPUT, not GND.
+JP2 is a3-pin header; the documented1-2 default supplies3.3V toJ5.
+
+These are placement/communication models, not manufacturer-certified mechanical-fit evidence.
+KiCad library assets retain their supplied license; original envelopes are project-authored.

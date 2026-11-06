@@ -1,0 +1,56 @@
+(footprint "ECS_TXO_5032"
+  (version 20241229)
+  (generator "pcbnew")
+  (layer "F.Cu")
+  (descr "ECS-TXO-5032 manufacturer land pattern: outer 5.3 x 3.5 mm, inner 2.6 x 1.6 mm; top view")
+  (attr smd)
+  (fp_text value "ECS_TXO_5032"
+    (at 0 3.0)
+    (layer "F.Fab")
+    (effects
+      (font
+        (size 1 1)
+        (thickness 0.15))))
+  (fp_rect
+    (start -2.5 -1.6)
+    (end 2.5 1.6)
+    (stroke
+      (width 0.1)
+      (type default))
+    (fill none)
+    (layer "F.Fab"))
+  (fp_rect
+    (start -2.95 -2.0)
+    (end 2.95 2.0)
+    (stroke
+      (width 0.05)
+      (type default))
+    (fill none)
+    (layer "F.CrtYd"))
+  (pad "1" smd rect
+    (at -1.975 1.275)
+    (size 1.35 0.95)
+    (layers "F.Cu" "F.Paste" "F.Mask")
+    (zone_connect 2))
+  (pad "2" smd rect
+    (at 1.975 1.275)
+    (size 1.35 0.95)
+    (layers "F.Cu" "F.Paste" "F.Mask")
+    (zone_connect 2))
+  (pad "3" smd rect
+    (at 1.975 -1.275)
+    (size 1.35 0.95)
+    (layers "F.Cu" "F.Paste" "F.Mask")
+    (zone_connect 2))
+  (pad "4" smd rect
+    (at -1.975 -1.275)
+    (size 1.35 0.95)
+    (layers "F.Cu" "F.Paste" "F.Mask")
+    (zone_connect 2))
+  (model "${KIPRJMOD}/Carrier.3dshapes/ECS_5032_Envelope.wrl"
+    (offset
+      (xyz 0 0 0))
+    (scale
+      (xyz 0.3937007874 0.3937007874 0.3937007874))
+    (rotate
+      (xyz 0 0 0))))

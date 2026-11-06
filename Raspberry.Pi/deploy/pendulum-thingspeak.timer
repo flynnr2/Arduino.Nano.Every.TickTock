@@ -1,0 +1,12 @@
+[Unit]
+Description=Optional hourly Pendulum ThingSpeak clock diary schedule
+
+[Timer]
+OnActiveSec=1h
+OnUnitInactiveSec=1h
+AccuracySec=1min
+Persistent=false
+Unit=pendulum-thingspeak.service
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,2 @@
+# Preserve released CSV bytes: the source manifest and supplier ZIP hash them.
+*.csv -text

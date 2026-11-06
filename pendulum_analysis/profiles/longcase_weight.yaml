@@ -1,0 +1,23 @@
+id: longcase_weight
+display_name: Weight-driven longcase
+description: Weight-driven longcase pendulum clock profile stub.
+nominal_period_s: null
+nominal_half_period_s: null
+phase:
+  primary_modulus: null
+  expected_moduli: []
+  event_unit: event
+  description: "TODO: configure train/escapement cadence only from known movement geometry."
+capabilities:
+  tick_tock: false
+  block_intervals: false
+  impulse_cycle: false
+  one_sided_impulse: false
+  electrical_drive: false
+  remontoire: false
+  train_impulse: true
+  balance_wheel: false
+harmonic_families: []
+annotations:
+  fft: []
+notes: "Stub only; train-impulse capability is descriptive and does not enable profile-specific analyses."

@@ -1,0 +1,14 @@
+*.kicad_prl
+*.lck
+*-backups/
+~*.kicad_sch.lck
+fp-info-cache
+__pycache__/
+!output/
+!output/**
+!GNSSRegulator/output/
+!GNSSRegulator/output/**
+
+# Output exports must not override the repository's desktop-metadata exclusions.
+.DS_Store
+__MACOSX/

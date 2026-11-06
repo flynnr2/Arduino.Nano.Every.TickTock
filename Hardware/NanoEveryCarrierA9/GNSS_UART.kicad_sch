@@ -1,0 +1,1279 @@
+(kicad_sch
+  (version 20250114)
+  (generator "eeschema")
+  (uuid "a351a0c7-0d02-5d04-9d19-aa4752f9db74")
+  (paper "A3")
+  (title_block
+    (title "A.9 | GNSS UART / SERVICE")
+    (date "2026-11-06")
+    (rev "A.9")
+    (company "Pendulum Observatory")
+    (comment 1 "Unbuilt prototype - review and acceptance required"))
+  (lib_symbols
+    (symbol "Carrier:TXU0202"
+      (pin_names
+        (offset 1.016))
+      (in_bom yes)
+      (on_board yes)
+      (property "Reference" "U"
+        (at 0 0 0)
+        (effects
+          (font
+            (size 1.27 1.27))))
+      (property "Value" "TXU0202"
+        (at 0 0 0)
+        (effects
+          (font
+            (size 1.27 1.27))))
+      (symbol "TXU0202_0_1"
+        (rectangle
+          (start -17.78 15.24)
+          (end 17.78 -15.24)
+          (stroke
+            (width 0.254)
+            (type default))
+          (fill
+            (type background))))
+      (symbol "TXU0202_1_1"
+        (pin input line
+          (at -22.86 7.62 0)
+          (length 5.08)
+          (name "A1 / NANO_TX"
+            (effects
+              (font
+                (size 1.016 1.016))))
+          (number "5"
+            (effects
+              (font
+                (size 1.016 1.016)))))
+        (pin tri_state line
+          (at -22.86 0 0)
+          (length 5.08)
+          (name "A2Y / NANO_RX"
+            (effects
+              (font
+                (size 1.016 1.016))))
+          (number "4"
+            (effects
+              (font
+                (size 1.016 1.016)))))
+        (pin input line
+          (at -22.86 -10.16 0)
+          (length 5.08)
+          (name "OE"
+            (effects
+              (font
+                (size 1.016 1.016))))
+          (number "6"
+            (effects
+              (font
+                (size 1.016 1.016)))))
+        (pin power_in line
+          (at -7.62 20.32 270)
+          (length 5.08)
+          (name "VCCA_5V"
+            (effects
+              (font
+                (size 1.016 1.016))))
+          (number "3"
+            (effects
+              (font
+                (size 1.016 1.016)))))
+        (pin power_in line
+          (at 7.62 20.32 270)
+          (length 5.08)
+          (name "VCCB_3V3"
+            (effects
+              (font
+                (size 1.016 1.016))))
+          (number "7"
+            (effects
+              (font
+                (size 1.016 1.016)))))
+        (pin power_in line
+          (at 0 -20.32 90)
+          (length 5.08)
+          (name "GND"
+            (effects
+              (font
+                (size 1.016 1.016))))
+          (number "2"
+            (effects
+              (font
+                (size 1.016 1.016)))))
+        (pin input line
+          (at 22.86 0 180)
+          (length 5.08)
+          (name "B2 / GNSS_TX"
+            (effects
+              (font
+                (size 1.016 1.016))))
+          (number "1"
+            (effects
+              (font
+                (size 1.016 1.016)))))
+        (pin tri_state line
+          (at 22.86 7.62 180)
+          (length 5.08)
+          (name "B1Y / NANO_TX_3V3"
+            (effects
+              (font
+                (size 1.016 1.016))))
+          (number "8"
+            (effects
+              (font
+                (size 1.016 1.016)))))))
+    (symbol "Carrier:UART_Selector"
+      (pin_names
+        (offset 0)
+        (hide yes))
+      (exclude_from_sim no)
+      (in_bom no)
+      (on_board yes)
+      (in_pos_files yes)
+      (duplicate_pin_numbers_are_jumpers no)
+      (property "Reference" "JP"
+        (at -2.54 -2.54 0)
+        (show_name no)
+        (do_not_autoplace no)
+        (effects
+          (font
+            (size 1.27 1.27))))
+      (property "Value" "Jumper_3_Bridged12"
+        (at 0 2.794 0)
+        (show_name no)
+        (do_not_autoplace no)
+        (effects
+          (font
+            (size 1.27 1.27))))
+      (property "Footprint" ""
+        (at 0 0 0)
+        (show_name no)
+        (do_not_autoplace no)
+        (hide yes)
+        (effects
+          (font
+            (size 1.27 1.27))))
+      (property "Datasheet" ""
+        (at 0 0 0)
+        (show_name no)
+        (do_not_autoplace no)
+        (hide yes)
+        (effects
+          (font
+            (size 1.27 1.27))))
+      (property "Description" "Jumper, 3-pole, pins 1+2 closed/bridged"
+        (at 0 -11.43 0)
+        (show_name no)
+        (do_not_autoplace no)
+        (hide yes)
+        (effects
+          (font
+            (size 1.27 1.27))))
+      (property "ki_keywords" "Jumper SPDT"
+        (at 0 0 0)
+        (show_name no)
+        (do_not_autoplace no)
+        (hide yes)
+        (effects
+          (font
+            (size 1.27 1.27))))
+      (property "ki_fp_filters" "Jumper* TestPoint*3Pads* TestPoint*Bridge*"
+        (at 0 0 0)
+        (show_name no)
+        (do_not_autoplace no)
+        (hide yes)
+        (effects
+          (font
+            (size 1.27 1.27))))
+      (symbol "UART_Selector_0_0"
+        (circle
+          (center -2.032 0)
+          (radius 0.508)
+          (stroke
+            (width 0)
+            (type default))
+          (fill
+            (type none)))
+        (circle
+          (center 0 0)
+          (radius 0.508)
+          (stroke
+            (width 0)
+            (type default))
+          (fill
+            (type none)))
+        (circle
+          (center 2.032 0)
+          (radius 0.508)
+          (stroke
+            (width 0)
+            (type default))
+          (fill
+            (type none))))
+      (symbol "UART_Selector_0_1"
+        (arc
+          (start -2.032 0.508)
+          (mid -1.143 0.8155)
+          (end -0.254 0.508)
+          (stroke
+            (width 0)
+            (type default))
+          (fill
+            (type none)))
+        (polyline
+          (pts
+            (xy 0 -1.27)
+            (xy 0 -0.508))
+          (stroke
+            (width 0)
+            (type default))
+          (fill
+            (type none))))
+      (symbol "UART_Selector_1_1"
+        (pin input line
+          (at -5.08 0 0)
+          (length 2.54)
+          (name "A"
+            (effects
+              (font
+                (size 1.27 1.27))))
+          (number "1"
+            (effects
+              (font
+                (size 1.27 1.27)))))
+        (pin output line
+          (at 0 -3.81 90)
+          (length 2.54)
+          (name "C"
+            (effects
+              (font
+                (size 1.27 1.27))))
+          (number "2"
+            (effects
+              (font
+                (size 1.27 1.27)))))
+        (pin input line
+          (at 5.08 0 180)
+          (length 2.54)
+          (name "B"
+            (effects
+              (font
+                (size 1.27 1.27))))
+          (number "3"
+            (effects
+              (font
+                (size 1.27 1.27))))))
+      (embedded_fonts no))
+    (symbol "Carrier:C"
+      (pin_numbers
+        (hide yes))
+      (pin_names
+        (offset 0.254))
+      (exclude_from_sim no)
+      (in_bom yes)
+      (on_board yes)
+      (in_pos_files yes)
+      (duplicate_pin_numbers_are_jumpers no)
+      (property "Reference" "C"
+        (at 0.635 2.54 0)
+        (show_name no)
+        (do_not_autoplace no)
+        (effects
+          (font
+            (size 1.27 1.27))
+          (justify left)))
+      (property "Value" "C"
+        (at 0.635 -2.54 0)
+        (show_name no)
+        (do_not_autoplace no)
+        (effects
+          (font
+            (size 1.27 1.27))
+          (justify left)))
+      (property "Footprint" ""
+        (at 0.9652 -3.81 0)
+        (show_name no)
+        (do_not_autoplace no)
+        (hide yes)
+        (effects
+          (font
+            (size 1.27 1.27))))
+      (property "Datasheet" ""
+        (at 0 0 0)
+        (show_name no)
+        (do_not_autoplace no)
+        (hide yes)
+        (effects
+          (font
+            (size 1.27 1.27))))
+      (property "Description" "Unpolarized capacitor"
+        (at 0 0 0)
+        (show_name no)
+        (do_not_autoplace no)
+        (hide yes)
+        (effects
+          (font
+            (size 1.27 1.27))))
+      (property "ki_keywords" "cap capacitor"
+        (at 0 0 0)
+        (show_name no)
+        (do_not_autoplace no)
+        (hide yes)
+        (effects
+          (font
+            (size 1.27 1.27))))
+      (property "ki_fp_filters" "C_*"
+        (at 0 0 0)
+        (show_name no)
+        (do_not_autoplace no)
+        (hide yes)
+        (effects
+          (font
+            (size 1.27 1.27))))
+      (symbol "C_0_1"
+        (polyline
+          (pts
+            (xy -2.032 0.762)
+            (xy 2.032 0.762))
+          (stroke
+            (width 0.508)
+            (type default))
+          (fill
+            (type none)))
+        (polyline
+          (pts
+            (xy -2.032 -0.762)
+            (xy 2.032 -0.762))
+          (stroke
+            (width 0.508)
+            (type default))
+          (fill
+            (type none))))
+      (symbol "C_1_1"
+        (pin passive line
+          (at 0 3.81 270)
+          (length 2.794)
+          (name ""
+            (effects
+              (font
+                (size 1.27 1.27))))
+          (number "1"
+            (effects
+              (font
+                (size 1.27 1.27)))))
+        (pin passive line
+          (at 0 -3.81 90)
+          (length 2.794)
+          (name ""
+            (effects
+              (font
+                (size 1.27 1.27))))
+          (number "2"
+            (effects
+              (font
+                (size 1.27 1.27))))))
+      (embedded_fonts no))
+    (symbol "Carrier:R"
+      (pin_numbers
+        (hide yes))
+      (pin_names
+        (offset 0))
+      (exclude_from_sim no)
+      (in_bom yes)
+      (on_board yes)
+      (in_pos_files yes)
+      (duplicate_pin_numbers_are_jumpers no)
+      (property "Reference" "R"
+        (at 2.032 0 90)
+        (show_name no)
+        (do_not_autoplace no)
+        (effects
+          (font
+            (size 1.27 1.27))))
+      (property "Value" "R"
+        (at 0 0 90)
+        (show_name no)
+        (do_not_autoplace no)
+        (effects
+          (font
+            (size 1.27 1.27))))
+      (property "Footprint" ""
+        (at -1.778 0 90)
+        (show_name no)
+        (do_not_autoplace no)
+        (hide yes)
+        (effects
+          (font
+            (size 1.27 1.27))))
+      (property "Datasheet" ""
+        (at 0 0 0)
+        (show_name no)
+        (do_not_autoplace no)
+        (hide yes)
+        (effects
+          (font
+            (size 1.27 1.27))))
+      (property "Description" "Resistor"
+        (at 0 0 0)
+        (show_name no)
+        (do_not_autoplace no)
+        (hide yes)
+        (effects
+          (font
+            (size 1.27 1.27))))
+      (property "ki_keywords" "R res resistor"
+        (at 0 0 0)
+        (show_name no)
+        (do_not_autoplace no)
+        (hide yes)
+        (effects
+          (font
+            (size 1.27 1.27))))
+      (property "ki_fp_filters" "R_*"
+        (at 0 0 0)
+        (show_name no)
+        (do_not_autoplace no)
+        (hide yes)
+        (effects
+          (font
+            (size 1.27 1.27))))
+      (symbol "R_0_1"
+        (rectangle
+          (start -1.016 -2.54)
+          (end 1.016 2.54)
+          (stroke
+            (width 0.254)
+            (type default))
+          (fill
+            (type none))))
+      (symbol "R_1_1"
+        (pin passive line
+          (at 0 3.81 270)
+          (length 1.27)
+          (name ""
+            (effects
+              (font
+                (size 1.27 1.27))))
+          (number "1"
+            (effects
+              (font
+                (size 1.27 1.27)))))
+        (pin passive line
+          (at 0 -3.81 90)
+          (length 1.27)
+          (name ""
+            (effects
+              (font
+                (size 1.27 1.27))))
+          (number "2"
+            (effects
+              (font
+                (size 1.27 1.27))))))
+      (embedded_fonts no)))
+  (text "GNSS UART / SERVICE"
+    (at 12.7 12.7 0)
+    (effects
+      (font
+        (size 2 2))
+      (justify left top))
+    (uuid "d459c477-568d-565e-b113-8af7ab0b83b9"))
+  (text "Nano Serial1 owns GNSS configuration. USB Serial remains recording/commands.\nJP8: 1-2 enabled;2-3 disabled for receiver service. Remove JP2 before separately powering GNSS; UART/PPS can still back-power it.\nHardware support does not implement receiver configuration/qualification firmware."
+    (at 12.7 23 0)
+    (effects
+      (font
+        (size 1.016 1.016))
+      (justify left top))
+    (uuid "e8313f9d-16dc-50c9-afbd-481c9621f971"))
+  (wire
+    (pts
+      (xy 53.34 76.2)
+      (xy 48.26 76.2))
+    (stroke
+      (width 0)
+      (type default))
+    (uuid "8dba5a25-4bb8-551d-8322-f80ab626f776"))
+  (global_label "NANO_TX5"
+    (shape bidirectional)
+    (at 48.26 76.2 0)
+    (effects
+      (font
+        (size 0.762 0.762))
+      (justify left))
+    (uuid "564052f3-fbb4-5b9f-bfdf-3e4af641b0b5"))
+  (wire
+    (pts
+      (xy 53.34 83.82)
+      (xy 48.26 83.82))
+    (stroke
+      (width 0)
+      (type default))
+    (uuid "deb61cf9-ae0e-5d22-96e2-6a7d655d5c7c"))
+  (global_label "NANO_RX5"
+    (shape bidirectional)
+    (at 48.26 83.82 0)
+    (effects
+      (font
+        (size 0.762 0.762))
+      (justify left))
+    (uuid "0e8d8c72-98e8-5098-b2a9-f5a3d1d6d7ca"))
+  (wire
+    (pts
+      (xy 53.34 93.98)
+      (xy 48.26 93.98))
+    (stroke
+      (width 0)
+      (type default))
+    (uuid "ca0fe2b0-c4ab-54b2-8d81-12de3f0fb9b4"))
+  (global_label "UART_ENABLE"
+    (shape bidirectional)
+    (at 48.26 93.98 0)
+    (effects
+      (font
+        (size 0.762 0.762))
+      (justify left))
+    (uuid "0537c148-8481-5f32-9a37-9fa472d7981f"))
+  (wire
+    (pts
+      (xy 68.58 63.5)
+      (xy 68.58 58.42))
+    (stroke
+      (width 0)
+      (type default))
+    (uuid "9b03a939-8e30-54c4-afb3-460fe9e8be73"))
+  (global_label "5V_CAPTURE"
+    (shape bidirectional)
+    (at 68.58 58.42 270)
+    (effects
+      (font
+        (size 0.762 0.762))
+      (justify left))
+    (uuid "7503fa0b-c626-5206-b277-d199b89a0236"))
+  (wire
+    (pts
+      (xy 83.82 63.5)
+      (xy 83.82 58.42))
+    (stroke
+      (width 0)
+      (type default))
+    (uuid "e3eb9e7e-a772-54b1-af69-6814f75a0667"))
+  (global_label "3V3_NANO"
+    (shape bidirectional)
+    (at 83.82 58.42 270)
+    (effects
+      (font
+        (size 0.762 0.762))
+      (justify left))
+    (uuid "b2ecc3ae-2318-53a2-9768-978d466c1f24"))
+  (wire
+    (pts
+      (xy 76.2 104.14)
+      (xy 76.2 109.22))
+    (stroke
+      (width 0)
+      (type default))
+    (uuid "cb050dea-709b-5d8d-9901-0a78ec52ab6a"))
+  (global_label "GND"
+    (shape bidirectional)
+    (at 76.2 109.22 90)
+    (effects
+      (font
+        (size 0.762 0.762))
+      (justify left))
+    (uuid "d1975e82-5855-5801-980e-59e3033e29a3"))
+  (wire
+    (pts
+      (xy 99.06 83.82)
+      (xy 104.14 83.82))
+    (stroke
+      (width 0)
+      (type default))
+    (uuid "0b817627-b699-5e28-8436-88c9a0403cf3"))
+  (global_label "GPS_TX"
+    (shape bidirectional)
+    (at 104.14 83.82 180)
+    (effects
+      (font
+        (size 0.762 0.762))
+      (justify left))
+    (uuid "0b44f601-e152-5378-8a27-fd90daf7cef9"))
+  (wire
+    (pts
+      (xy 99.06 76.2)
+      (xy 104.14 76.2))
+    (stroke
+      (width 0)
+      (type default))
+    (uuid "36eebd45-f123-5acd-935a-ebda9ae05dcc"))
+  (global_label "GPS_RX"
+    (shape bidirectional)
+    (at 104.14 76.2 180)
+    (effects
+      (font
+        (size 0.762 0.762))
+      (justify left))
+    (uuid "efeb6d44-4804-54c0-8536-1e7ff1d3e8bb"))
+  (symbol
+    (lib_id "Carrier:TXU0202")
+    (at 76.2 83.82 0)
+    (unit 1)
+    (in_bom yes)
+    (on_board yes)
+    (dnp no)
+    (uuid "946192b9-1437-52e0-b8f0-d74f1bbeb593")
+    (property "Manufacturer" "Texas Instruments"
+      (at 76.2 83.82 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (hide yes)))
+    (property "MPN" "TXU0202DCUR"
+      (at 76.2 83.82 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (hide yes)))
+    (property "Assembly" "UART-only dual-supply translator; VCCA 5V, VCCB 3.3V. Pins 1/8 GNSS side; pins 4/5 Nano side; no PPS routing through U5."
+      (at 76.2 83.82 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (hide yes)))
+    (property "Footprint" "Carrier:TI_DCU0008A_VSSOP-8_2.3x2mm_P0.5mm"
+      (at 76.2 83.82 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (hide yes)))
+    (property "Datasheet" "https://www.ti.com/lit/ds/symlink/txu0202.pdf"
+      (at 76.2 83.82 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (hide yes)))
+    (property "Description" ""
+      (at 76.2 83.82 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (hide yes)))
+    (property "Reference" "U5"
+      (at 76.2 58.49999999999999 0)
+      (effects
+        (font
+          (size 0.9 0.9))))
+    (property "Value" "TXU0202DCUR"
+      (at 76.2 60.99999999999999 0)
+      (effects
+        (font
+          (size 0.9 0.9))))
+    (instances
+      (project "NanoEveryCarrier"
+        (path "/8572c726-1ea0-5ab8-b0a6-a548b9a05059/c4987d4c-b1c7-54a6-aa7e-a133c0dbd3f7"
+          (reference "U5")
+          (unit 1))))
+    (pin "5"
+      (uuid "ac12c2f8-adc3-5daa-8566-5ff4a2ab733b"))
+    (pin "4"
+      (uuid "bda8d559-bff9-5bc7-8959-afe8436dc18b"))
+    (pin "6"
+      (uuid "bb3c9c03-23e3-5f2f-9de2-e9b236822107"))
+    (pin "3"
+      (uuid "57846969-ed23-53d2-8855-435b2fe7157a"))
+    (pin "7"
+      (uuid "01133a0a-0109-5bca-b84b-4db040784dee"))
+    (pin "2"
+      (uuid "9c01b282-5099-5b98-8077-5888c7c27a48"))
+    (pin "1"
+      (uuid "eb8efb46-4824-5051-accd-4e36ff3e1978"))
+    (pin "8"
+      (uuid "0b6d7341-062a-5c98-b4b0-e0426ea22103")))
+  (wire
+    (pts
+      (xy 198.12 66.04)
+      (xy 193.04 66.04))
+    (stroke
+      (width 0)
+      (type default))
+    (uuid "94fa1180-c1ac-530e-bd56-fea6158b98c0"))
+  (global_label "3V3_NANO"
+    (shape bidirectional)
+    (at 193.04 66.04 0)
+    (effects
+      (font
+        (size 0.762 0.762))
+      (justify left))
+    (uuid "22c724df-9fd1-51f5-8e80-d2b06a751cee"))
+  (wire
+    (pts
+      (xy 203.2 69.85)
+      (xy 203.2 74.93))
+    (stroke
+      (width 0)
+      (type default))
+    (uuid "c1e2cf60-6942-5942-8df6-8f327fe3fee6"))
+  (global_label "UART_ENABLE"
+    (shape bidirectional)
+    (at 203.2 74.93 90)
+    (effects
+      (font
+        (size 0.762 0.762))
+      (justify left))
+    (uuid "14fe5c71-bf6b-5062-b835-231c44d5853c"))
+  (wire
+    (pts
+      (xy 208.28 66.04)
+      (xy 213.36 66.04))
+    (stroke
+      (width 0)
+      (type default))
+    (uuid "3f6d5ce7-3b3c-5835-a518-084a9567d9e0"))
+  (global_label "GND"
+    (shape bidirectional)
+    (at 213.36 66.04 180)
+    (effects
+      (font
+        (size 0.762 0.762))
+      (justify left))
+    (uuid "8cb9fed1-b38f-5ee3-a4ce-9189eb28160c"))
+  (symbol
+    (lib_id "Carrier:UART_Selector")
+    (at 203.2 66.04 0)
+    (unit 1)
+    (in_bom yes)
+    (on_board yes)
+    (dnp no)
+    (uuid "890bce76-84d6-5d9b-817f-21cd65919b89")
+    (property "Manufacturer" "Samtec"
+      (at 203.2 66.04 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (hide yes)))
+    (property "MPN" "TSW-103-07-G-S"
+      (at 203.2 66.04 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (hide yes)))
+    (property "Assembly" "JP8 1-2: Nano GNSS UART enabled (default). JP8 2-3: U5 disabled for receiver USB servicing. Change with all equipment powered off."
+      (at 203.2 66.04 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (hide yes)))
+    (property "Footprint" "Carrier:PinHeader_1x03_P2.54mm_Vertical"
+      (at 203.2 66.04 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (hide yes)))
+    (property "Datasheet" ""
+      (at 203.2 66.04 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (hide yes)))
+    (property "Description" ""
+      (at 203.2 66.04 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (hide yes)))
+    (property "Reference" "JP8"
+      (at 203.2 58.040000000000006 0)
+      (effects
+        (font
+          (size 0.9 0.9))))
+    (property "Value" "NANO UART ENABLE"
+      (at 203.2 60.540000000000006 0)
+      (effects
+        (font
+          (size 0.9 0.9))))
+    (instances
+      (project "NanoEveryCarrier"
+        (path "/8572c726-1ea0-5ab8-b0a6-a548b9a05059/c4987d4c-b1c7-54a6-aa7e-a133c0dbd3f7"
+          (reference "JP8")
+          (unit 1))))
+    (pin "1"
+      (uuid "2e766c65-66b1-5439-bcb3-feebebbbd885"))
+    (pin "2"
+      (uuid "af935484-a3a8-5fe6-9b9c-b72ddae4a847"))
+    (pin "3"
+      (uuid "466dd77f-b783-5e5c-bb42-2c65e7135114")))
+  (wire
+    (pts
+      (xy 326.39 66.04)
+      (xy 321.31 66.04))
+    (stroke
+      (width 0)
+      (type default))
+    (uuid "2ccda5fe-c972-5568-9014-5c7c831b4986"))
+  (global_label "5V_CAPTURE"
+    (shape bidirectional)
+    (at 321.31 66.04 0)
+    (effects
+      (font
+        (size 0.762 0.762))
+      (justify left))
+    (uuid "b6a17b0a-1f66-5d13-ad68-7e29f1064151"))
+  (wire
+    (pts
+      (xy 334.01 66.04)
+      (xy 339.09 66.04))
+    (stroke
+      (width 0)
+      (type default))
+    (uuid "61985f1b-0652-5862-ba66-887e47168e82"))
+  (global_label "GND"
+    (shape bidirectional)
+    (at 339.09 66.04 180)
+    (effects
+      (font
+        (size 0.762 0.762))
+      (justify left))
+    (uuid "38406116-7da8-576c-b4d3-7f95cb204b9f"))
+  (symbol
+    (lib_id "Carrier:C")
+    (at 330.2 66.04 90)
+    (unit 1)
+    (in_bom yes)
+    (on_board yes)
+    (dnp no)
+    (uuid "2180154b-60b6-5f21-8f7d-5689c2a06141")
+    (property "Manufacturer" "Murata"
+      (at 330.2 66.04 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (hide yes)))
+    (property "MPN" "GRM21BR71H104KA01L"
+      (at 330.2 66.04 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (hide yes)))
+    (property "Assembly" "100nF UART translator bypass; place at U5 supply pin and local ground return."
+      (at 330.2 66.04 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (hide yes)))
+    (property "Footprint" "Carrier:C_0805_2012Metric"
+      (at 330.2 66.04 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (hide yes)))
+    (property "Datasheet" ""
+      (at 330.2 66.04 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (hide yes)))
+    (property "Description" ""
+      (at 330.2 66.04 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (hide yes)))
+    (property "Reference" "C14"
+      (at 330.2 58.040000000000006 0)
+      (effects
+        (font
+          (size 0.9 0.9))))
+    (property "Value" "100n"
+      (at 330.2 60.540000000000006 0)
+      (effects
+        (font
+          (size 0.9 0.9))))
+    (instances
+      (project "NanoEveryCarrier"
+        (path "/8572c726-1ea0-5ab8-b0a6-a548b9a05059/c4987d4c-b1c7-54a6-aa7e-a133c0dbd3f7"
+          (reference "C14")
+          (unit 1))))
+    (pin "1"
+      (uuid "88747e94-0c44-512e-8db1-b303ac7b208b"))
+    (pin "2"
+      (uuid "a36ee4af-84af-53e3-a8e2-90bf3c4649f5")))
+  (wire
+    (pts
+      (xy 199.39 86.36)
+      (xy 194.31 86.36))
+    (stroke
+      (width 0)
+      (type default))
+    (uuid "e37aebe1-f41e-5e11-a8b3-3db335760ccf"))
+  (global_label "3V3_NANO"
+    (shape bidirectional)
+    (at 194.31 86.36 0)
+    (effects
+      (font
+        (size 0.762 0.762))
+      (justify left))
+    (uuid "e70c51c0-5bdf-5e8e-807c-c32b80c4ba1e"))
+  (wire
+    (pts
+      (xy 207.01 86.36)
+      (xy 212.09 86.36))
+    (stroke
+      (width 0)
+      (type default))
+    (uuid "3a6c20f9-64ef-5749-a38e-be3ed1e9502c"))
+  (global_label "GND"
+    (shape bidirectional)
+    (at 212.09 86.36 180)
+    (effects
+      (font
+        (size 0.762 0.762))
+      (justify left))
+    (uuid "325bc071-fa9f-599d-83f7-ec660830d4d6"))
+  (symbol
+    (lib_id "Carrier:C")
+    (at 203.2 86.36 90)
+    (unit 1)
+    (in_bom yes)
+    (on_board yes)
+    (dnp no)
+    (uuid "955dbeed-43ad-56d9-9192-4a178b831a3c")
+    (property "Manufacturer" "Murata"
+      (at 203.2 86.36 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (hide yes)))
+    (property "MPN" "GRM21BR71H104KA01L"
+      (at 203.2 86.36 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (hide yes)))
+    (property "Assembly" "100nF UART translator bypass; place at U5 supply pin and local ground return."
+      (at 203.2 86.36 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (hide yes)))
+    (property "Footprint" "Carrier:C_0805_2012Metric"
+      (at 203.2 86.36 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (hide yes)))
+    (property "Datasheet" ""
+      (at 203.2 86.36 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (hide yes)))
+    (property "Description" ""
+      (at 203.2 86.36 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (hide yes)))
+    (property "Reference" "C15"
+      (at 203.2 78.36 0)
+      (effects
+        (font
+          (size 0.9 0.9))))
+    (property "Value" "100n"
+      (at 203.2 80.86 0)
+      (effects
+        (font
+          (size 0.9 0.9))))
+    (instances
+      (project "NanoEveryCarrier"
+        (path "/8572c726-1ea0-5ab8-b0a6-a548b9a05059/c4987d4c-b1c7-54a6-aa7e-a133c0dbd3f7"
+          (reference "C15")
+          (unit 1))))
+    (pin "1"
+      (uuid "0191eb62-63be-5bab-b990-0d73864bfd08"))
+    (pin "2"
+      (uuid "9b6cd6cb-db3b-5e85-8573-b7c76632bd70")))
+  (wire
+    (pts
+      (xy 326.39 86.36)
+      (xy 321.31 86.36))
+    (stroke
+      (width 0)
+      (type default))
+    (uuid "ba8bf4ad-4739-5e47-b2d6-a0cdc61e8bea"))
+  (global_label "5V_CAPTURE"
+    (shape bidirectional)
+    (at 321.31 86.36 0)
+    (effects
+      (font
+        (size 0.762 0.762))
+      (justify left))
+    (uuid "4fa2ea56-1bec-50ef-bdd8-9b77d0daa666"))
+  (wire
+    (pts
+      (xy 334.01 86.36)
+      (xy 339.09 86.36))
+    (stroke
+      (width 0)
+      (type default))
+    (uuid "78390485-f161-5ca4-b328-f01b9a213c42"))
+  (global_label "NANO_TX5"
+    (shape bidirectional)
+    (at 339.09 86.36 180)
+    (effects
+      (font
+        (size 0.762 0.762))
+      (justify left))
+    (uuid "76522040-4666-59bc-a47e-c189ff590e0c"))
+  (symbol
+    (lib_id "Carrier:R")
+    (at 330.2 86.36 90)
+    (unit 1)
+    (in_bom yes)
+    (on_board yes)
+    (dnp no)
+    (uuid "55596e1c-b71c-5bf6-b67b-377f53bcba5f")
+    (property "Manufacturer" "Yageo"
+      (at 330.2 86.36 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (hide yes)))
+    (property "MPN" "RC0805FR-0747KL"
+      (at 330.2 86.36 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (hide yes)))
+    (property "Assembly" "47k idle pull-up on 5V Nano UART only."
+      (at 330.2 86.36 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (hide yes)))
+    (property "Footprint" "Carrier:R_0805_2012Metric"
+      (at 330.2 86.36 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (hide yes)))
+    (property "Datasheet" ""
+      (at 330.2 86.36 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (hide yes)))
+    (property "Description" ""
+      (at 330.2 86.36 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (hide yes)))
+    (property "Reference" "R11"
+      (at 330.2 78.36 0)
+      (effects
+        (font
+          (size 0.9 0.9))))
+    (property "Value" "47k"
+      (at 330.2 80.86 0)
+      (effects
+        (font
+          (size 0.9 0.9))))
+    (instances
+      (project "NanoEveryCarrier"
+        (path "/8572c726-1ea0-5ab8-b0a6-a548b9a05059/c4987d4c-b1c7-54a6-aa7e-a133c0dbd3f7"
+          (reference "R11")
+          (unit 1))))
+    (pin "1"
+      (uuid "9dea3c6e-bb0a-5996-9ac0-2b314e3c85cc"))
+    (pin "2"
+      (uuid "e9e5a103-a830-5d4f-ab0c-386ddcbbdd3e")))
+  (wire
+    (pts
+      (xy 199.39 106.68)
+      (xy 194.31 106.68))
+    (stroke
+      (width 0)
+      (type default))
+    (uuid "011cc878-ae70-51ee-a954-cfef415b75a2"))
+  (global_label "5V_CAPTURE"
+    (shape bidirectional)
+    (at 194.31 106.68 0)
+    (effects
+      (font
+        (size 0.762 0.762))
+      (justify left))
+    (uuid "3ffafd76-17dc-5535-97ee-1b8a0cdc9fec"))
+  (wire
+    (pts
+      (xy 207.01 106.68)
+      (xy 212.09 106.68))
+    (stroke
+      (width 0)
+      (type default))
+    (uuid "07528009-1706-59a5-9d38-eac6684b68e8"))
+  (global_label "NANO_RX5"
+    (shape bidirectional)
+    (at 212.09 106.68 180)
+    (effects
+      (font
+        (size 0.762 0.762))
+      (justify left))
+    (uuid "a5e586da-7c7c-568d-b4af-5970d0977bad"))
+  (symbol
+    (lib_id "Carrier:R")
+    (at 203.2 106.68 90)
+    (unit 1)
+    (in_bom yes)
+    (on_board yes)
+    (dnp no)
+    (uuid "96989b54-c443-5236-902a-d126eab3da41")
+    (property "Manufacturer" "Yageo"
+      (at 203.2 106.68 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (hide yes)))
+    (property "MPN" "RC0805FR-0747KL"
+      (at 203.2 106.68 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (hide yes)))
+    (property "Assembly" "47k idle pull-up on 5V Nano UART only."
+      (at 203.2 106.68 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (hide yes)))
+    (property "Footprint" "Carrier:R_0805_2012Metric"
+      (at 203.2 106.68 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (hide yes)))
+    (property "Datasheet" ""
+      (at 203.2 106.68 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (hide yes)))
+    (property "Description" ""
+      (at 203.2 106.68 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (hide yes)))
+    (property "Reference" "R12"
+      (at 203.2 98.68 0)
+      (effects
+        (font
+          (size 0.9 0.9))))
+    (property "Value" "47k"
+      (at 203.2 101.18 0)
+      (effects
+        (font
+          (size 0.9 0.9))))
+    (instances
+      (project "NanoEveryCarrier"
+        (path "/8572c726-1ea0-5ab8-b0a6-a548b9a05059/c4987d4c-b1c7-54a6-aa7e-a133c0dbd3f7"
+          (reference "R12")
+          (unit 1))))
+    (pin "1"
+      (uuid "6bb768dd-8cf8-57d4-8616-18bae8187f4e"))
+    (pin "2"
+      (uuid "c8b9c173-47f9-5d4d-9653-97937ae4c7c0")))
+  (wire
+    (pts
+      (xy 326.39 106.68)
+      (xy 321.31 106.68))
+    (stroke
+      (width 0)
+      (type default))
+    (uuid "01e23dc6-e5df-5fc5-bb44-7107ec8b4bf7"))
+  (global_label "UART_ENABLE"
+    (shape bidirectional)
+    (at 321.31 106.68 0)
+    (effects
+      (font
+        (size 0.762 0.762))
+      (justify left))
+    (uuid "c58e3a1c-a590-520b-86e6-c09143d99306"))
+  (wire
+    (pts
+      (xy 334.01 106.68)
+      (xy 339.09 106.68))
+    (stroke
+      (width 0)
+      (type default))
+    (uuid "2aa5df6d-b4ba-508b-8d44-70962451b187"))
+  (global_label "GND"
+    (shape bidirectional)
+    (at 339.09 106.68 180)
+    (effects
+      (font
+        (size 0.762 0.762))
+      (justify left))
+    (uuid "82b47cbf-a0dc-553c-b67f-1aa857ee4201"))
+  (symbol
+    (lib_id "Carrier:R")
+    (at 330.2 106.68 90)
+    (unit 1)
+    (in_bom yes)
+    (on_board yes)
+    (dnp no)
+    (uuid "9b6ce6f1-06d8-5e3b-8938-cbcc21a7490f")
+    (property "Manufacturer" "Yageo"
+      (at 330.2 106.68 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (hide yes)))
+    (property "MPN" "RC0805FR-07100KL"
+      (at 330.2 106.68 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (hide yes)))
+    (property "Assembly" "100k OE pull-down; translator disabled with JP8 shunt removed."
+      (at 330.2 106.68 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (hide yes)))
+    (property "Footprint" "Carrier:R_0805_2012Metric"
+      (at 330.2 106.68 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (hide yes)))
+    (property "Datasheet" ""
+      (at 330.2 106.68 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (hide yes)))
+    (property "Description" ""
+      (at 330.2 106.68 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (hide yes)))
+    (property "Reference" "R13"
+      (at 330.2 98.68 0)
+      (effects
+        (font
+          (size 0.9 0.9))))
+    (property "Value" "100k"
+      (at 330.2 101.18 0)
+      (effects
+        (font
+          (size 0.9 0.9))))
+    (instances
+      (project "NanoEveryCarrier"
+        (path "/8572c726-1ea0-5ab8-b0a6-a548b9a05059/c4987d4c-b1c7-54a6-aa7e-a133c0dbd3f7"
+          (reference "R13")
+          (unit 1))))
+    (pin "1"
+      (uuid "6356fab8-5423-5932-8348-adf756c7b13a"))
+    (pin "2"
+      (uuid "dffe6fd2-c105-5037-846b-fdb388a64735")))
+  (embedded_fonts no))

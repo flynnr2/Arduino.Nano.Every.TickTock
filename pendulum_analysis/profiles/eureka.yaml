@@ -1,0 +1,23 @@
+id: eureka
+display_name: Eureka
+description: Eureka / balance-based experimental clock profile stub.
+nominal_period_s: null
+nominal_half_period_s: null
+phase:
+  primary_modulus: null
+  expected_moduli: []
+  event_unit: event
+  description: "TODO: configure balance-wheel event cadence for the measured instrument."
+capabilities:
+  tick_tock: false
+  block_intervals: false
+  impulse_cycle: false
+  one_sided_impulse: false
+  electrical_drive: false
+  remontoire: false
+  train_impulse: false
+  balance_wheel: true
+harmonic_families: []
+annotations:
+  fft: []
+notes: "Stub only; balance-wheel capability is descriptive and does not enable pendulum phase-fold assumptions."

@@ -1,0 +1,12 @@
+#VRML V2.0 utf8
+# Simplified PCB HEADER envelope; removable plug is omitted.
+Transform { translation 5 -0.15 1 children [ Shape { appearance Appearance { material Material { diffuseColor 0.1 0.42 0.2 } } geometry Box { size 14.4 8.1 2 } } ] }
+Transform { translation -1.7 -0.15 6.05 children [ Shape { appearance Appearance { material Material { diffuseColor 0.1 0.42 0.2 } } geometry Box { size 1 8.1 8.1 } } ] }
+Transform { translation 11.7 -0.15 6.05 children [ Shape { appearance Appearance { material Material { diffuseColor 0.1 0.42 0.2 } } geometry Box { size 1 8.1 8.1 } } ] }
+Transform { translation 5 3.4 6.05 children [ Shape { appearance Appearance { material Material { diffuseColor 0.1 0.42 0.2 } } geometry Box { size 12.4 1 8.1 } } ] }
+Transform { translation 5 -3.7 6.05 children [ Shape { appearance Appearance { material Material { diffuseColor 0.1 0.42 0.2 } } geometry Box { size 12.4 1 8.1 } } ] }
+Transform { translation 0.0 0 3.05 children [ Shape { appearance Appearance { material Material { diffuseColor 0.72 0.72 0.7 } } geometry Box { size 0.8 0.8 13.1 } } ] }
+Transform { translation 2.5 0 3.05 children [ Shape { appearance Appearance { material Material { diffuseColor 0.72 0.72 0.7 } } geometry Box { size 0.8 0.8 13.1 } } ] }
+Transform { translation 5.0 0 3.05 children [ Shape { appearance Appearance { material Material { diffuseColor 0.72 0.72 0.7 } } geometry Box { size 0.8 0.8 13.1 } } ] }
+Transform { translation 7.5 0 3.05 children [ Shape { appearance Appearance { material Material { diffuseColor 0.72 0.72 0.7 } } geometry Box { size 0.8 0.8 13.1 } } ] }
+Transform { translation 10.0 0 3.05 children [ Shape { appearance Appearance { material Material { diffuseColor 0.72 0.72 0.7 } } geometry Box { size 0.8 0.8 13.1 } } ] }

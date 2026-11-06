@@ -1,0 +1,28 @@
+[Unit]
+Description=Pendulum bounded I2C bus recovery (Pi Zero 2 W)
+After=systemd-tmpfiles-setup.service
+Before=pendulum-sensors.service pendulum-oled.service
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=root
+Group=pendulum
+WorkingDirectory=/opt/pendulum
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/opt/pendulum/venv/bin/python -I -m pendulum_pi.i2c_recovery
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=15
+WatchdogSec=30
+NotifyAccess=main
+UMask=0027
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/run/pendulum-i2c /sys/bus/platform/drivers/i2c-bcm2835
+
+[Install]
+WantedBy=multi-user.target

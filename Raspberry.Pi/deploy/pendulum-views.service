@@ -1,0 +1,26 @@
+[Unit]
+Description=Arduino Pendulum Timer scheduled saved dashboard analysis
+After=systemd-tmpfiles-setup.service
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=pendulum
+Group=pendulum
+WorkingDirectory=/var/lib/pendulum
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/opt/pendulum/venv/bin/python -m pendulum_pi views --config /var/lib/pendulum/config.json
+Restart=on-failure
+RestartSec=3
+Nice=10
+TimeoutStopSec=15
+KillMode=control-group
+UMask=0027
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/pendulum /run/pendulum
+
+[Install]
+WantedBy=multi-user.target

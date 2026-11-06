@@ -1,0 +1,1399 @@
+(kicad_sch
+  (version 20250114)
+  (generator "eeschema")
+  (uuid "826ec760-7f3c-5781-9a47-afa6ae446edc")
+  (paper "A3")
+  (title_block
+    (title "A.9 | GNSS POWER / VOLTAGE SELECTOR")
+    (date "2026-11-06")
+    (rev "A.9")
+    (company "Pendulum Observatory")
+    (comment 1 "Unbuilt prototype - review and acceptance required"))
+  (lib_symbols
+    (symbol "Carrier:TPS2553"
+      (pin_names
+        (offset 1.016))
+      (in_bom yes)
+      (on_board yes)
+      (property "Reference" "U"
+        (at 0 0 0)
+        (effects
+          (font
+            (size 1.27 1.27))
+          (hide yes)))
+      (property "Value" "TPS2553DBVR"
+        (at 0 0 0)
+        (effects
+          (font
+            (size 1.27 1.27))
+          (hide yes)))
+      (property "Footprint" ""
+        (at 0 0 0)
+        (effects
+          (font
+            (size 1.27 1.27))
+          (hide yes)))
+      (property "Datasheet" ""
+        (at 0 0 0)
+        (effects
+          (font
+            (size 1.27 1.27))
+          (hide yes)))
+      (property "Description" "TI TPS2553DBVR; SOT23-6 active-high enable, auto-retry current limit"
+        (at 0 0 0)
+        (effects
+          (font
+            (size 1.27 1.27))
+          (hide yes)))
+      (symbol "TPS2553_0_1"
+        (rectangle
+          (start -12.7 12.7)
+          (end 12.7 -12.7)
+          (stroke
+            (width 0.254)
+            (type default))
+          (fill
+            (type background))))
+      (symbol "TPS2553_1_1"
+        (pin power_in line
+          (at -15.24 7.62 0)
+          (length 2.54)
+          (name "IN"
+            (effects
+              (font
+                (size 1.016 1.016))))
+          (number "1"
+            (effects
+              (font
+                (size 1.016 1.016)))))
+        (pin power_in line
+          (at 0 -15.24 90)
+          (length 2.54)
+          (name "GND"
+            (effects
+              (font
+                (size 1.016 1.016))))
+          (number "2"
+            (effects
+              (font
+                (size 1.016 1.016)))))
+        (pin input line
+          (at -15.24 0 0)
+          (length 2.54)
+          (name "EN"
+            (effects
+              (font
+                (size 1.016 1.016))))
+          (number "3"
+            (effects
+              (font
+                (size 1.016 1.016)))))
+        (pin open_collector line
+          (at 15.24 -7.62 180)
+          (length 2.54)
+          (name "~{FAULT}"
+            (effects
+              (font
+                (size 1.016 1.016))))
+          (number "4"
+            (effects
+              (font
+                (size 1.016 1.016)))))
+        (pin passive line
+          (at -15.24 -7.62 0)
+          (length 2.54)
+          (name "ILIM"
+            (effects
+              (font
+                (size 1.016 1.016))))
+          (number "5"
+            (effects
+              (font
+                (size 1.016 1.016)))))
+        (pin power_out line
+          (at 15.24 7.62 180)
+          (length 2.54)
+          (name "OUT"
+            (effects
+              (font
+                (size 1.016 1.016))))
+          (number "6"
+            (effects
+              (font
+                (size 1.016 1.016)))))))
+    (symbol "Carrier:Jumper_3_Bridged12"
+      (pin_names
+        (offset 0)
+        (hide yes))
+      (exclude_from_sim no)
+      (in_bom no)
+      (on_board yes)
+      (in_pos_files yes)
+      (duplicate_pin_numbers_are_jumpers no)
+      (property "Reference" "JP"
+        (at -2.54 -2.54 0)
+        (show_name no)
+        (do_not_autoplace no)
+        (effects
+          (font
+            (size 1.27 1.27))))
+      (property "Value" "Jumper_3_Bridged12"
+        (at 0 2.794 0)
+        (show_name no)
+        (do_not_autoplace no)
+        (effects
+          (font
+            (size 1.27 1.27))))
+      (property "Footprint" ""
+        (at 0 0 0)
+        (show_name no)
+        (do_not_autoplace no)
+        (hide yes)
+        (effects
+          (font
+            (size 1.27 1.27))))
+      (property "Datasheet" ""
+        (at 0 0 0)
+        (show_name no)
+        (do_not_autoplace no)
+        (hide yes)
+        (effects
+          (font
+            (size 1.27 1.27))))
+      (property "Description" "Jumper, 3-pole, pins 1+2 closed/bridged"
+        (at 0 -11.43 0)
+        (show_name no)
+        (do_not_autoplace no)
+        (hide yes)
+        (effects
+          (font
+            (size 1.27 1.27))))
+      (property "ki_keywords" "Jumper SPDT"
+        (at 0 0 0)
+        (show_name no)
+        (do_not_autoplace no)
+        (hide yes)
+        (effects
+          (font
+            (size 1.27 1.27))))
+      (property "ki_fp_filters" "Jumper* TestPoint*3Pads* TestPoint*Bridge*"
+        (at 0 0 0)
+        (show_name no)
+        (do_not_autoplace no)
+        (hide yes)
+        (effects
+          (font
+            (size 1.27 1.27))))
+      (symbol "Jumper_3_Bridged12_0_0"
+        (circle
+          (center -2.032 0)
+          (radius 0.508)
+          (stroke
+            (width 0)
+            (type default))
+          (fill
+            (type none)))
+        (circle
+          (center 0 0)
+          (radius 0.508)
+          (stroke
+            (width 0)
+            (type default))
+          (fill
+            (type none)))
+        (circle
+          (center 2.032 0)
+          (radius 0.508)
+          (stroke
+            (width 0)
+            (type default))
+          (fill
+            (type none))))
+      (symbol "Jumper_3_Bridged12_0_1"
+        (arc
+          (start -2.032 0.508)
+          (mid -1.143 0.8155)
+          (end -0.254 0.508)
+          (stroke
+            (width 0)
+            (type default))
+          (fill
+            (type none)))
+        (polyline
+          (pts
+            (xy 0 -1.27)
+            (xy 0 -0.508))
+          (stroke
+            (width 0)
+            (type default))
+          (fill
+            (type none))))
+      (symbol "Jumper_3_Bridged12_1_1"
+        (pin passive line
+          (at -5.08 0 0)
+          (length 2.54)
+          (name "A"
+            (effects
+              (font
+                (size 1.27 1.27))))
+          (number "1"
+            (effects
+              (font
+                (size 1.27 1.27)))))
+        (pin passive line
+          (at 0 -3.81 90)
+          (length 2.54)
+          (name "C"
+            (effects
+              (font
+                (size 1.27 1.27))))
+          (number "2"
+            (effects
+              (font
+                (size 1.27 1.27)))))
+        (pin passive line
+          (at 5.08 0 180)
+          (length 2.54)
+          (name "B"
+            (effects
+              (font
+                (size 1.27 1.27))))
+          (number "3"
+            (effects
+              (font
+                (size 1.27 1.27))))))
+      (embedded_fonts no))
+    (symbol "Carrier:TLV1117LV33"
+      (pin_names
+        (offset 0.762))
+      (in_bom yes)
+      (on_board yes)
+      (property "Reference" "U"
+        (at 0 8.89 0)
+        (effects
+          (font
+            (size 1.27 1.27))))
+      (property "Value" "TLV1117LV33DCYR"
+        (at 0 6.35 0)
+        (effects
+          (font
+            (size 1.27 1.27))))
+      (symbol "TLV1117LV33_0_1"
+        (rectangle
+          (start -5.08 -5.08)
+          (end 5.08 5.08)
+          (stroke
+            (width 0.254)
+            (type default))
+          (fill
+            (type background))))
+      (symbol "TLV1117LV33_1_1"
+        (pin power_in line
+          (at -10.16 0 0)
+          (length 5.08)
+          (name "IN"
+            (effects
+              (font
+                (size 1.016 1.016))))
+          (number "3"
+            (effects
+              (font
+                (size 1.016 1.016)))))
+        (pin power_out line
+          (at 10.16 0 180)
+          (length 5.08)
+          (name "OUT/TAB"
+            (effects
+              (font
+                (size 1.016 1.016))))
+          (number "2"
+            (effects
+              (font
+                (size 1.016 1.016)))))
+        (pin power_in line
+          (at 0 -10.16 90)
+          (length 5.08)
+          (name "GND"
+            (effects
+              (font
+                (size 1.016 1.016))))
+          (number "1"
+            (effects
+              (font
+                (size 1.016 1.016)))))))
+    (symbol "Carrier:C"
+      (pin_numbers
+        (hide yes))
+      (pin_names
+        (offset 0.254))
+      (exclude_from_sim no)
+      (in_bom yes)
+      (on_board yes)
+      (in_pos_files yes)
+      (duplicate_pin_numbers_are_jumpers no)
+      (property "Reference" "C"
+        (at 0.635 2.54 0)
+        (show_name no)
+        (do_not_autoplace no)
+        (effects
+          (font
+            (size 1.27 1.27))
+          (justify left)))
+      (property "Value" "C"
+        (at 0.635 -2.54 0)
+        (show_name no)
+        (do_not_autoplace no)
+        (effects
+          (font
+            (size 1.27 1.27))
+          (justify left)))
+      (property "Footprint" ""
+        (at 0.9652 -3.81 0)
+        (show_name no)
+        (do_not_autoplace no)
+        (hide yes)
+        (effects
+          (font
+            (size 1.27 1.27))))
+      (property "Datasheet" ""
+        (at 0 0 0)
+        (show_name no)
+        (do_not_autoplace no)
+        (hide yes)
+        (effects
+          (font
+            (size 1.27 1.27))))
+      (property "Description" "Unpolarized capacitor"
+        (at 0 0 0)
+        (show_name no)
+        (do_not_autoplace no)
+        (hide yes)
+        (effects
+          (font
+            (size 1.27 1.27))))
+      (property "ki_keywords" "cap capacitor"
+        (at 0 0 0)
+        (show_name no)
+        (do_not_autoplace no)
+        (hide yes)
+        (effects
+          (font
+            (size 1.27 1.27))))
+      (property "ki_fp_filters" "C_*"
+        (at 0 0 0)
+        (show_name no)
+        (do_not_autoplace no)
+        (hide yes)
+        (effects
+          (font
+            (size 1.27 1.27))))
+      (symbol "C_0_1"
+        (polyline
+          (pts
+            (xy -2.032 0.762)
+            (xy 2.032 0.762))
+          (stroke
+            (width 0.508)
+            (type default))
+          (fill
+            (type none)))
+        (polyline
+          (pts
+            (xy -2.032 -0.762)
+            (xy 2.032 -0.762))
+          (stroke
+            (width 0.508)
+            (type default))
+          (fill
+            (type none))))
+      (symbol "C_1_1"
+        (pin passive line
+          (at 0 3.81 270)
+          (length 2.794)
+          (name ""
+            (effects
+              (font
+                (size 1.27 1.27))))
+          (number "1"
+            (effects
+              (font
+                (size 1.27 1.27)))))
+        (pin passive line
+          (at 0 -3.81 90)
+          (length 2.794)
+          (name ""
+            (effects
+              (font
+                (size 1.27 1.27))))
+          (number "2"
+            (effects
+              (font
+                (size 1.27 1.27))))))
+      (embedded_fonts no))
+    (symbol "Carrier:R"
+      (pin_numbers
+        (hide yes))
+      (pin_names
+        (offset 0))
+      (exclude_from_sim no)
+      (in_bom yes)
+      (on_board yes)
+      (in_pos_files yes)
+      (duplicate_pin_numbers_are_jumpers no)
+      (property "Reference" "R"
+        (at 2.032 0 90)
+        (show_name no)
+        (do_not_autoplace no)
+        (effects
+          (font
+            (size 1.27 1.27))))
+      (property "Value" "R"
+        (at 0 0 90)
+        (show_name no)
+        (do_not_autoplace no)
+        (effects
+          (font
+            (size 1.27 1.27))))
+      (property "Footprint" ""
+        (at -1.778 0 90)
+        (show_name no)
+        (do_not_autoplace no)
+        (hide yes)
+        (effects
+          (font
+            (size 1.27 1.27))))
+      (property "Datasheet" ""
+        (at 0 0 0)
+        (show_name no)
+        (do_not_autoplace no)
+        (hide yes)
+        (effects
+          (font
+            (size 1.27 1.27))))
+      (property "Description" "Resistor"
+        (at 0 0 0)
+        (show_name no)
+        (do_not_autoplace no)
+        (hide yes)
+        (effects
+          (font
+            (size 1.27 1.27))))
+      (property "ki_keywords" "R res resistor"
+        (at 0 0 0)
+        (show_name no)
+        (do_not_autoplace no)
+        (hide yes)
+        (effects
+          (font
+            (size 1.27 1.27))))
+      (property "ki_fp_filters" "R_*"
+        (at 0 0 0)
+        (show_name no)
+        (do_not_autoplace no)
+        (hide yes)
+        (effects
+          (font
+            (size 1.27 1.27))))
+      (symbol "R_0_1"
+        (rectangle
+          (start -1.016 -2.54)
+          (end 1.016 2.54)
+          (stroke
+            (width 0.254)
+            (type default))
+          (fill
+            (type none))))
+      (symbol "R_1_1"
+        (pin passive line
+          (at 0 3.81 270)
+          (length 1.27)
+          (name ""
+            (effects
+              (font
+                (size 1.27 1.27))))
+          (number "1"
+            (effects
+              (font
+                (size 1.27 1.27)))))
+        (pin passive line
+          (at 0 -3.81 90)
+          (length 1.27)
+          (name ""
+            (effects
+              (font
+                (size 1.27 1.27))))
+          (number "2"
+            (effects
+              (font
+                (size 1.27 1.27))))))
+      (embedded_fonts no)))
+  (text "GNSS POWER / VOLTAGE SELECTOR"
+    (at 12.7 12.7 0)
+    (effects
+      (font
+        (size 2 2))
+      (justify left top))
+    (uuid "bfeb2ae1-4a3c-5e54-af82-f3dfaab1c9e7"))
+  (text "U4 protects BOTH5V and3.3V choices;200mA receiver+antenna allowance. U14 dedicated GNSS regulator.\nJP2:1-2=3.3V DEFAULT;2-3=5V;removed disconnectsJ5 VCC. ONE shunt only;all power OFF before changing.\nU14 tab is OUTPUT;no reverse-current protection. Independently powered receiver requiresJP2 removed."
+    (at 12.7 23 0)
+    (effects
+      (font
+        (size 1.016 1.016))
+      (justify left top))
+    (uuid "adc9f227-5f4f-5c0e-bff5-9d9d5674336e"))
+  (wire
+    (pts
+      (xy 60.96 68.58)
+      (xy 55.88 68.58))
+    (stroke
+      (width 0)
+      (type default))
+    (uuid "f8600541-9914-5f49-9093-d1e693510c85"))
+  (global_label "5V_CAPTURE"
+    (shape bidirectional)
+    (at 55.88 68.58 0)
+    (effects
+      (font
+        (size 0.762 0.762))
+      (justify left))
+    (uuid "3159f847-b1cc-5f7e-a3b8-3db0c2ac6782"))
+  (wire
+    (pts
+      (xy 76.2 91.44)
+      (xy 76.2 96.52))
+    (stroke
+      (width 0)
+      (type default))
+    (uuid "e51256d4-b35a-5836-b7b9-5b8195deabdd"))
+  (global_label "GND"
+    (shape bidirectional)
+    (at 76.2 96.52 90)
+    (effects
+      (font
+        (size 0.762 0.762))
+      (justify left))
+    (uuid "183f2a8e-6867-5dc4-9a4f-2964c0fddbee"))
+  (wire
+    (pts
+      (xy 60.96 76.2)
+      (xy 55.88 76.2))
+    (stroke
+      (width 0)
+      (type default))
+    (uuid "25dc117c-354b-5572-93e7-c9af7c956b99"))
+  (global_label "5V_CAPTURE"
+    (shape bidirectional)
+    (at 55.88 76.2 0)
+    (effects
+      (font
+        (size 0.762 0.762))
+      (justify left))
+    (uuid "32c19276-87f4-576e-8313-8b0070a2a062"))
+  (no_connect
+    (at 91.44 83.82)
+    (uuid "8b479b73-323a-548d-8f68-0174cb51d9ae"))
+  (wire
+    (pts
+      (xy 60.96 83.82)
+      (xy 55.88 83.82))
+    (stroke
+      (width 0)
+      (type default))
+    (uuid "360afd13-ef8f-5151-b850-a4a7e3bb05f6"))
+  (global_label "GNSS_ILIM"
+    (shape bidirectional)
+    (at 55.88 83.82 0)
+    (effects
+      (font
+        (size 0.762 0.762))
+      (justify left))
+    (uuid "4bf480b7-dcd9-52d4-90e5-862ede327078"))
+  (wire
+    (pts
+      (xy 91.44 68.58)
+      (xy 96.52 68.58))
+    (stroke
+      (width 0)
+      (type default))
+    (uuid "56e8504b-b31f-5156-b60b-81419285007a"))
+  (global_label "GNSS_5V_LIMITED"
+    (shape bidirectional)
+    (at 96.52 68.58 180)
+    (effects
+      (font
+        (size 0.762 0.762))
+      (justify left))
+    (uuid "bc8fc70a-10b0-51bb-a035-f8fa3efb1f71"))
+  (symbol
+    (lib_id "Carrier:TPS2553")
+    (at 76.2 76.2 0)
+    (unit 1)
+    (in_bom yes)
+    (on_board yes)
+    (dnp no)
+    (uuid "3369a495-6a5f-548c-9a81-90e82af33339")
+    (property "Manufacturer" "Texas Instruments"
+      (at 76.2 76.2 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (hide yes)))
+    (property "MPN" "TPS2553DBVR"
+      (at 76.2 76.2 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (hide yes)))
+    (property "Assembly" "Dedicated GNSS current-limited 5V branch; R10 sets about 300mA nominal; /FAULT unused."
+      (at 76.2 76.2 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (hide yes)))
+    (property "Footprint" "Carrier:SOT-23-6"
+      (at 76.2 76.2 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (hide yes)))
+    (property "Datasheet" "https://www.ti.com/lit/ds/symlink/tps2553.pdf"
+      (at 76.2 76.2 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (hide yes)))
+    (property "Description" ""
+      (at 76.2 76.2 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (hide yes)))
+    (property "Reference" "U4"
+      (at 76.2 58.5 0)
+      (effects
+        (font
+          (size 0.9 0.9))))
+    (property "Value" "TPS2553DBVR"
+      (at 76.2 61.0 0)
+      (effects
+        (font
+          (size 0.9 0.9))))
+    (instances
+      (project "NanoEveryCarrier"
+        (path "/8572c726-1ea0-5ab8-b0a6-a548b9a05059/997cdaf2-08c0-547e-b400-ff87358fe5c0"
+          (reference "U4")
+          (unit 1))))
+    (pin "1"
+      (uuid "787cdec8-649b-5220-8efe-bcdb14d05df2"))
+    (pin "2"
+      (uuid "8725023c-43f8-5780-9be0-a3d02a18345d"))
+    (pin "3"
+      (uuid "dac40d46-5d8c-5976-8b4f-427f2a6cbf57"))
+    (pin "4"
+      (uuid "c98e35eb-48d7-58a0-a9ee-779eb6c478df"))
+    (pin "5"
+      (uuid "6d1837b2-0949-5e53-9474-4a560a00a801"))
+    (pin "6"
+      (uuid "18926d9f-a47f-5b7e-8eec-c664e22e1ac0")))
+  (wire
+    (pts
+      (xy 198.12 66.04)
+      (xy 193.04 66.04))
+    (stroke
+      (width 0)
+      (type default))
+    (uuid "2d1b412d-0f0c-55f3-a54d-d5feee0c8cc5"))
+  (global_label "GNSS_3V3"
+    (shape bidirectional)
+    (at 193.04 66.04 0)
+    (effects
+      (font
+        (size 0.762 0.762))
+      (justify left))
+    (uuid "0e4e2b69-ce4c-5b82-b362-8cf5b2321de8"))
+  (wire
+    (pts
+      (xy 203.2 69.85)
+      (xy 203.2 74.93))
+    (stroke
+      (width 0)
+      (type default))
+    (uuid "c7deb6b7-eba7-5777-8f87-a967a984435b"))
+  (global_label "GNSS_VCC"
+    (shape bidirectional)
+    (at 203.2 74.93 90)
+    (effects
+      (font
+        (size 0.762 0.762))
+      (justify left))
+    (uuid "99f55d6e-d448-555c-be3f-58602af9bc9d"))
+  (wire
+    (pts
+      (xy 208.28 66.04)
+      (xy 213.36 66.04))
+    (stroke
+      (width 0)
+      (type default))
+    (uuid "895ebf21-2e9a-5774-88a2-738b7d835199"))
+  (global_label "GNSS_5V_LIMITED"
+    (shape bidirectional)
+    (at 213.36 66.04 180)
+    (effects
+      (font
+        (size 0.762 0.762))
+      (justify left))
+    (uuid "2da68031-2c27-5fe9-acca-4b77b4b19661"))
+  (symbol
+    (lib_id "Carrier:Jumper_3_Bridged12")
+    (at 203.2 66.04 0)
+    (unit 1)
+    (in_bom yes)
+    (on_board yes)
+    (dnp no)
+    (uuid "9a325442-1c96-5565-840b-6d15fcad72a6")
+    (property "Manufacturer" "Samtec"
+      (at 203.2 66.04 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (hide yes)))
+    (property "MPN" "TSW-103-07-G-S"
+      (at 203.2 66.04 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (hide yes)))
+    (property "Assembly" "ONE shunt only:1-2=3.3V DEFAULT;2-3=5V;removed disconnectsJ5 power. Power off all attached equipment and discharge before moving. Never bridge all3. Remove before independently powering receiver."
+      (at 203.2 66.04 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (hide yes)))
+    (property "Footprint" "Carrier:PinHeader_1x03_P2.54mm_Vertical"
+      (at 203.2 66.04 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (hide yes)))
+    (property "Datasheet" ""
+      (at 203.2 66.04 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (hide yes)))
+    (property "Description" ""
+      (at 203.2 66.04 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (hide yes)))
+    (property "Reference" "JP2"
+      (at 203.2 58.040000000000006 0)
+      (effects
+        (font
+          (size 0.9 0.9))))
+    (property "Value" "GNSS VCC / 3V3-5V"
+      (at 203.2 60.540000000000006 0)
+      (effects
+        (font
+          (size 0.9 0.9))))
+    (instances
+      (project "NanoEveryCarrier"
+        (path "/8572c726-1ea0-5ab8-b0a6-a548b9a05059/997cdaf2-08c0-547e-b400-ff87358fe5c0"
+          (reference "JP2")
+          (unit 1))))
+    (pin "1"
+      (uuid "22c935c2-26af-5df0-95af-122c649d777d"))
+    (pin "2"
+      (uuid "79151bc4-8da5-503c-8982-3dc122bb013e"))
+    (pin "3"
+      (uuid "dadd9bef-6a52-507f-b66b-623bf5f03912")))
+  (wire
+    (pts
+      (xy 320.04 68.58)
+      (xy 314.96 68.58))
+    (stroke
+      (width 0)
+      (type default))
+    (uuid "411c6734-3f54-53bd-9b50-61a89d1543e1"))
+  (global_label "GNSS_5V_LIMITED"
+    (shape bidirectional)
+    (at 314.96 68.58 0)
+    (effects
+      (font
+        (size 0.762 0.762))
+      (justify left))
+    (uuid "003869bb-0fbe-578a-a02a-1ec33f9af21f"))
+  (wire
+    (pts
+      (xy 340.36 68.58)
+      (xy 345.44 68.58))
+    (stroke
+      (width 0)
+      (type default))
+    (uuid "75c2db4b-489f-5e06-8047-3c5c843236be"))
+  (global_label "GNSS_3V3"
+    (shape bidirectional)
+    (at 345.44 68.58 180)
+    (effects
+      (font
+        (size 0.762 0.762))
+      (justify left))
+    (uuid "e700ba7b-c0a7-566d-ad0c-6faa46f3c369"))
+  (wire
+    (pts
+      (xy 330.2 78.74)
+      (xy 330.2 83.82))
+    (stroke
+      (width 0)
+      (type default))
+    (uuid "dc1b4408-c02f-50e2-8419-dbdace24ab2e"))
+  (global_label "GND"
+    (shape bidirectional)
+    (at 330.2 83.82 90)
+    (effects
+      (font
+        (size 0.762 0.762))
+      (justify left))
+    (uuid "55ecea8e-3ca1-5623-9375-c9244b188899"))
+  (symbol
+    (lib_id "Carrier:TLV1117LV33")
+    (at 330.2 68.58 0)
+    (unit 1)
+    (in_bom yes)
+    (on_board yes)
+    (dnp no)
+    (uuid "ecf61621-71bb-5c4c-85d2-54e734143dcc")
+    (property "Manufacturer" "Texas Instruments"
+      (at 330.2 68.58 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (hide yes)))
+    (property "MPN" "TLV1117LV33DCYR"
+      (at 330.2 68.58 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (hide yes)))
+    (property "Footprint" "Carrier:SOT-223-3_TabPin2"
+      (at 330.2 68.58 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (hide yes)))
+    (property "Datasheet" "https://www.ti.com/lit/ds/symlink/tlv1117lv.pdf"
+      (at 330.2 68.58 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (hide yes)))
+    (property "Description" "Dedicated GNSS3.3V LDO; fixed3.3V,ceramic-stable,SOT223;tab is OUTPUT"
+      (at 330.2 68.58 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (hide yes)))
+    (property "Assembly" "Pin1GND;pin2ANDtabGNSS_3V3;pin3GNSS_5V_LIMITED. Solid output-tab copper spread;never connect tab toGND.200mA GNSS+antenna allowance requires thermal acceptance. Unprotected OUT-to-IN body diode: no external receiver power withJP2 fitted."
+      (at 330.2 68.58 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (hide yes)))
+    (property "Reference" "U14"
+      (at 330.2 58.5 0)
+      (effects
+        (font
+          (size 0.9 0.9))))
+    (property "Value" "TLV1117LV33DCYR"
+      (at 330.2 61.0 0)
+      (effects
+        (font
+          (size 0.9 0.9))))
+    (instances
+      (project "NanoEveryCarrier"
+        (path "/8572c726-1ea0-5ab8-b0a6-a548b9a05059/997cdaf2-08c0-547e-b400-ff87358fe5c0"
+          (reference "U14")
+          (unit 1))))
+    (pin "3"
+      (uuid "2301ea50-88e7-5d10-8e5b-d4e2efe5170b"))
+    (pin "2"
+      (uuid "339f0e5f-e7ac-5675-808f-e858c2dd759d"))
+    (pin "1"
+      (uuid "a76a6975-5e03-5586-aa78-31f0481bcbe8")))
+  (wire
+    (pts
+      (xy 199.39 86.36)
+      (xy 194.31 86.36))
+    (stroke
+      (width 0)
+      (type default))
+    (uuid "96036e3c-4aaf-5de7-b855-85e8ccecbc48"))
+  (global_label "5V_CAPTURE"
+    (shape bidirectional)
+    (at 194.31 86.36 0)
+    (effects
+      (font
+        (size 0.762 0.762))
+      (justify left))
+    (uuid "2fb0d24a-054d-5e8d-b097-65ecf3e30b2f"))
+  (wire
+    (pts
+      (xy 207.01 86.36)
+      (xy 212.09 86.36))
+    (stroke
+      (width 0)
+      (type default))
+    (uuid "0d5069a5-fc67-5971-8325-ced08035979a"))
+  (global_label "GND"
+    (shape bidirectional)
+    (at 212.09 86.36 180)
+    (effects
+      (font
+        (size 0.762 0.762))
+      (justify left))
+    (uuid "fa5d24e7-51be-5e23-932e-e68dfbd87eb7"))
+  (symbol
+    (lib_id "Carrier:C")
+    (at 203.2 86.36 90)
+    (unit 1)
+    (in_bom yes)
+    (on_board yes)
+    (dnp no)
+    (uuid "43f2059f-edc3-5e3a-833c-e95e743089d8")
+    (property "Manufacturer" "Murata"
+      (at 203.2 86.36 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (hide yes)))
+    (property "MPN" "GRM21BR71C105KA01L"
+      (at 203.2 86.36 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (hide yes)))
+    (property "Assembly" "1uF GNSS switch input bypass, 16V X7R; place close to U4."
+      (at 203.2 86.36 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (hide yes)))
+    (property "Footprint" "Carrier:C_0805_2012Metric"
+      (at 203.2 86.36 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (hide yes)))
+    (property "Datasheet" ""
+      (at 203.2 86.36 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (hide yes)))
+    (property "Description" ""
+      (at 203.2 86.36 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (hide yes)))
+    (property "Reference" "C12"
+      (at 203.2 78.36 0)
+      (effects
+        (font
+          (size 0.9 0.9))))
+    (property "Value" "1u"
+      (at 203.2 80.86 0)
+      (effects
+        (font
+          (size 0.9 0.9))))
+    (instances
+      (project "NanoEveryCarrier"
+        (path "/8572c726-1ea0-5ab8-b0a6-a548b9a05059/997cdaf2-08c0-547e-b400-ff87358fe5c0"
+          (reference "C12")
+          (unit 1))))
+    (pin "1"
+      (uuid "0349dd27-4876-5218-900c-3403b91febb7"))
+    (pin "2"
+      (uuid "caa7acbf-013d-5019-8ddb-ad455bdfbfbc")))
+  (wire
+    (pts
+      (xy 326.39 95.25)
+      (xy 321.31 95.25))
+    (stroke
+      (width 0)
+      (type default))
+    (uuid "0b76883a-df72-5227-8777-1087ce72677c"))
+  (global_label "GNSS_5V_LIMITED"
+    (shape bidirectional)
+    (at 321.31 95.25 0)
+    (effects
+      (font
+        (size 0.762 0.762))
+      (justify left))
+    (uuid "4831c266-932d-543f-ace6-0e5c16fdd8b6"))
+  (wire
+    (pts
+      (xy 334.01 95.25)
+      (xy 339.09 95.25))
+    (stroke
+      (width 0)
+      (type default))
+    (uuid "ee144936-b3b2-5668-830f-e43cefd0e32d"))
+  (global_label "GND"
+    (shape bidirectional)
+    (at 339.09 95.25 180)
+    (effects
+      (font
+        (size 0.762 0.762))
+      (justify left))
+    (uuid "866bef3b-ab39-52a3-9440-f6bc040c2549"))
+  (symbol
+    (lib_id "Carrier:C")
+    (at 330.2 95.25 90)
+    (unit 1)
+    (in_bom yes)
+    (on_board yes)
+    (dnp no)
+    (uuid "b46d0093-cf21-5ca6-bb5d-ace1967957cd")
+    (property "Manufacturer" "Murata"
+      (at 330.2 95.25 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (hide yes)))
+    (property "MPN" "GRM21BR71C105KA01L"
+      (at 330.2 95.25 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (hide yes)))
+    (property "Assembly" "1uF GNSS switch output bypass, 16V X7R; receiver supplies local bulk decoupling."
+      (at 330.2 95.25 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (hide yes)))
+    (property "Footprint" "Carrier:C_0805_2012Metric"
+      (at 330.2 95.25 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (hide yes)))
+    (property "Datasheet" ""
+      (at 330.2 95.25 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (hide yes)))
+    (property "Description" ""
+      (at 330.2 95.25 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (hide yes)))
+    (property "Reference" "C13"
+      (at 330.2 87.25 0)
+      (effects
+        (font
+          (size 0.9 0.9))))
+    (property "Value" "1u"
+      (at 330.2 89.75 0)
+      (effects
+        (font
+          (size 0.9 0.9))))
+    (instances
+      (project "NanoEveryCarrier"
+        (path "/8572c726-1ea0-5ab8-b0a6-a548b9a05059/997cdaf2-08c0-547e-b400-ff87358fe5c0"
+          (reference "C13")
+          (unit 1))))
+    (pin "1"
+      (uuid "1954cde5-3c14-5c99-a8ef-3e92f095de37"))
+    (pin "2"
+      (uuid "bf9c4da6-2bf8-541c-aa57-8fb4645b00be")))
+  (wire
+    (pts
+      (xy 199.39 106.68)
+      (xy 194.31 106.68))
+    (stroke
+      (width 0)
+      (type default))
+    (uuid "965139f6-6c51-5638-a87e-c2573433296d"))
+  (global_label "GNSS_5V_LIMITED"
+    (shape bidirectional)
+    (at 194.31 106.68 0)
+    (effects
+      (font
+        (size 0.762 0.762))
+      (justify left))
+    (uuid "d3c68320-0006-5b1f-bc54-0e00fa2fec4d"))
+  (wire
+    (pts
+      (xy 207.01 106.68)
+      (xy 212.09 106.68))
+    (stroke
+      (width 0)
+      (type default))
+    (uuid "161521d4-6f02-5054-b04c-92ba9c546dd5"))
+  (global_label "GND"
+    (shape bidirectional)
+    (at 212.09 106.68 180)
+    (effects
+      (font
+        (size 0.762 0.762))
+      (justify left))
+    (uuid "d3a540b7-50d3-53f9-9419-5e819d66ed84"))
+  (symbol
+    (lib_id "Carrier:C")
+    (at 203.2 106.68 90)
+    (unit 1)
+    (in_bom yes)
+    (on_board yes)
+    (dnp no)
+    (uuid "1951e621-810c-5fd4-9dcd-7eb28f718537")
+    (property "Manufacturer" "Murata"
+      (at 203.2 106.68 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (hide yes)))
+    (property "MPN" "GRM21BR71C105KA01L"
+      (at 203.2 106.68 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (hide yes)))
+    (property "Assembly" "GNSS regulator local bypass. X7R/X5R;C34 effective capacitance must exceed0.5uF after bias,tolerance and temperature."
+      (at 203.2 106.68 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (hide yes)))
+    (property "Footprint" "Carrier:C_0805_2012Metric"
+      (at 203.2 106.68 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (hide yes)))
+    (property "Datasheet" ""
+      (at 203.2 106.68 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (hide yes)))
+    (property "Description" ""
+      (at 203.2 106.68 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (hide yes)))
+    (property "Reference" "C33"
+      (at 203.2 98.68 0)
+      (effects
+        (font
+          (size 0.9 0.9))))
+    (property "Value" "1u"
+      (at 203.2 101.18 0)
+      (effects
+        (font
+          (size 0.9 0.9))))
+    (instances
+      (project "NanoEveryCarrier"
+        (path "/8572c726-1ea0-5ab8-b0a6-a548b9a05059/997cdaf2-08c0-547e-b400-ff87358fe5c0"
+          (reference "C33")
+          (unit 1))))
+    (pin "1"
+      (uuid "b0b460b8-ba71-597e-ac9a-6e29917e341f"))
+    (pin "2"
+      (uuid "5c7506e7-ed83-587e-a6d5-83cdc8851a66")))
+  (wire
+    (pts
+      (xy 72.39 107.95)
+      (xy 67.31 107.95))
+    (stroke
+      (width 0)
+      (type default))
+    (uuid "545e245b-74c0-5314-8a51-3f92cad8030b"))
+  (global_label "GNSS_3V3"
+    (shape bidirectional)
+    (at 67.31 107.95 0)
+    (effects
+      (font
+        (size 0.762 0.762))
+      (justify left))
+    (uuid "eac84172-036d-5642-a364-22b3040ab08c"))
+  (wire
+    (pts
+      (xy 80.01 107.95)
+      (xy 85.09 107.95))
+    (stroke
+      (width 0)
+      (type default))
+    (uuid "2945df01-cbc0-5e41-8745-cd0a9986bcf6"))
+  (global_label "GND"
+    (shape bidirectional)
+    (at 85.09 107.95 180)
+    (effects
+      (font
+        (size 0.762 0.762))
+      (justify left))
+    (uuid "289e19e5-5795-5a2f-bac9-57f63115cc19"))
+  (symbol
+    (lib_id "Carrier:C")
+    (at 76.2 107.95 90)
+    (unit 1)
+    (in_bom yes)
+    (on_board yes)
+    (dnp no)
+    (uuid "80a8c64c-fe87-59b3-a713-e3d1818ba0a4")
+    (property "Manufacturer" "Murata"
+      (at 76.2 107.95 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (hide yes)))
+    (property "MPN" "GRM21BR71C475KA73L"
+      (at 76.2 107.95 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (hide yes)))
+    (property "Assembly" "GNSS regulator local bypass. X7R/X5R;C34 effective capacitance must exceed0.5uF after bias,tolerance and temperature."
+      (at 76.2 107.95 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (hide yes)))
+    (property "Footprint" "Carrier:C_0805_2012Metric"
+      (at 76.2 107.95 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (hide yes)))
+    (property "Datasheet" ""
+      (at 76.2 107.95 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (hide yes)))
+    (property "Description" ""
+      (at 76.2 107.95 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (hide yes)))
+    (property "Reference" "C34"
+      (at 76.2 99.95 0)
+      (effects
+        (font
+          (size 0.9 0.9))))
+    (property "Value" "4.7u"
+      (at 76.2 102.45 0)
+      (effects
+        (font
+          (size 0.9 0.9))))
+    (instances
+      (project "NanoEveryCarrier"
+        (path "/8572c726-1ea0-5ab8-b0a6-a548b9a05059/997cdaf2-08c0-547e-b400-ff87358fe5c0"
+          (reference "C34")
+          (unit 1))))
+    (pin "1"
+      (uuid "3c69788e-a50a-5887-9dc1-2c45765e48eb"))
+    (pin "2"
+      (uuid "ece9cf8f-6359-5a5c-a536-c954aa774824")))
+  (wire
+    (pts
+      (xy 326.39 114.3)
+      (xy 321.31 114.3))
+    (stroke
+      (width 0)
+      (type default))
+    (uuid "91662aed-ca9e-569d-8579-6ce838d8eb67"))
+  (global_label "GNSS_ILIM"
+    (shape bidirectional)
+    (at 321.31 114.3 0)
+    (effects
+      (font
+        (size 0.762 0.762))
+      (justify left))
+    (uuid "9b750baa-f9a3-5320-af3e-0857c31f60b0"))
+  (wire
+    (pts
+      (xy 334.01 114.3)
+      (xy 339.09 114.3))
+    (stroke
+      (width 0)
+      (type default))
+    (uuid "05495562-214e-5e7e-9099-63f35ebcc54c"))
+  (global_label "GND"
+    (shape bidirectional)
+    (at 339.09 114.3 180)
+    (effects
+      (font
+        (size 0.762 0.762))
+      (justify left))
+    (uuid "c5ee2cc2-8ba2-574f-9758-e7a20ed27419"))
+  (symbol
+    (lib_id "Carrier:R")
+    (at 330.2 114.3 90)
+    (unit 1)
+    (in_bom yes)
+    (on_board yes)
+    (dnp no)
+    (uuid "c5d3385c-f245-543f-b5ea-d06bc7e240c7")
+    (property "Manufacturer" "Yageo"
+      (at 330.2 114.3 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (hide yes)))
+    (property "MPN" "RC0805FR-0788K7L"
+      (at 330.2 114.3 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (hide yes)))
+    (property "Assembly" "88.7k 1% GNSS limit: 299mA nominal; 262-342mA published bounds. Target receiver/antenna <=200mA."
+      (at 330.2 114.3 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (hide yes)))
+    (property "Footprint" "Carrier:R_0805_2012Metric"
+      (at 330.2 114.3 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (hide yes)))
+    (property "Datasheet" ""
+      (at 330.2 114.3 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (hide yes)))
+    (property "Description" ""
+      (at 330.2 114.3 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (hide yes)))
+    (property "Reference" "R10"
+      (at 330.2 106.3 0)
+      (effects
+        (font
+          (size 0.9 0.9))))
+    (property "Value" "88.7k"
+      (at 330.2 108.8 0)
+      (effects
+        (font
+          (size 0.9 0.9))))
+    (instances
+      (project "NanoEveryCarrier"
+        (path "/8572c726-1ea0-5ab8-b0a6-a548b9a05059/997cdaf2-08c0-547e-b400-ff87358fe5c0"
+          (reference "R10")
+          (unit 1))))
+    (pin "1"
+      (uuid "07e344b8-9dc1-5bf8-a48b-b3b8188ff1b5"))
+    (pin "2"
+      (uuid "086a607d-0e3f-59af-89e5-6ee58ebabd85")))
+  (embedded_fonts no))

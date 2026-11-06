@@ -1,0 +1,1772 @@
+(kicad_sch
+  (version 20250114)
+  (generator "eeschema")
+  (uuid "8572c726-1ea0-5ab8-b0a6-a548b9a05059")
+  (paper "A3")
+  (title_block
+    (title "A.9 | NANO EVERY / SYSTEM")
+    (date "2026-11-06")
+    (rev "A.9")
+    (company "Pendulum Observatory")
+    (comment 1 "Unbuilt prototype - review and acceptance required"))
+  (lib_symbols
+    (symbol "Carrier:Arduino_Nano_Every"
+      (exclude_from_sim no)
+      (in_bom yes)
+      (on_board yes)
+      (in_pos_files yes)
+      (duplicate_pin_numbers_are_jumpers no)
+      (property "Reference" "A"
+        (at -10.16 23.495 0)
+        (show_name no)
+        (do_not_autoplace no)
+        (effects
+          (font
+            (size 1.27 1.27))
+          (justify left bottom)))
+      (property "Value" "Arduino_Nano_Every"
+        (at 5.08 -24.13 0)
+        (show_name no)
+        (do_not_autoplace no)
+        (effects
+          (font
+            (size 1.27 1.27))
+          (justify left top)))
+      (property "Footprint" "Module:Arduino_Nano"
+        (at 0 0 0)
+        (show_name no)
+        (do_not_autoplace no)
+        (hide yes)
+        (effects
+          (font
+            (size 1.27 1.27)
+            (italic yes))))
+      (property "Datasheet" "https://content.arduino.cc/assets/NANOEveryV3.0_sch.pdf"
+        (at 0 0 0)
+        (show_name no)
+        (do_not_autoplace no)
+        (hide yes)
+        (effects
+          (font
+            (size 1.27 1.27))))
+      (property "Description" "Arduino Nano Every"
+        (at 0 0 0)
+        (show_name no)
+        (do_not_autoplace no)
+        (hide yes)
+        (effects
+          (font
+            (size 1.27 1.27))))
+      (property "ki_keywords" "Arduino nano microcontroller module USB UPDI AATMega4809 AVR"
+        (at 0 0 0)
+        (show_name no)
+        (do_not_autoplace no)
+        (hide yes)
+        (effects
+          (font
+            (size 1.27 1.27))))
+      (property "ki_fp_filters" "Arduino*Nano*"
+        (at 0 0 0)
+        (show_name no)
+        (do_not_autoplace no)
+        (hide yes)
+        (effects
+          (font
+            (size 1.27 1.27))))
+      (symbol "Arduino_Nano_Every_0_1"
+        (rectangle
+          (start -10.16 22.86)
+          (end 10.16 -22.86)
+          (stroke
+            (width 0.254)
+            (type default))
+          (fill
+            (type background))))
+      (symbol "Arduino_Nano_Every_1_1"
+        (pin bidirectional line
+          (at -12.7 20.32 0)
+          (length 2.54)
+          (name "TX1"
+            (effects
+              (font
+                (size 1.27 1.27))))
+          (number "1"
+            (effects
+              (font
+                (size 1.27 1.27)))))
+        (pin bidirectional line
+          (at -12.7 17.78 0)
+          (length 2.54)
+          (name "RX1"
+            (effects
+              (font
+                (size 1.27 1.27))))
+          (number "2"
+            (effects
+              (font
+                (size 1.27 1.27)))))
+        (pin input line
+          (at 12.7 15.24 180)
+          (length 2.54)
+          (name "~{RESET}"
+            (effects
+              (font
+                (size 1.27 1.27))))
+          (number "3"
+            (effects
+              (font
+                (size 1.27 1.27)))))
+        (pin power_in line
+          (at 0 -25.4 90)
+          (length 2.54)
+          (name "GND"
+            (effects
+              (font
+                (size 1.27 1.27))))
+          (number "4"
+            (effects
+              (font
+                (size 1.27 1.27)))))
+        (pin bidirectional line
+          (at -12.7 12.7 0)
+          (length 2.54)
+          (name "D2"
+            (effects
+              (font
+                (size 1.27 1.27))))
+          (number "5"
+            (effects
+              (font
+                (size 1.27 1.27)))))
+        (pin bidirectional line
+          (at -12.7 10.16 0)
+          (length 2.54)
+          (name "D3"
+            (effects
+              (font
+                (size 1.27 1.27))))
+          (number "6"
+            (effects
+              (font
+                (size 1.27 1.27)))))
+        (pin bidirectional line
+          (at -12.7 7.62 0)
+          (length 2.54)
+          (name "D4"
+            (effects
+              (font
+                (size 1.27 1.27))))
+          (number "7"
+            (effects
+              (font
+                (size 1.27 1.27)))))
+        (pin bidirectional line
+          (at -12.7 5.08 0)
+          (length 2.54)
+          (name "D5"
+            (effects
+              (font
+                (size 1.27 1.27))))
+          (number "8"
+            (effects
+              (font
+                (size 1.27 1.27)))))
+        (pin bidirectional line
+          (at -12.7 2.54 0)
+          (length 2.54)
+          (name "D6"
+            (effects
+              (font
+                (size 1.27 1.27))))
+          (number "9"
+            (effects
+              (font
+                (size 1.27 1.27)))))
+        (pin bidirectional line
+          (at -12.7 0 0)
+          (length 2.54)
+          (name "D7"
+            (effects
+              (font
+                (size 1.27 1.27))))
+          (number "10"
+            (effects
+              (font
+                (size 1.27 1.27)))))
+        (pin bidirectional line
+          (at -12.7 -2.54 0)
+          (length 2.54)
+          (name "D8"
+            (effects
+              (font
+                (size 1.27 1.27))))
+          (number "11"
+            (effects
+              (font
+                (size 1.27 1.27)))))
+        (pin bidirectional line
+          (at -12.7 -5.08 0)
+          (length 2.54)
+          (name "D9"
+            (effects
+              (font
+                (size 1.27 1.27))))
+          (number "12"
+            (effects
+              (font
+                (size 1.27 1.27)))))
+        (pin bidirectional line
+          (at -12.7 -7.62 0)
+          (length 2.54)
+          (name "D10"
+            (effects
+              (font
+                (size 1.27 1.27))))
+          (number "13"
+            (effects
+              (font
+                (size 1.27 1.27)))))
+        (pin bidirectional line
+          (at -12.7 -12.7 0)
+          (length 2.54)
+          (name "MOSI"
+            (effects
+              (font
+                (size 1.27 1.27))))
+          (number "14"
+            (effects
+              (font
+                (size 1.27 1.27)))))
+        (pin bidirectional line
+          (at -12.7 -15.24 0)
+          (length 2.54)
+          (name "MISO"
+            (effects
+              (font
+                (size 1.27 1.27))))
+          (number "15"
+            (effects
+              (font
+                (size 1.27 1.27)))))
+        (pin bidirectional line
+          (at -12.7 -17.78 0)
+          (length 2.54)
+          (name "SCK"
+            (effects
+              (font
+                (size 1.27 1.27))))
+          (number "16"
+            (effects
+              (font
+                (size 1.27 1.27)))))
+        (pin power_out line
+          (at 2.54 25.4 270)
+          (length 2.54)
+          (name "3V3"
+            (effects
+              (font
+                (size 1.27 1.27))))
+          (number "17"
+            (effects
+              (font
+                (size 1.27 1.27)))))
+        (pin input line
+          (at 12.7 5.08 180)
+          (length 2.54)
+          (name "AREF"
+            (effects
+              (font
+                (size 1.27 1.27))))
+          (number "18"
+            (effects
+              (font
+                (size 1.27 1.27)))))
+        (pin bidirectional line
+          (at 12.7 0 180)
+          (length 2.54)
+          (name "A0"
+            (effects
+              (font
+                (size 1.27 1.27))))
+          (number "19"
+            (effects
+              (font
+                (size 1.27 1.27)))))
+        (pin bidirectional line
+          (at 12.7 -2.54 180)
+          (length 2.54)
+          (name "A1"
+            (effects
+              (font
+                (size 1.27 1.27))))
+          (number "20"
+            (effects
+              (font
+                (size 1.27 1.27)))))
+        (pin bidirectional line
+          (at 12.7 -5.08 180)
+          (length 2.54)
+          (name "A2"
+            (effects
+              (font
+                (size 1.27 1.27))))
+          (number "21"
+            (effects
+              (font
+                (size 1.27 1.27)))))
+        (pin bidirectional line
+          (at 12.7 -7.62 180)
+          (length 2.54)
+          (name "A3"
+            (effects
+              (font
+                (size 1.27 1.27))))
+          (number "22"
+            (effects
+              (font
+                (size 1.27 1.27)))))
+        (pin bidirectional line
+          (at 12.7 -10.16 180)
+          (length 2.54)
+          (name "SDA/A4"
+            (effects
+              (font
+                (size 1.27 1.27))))
+          (number "23"
+            (effects
+              (font
+                (size 1.27 1.27)))))
+        (pin bidirectional line
+          (at 12.7 -12.7 180)
+          (length 2.54)
+          (name "SCL/A5"
+            (effects
+              (font
+                (size 1.27 1.27))))
+          (number "24"
+            (effects
+              (font
+                (size 1.27 1.27)))))
+        (pin bidirectional line
+          (at 12.7 -15.24 180)
+          (length 2.54)
+          (name "A6"
+            (effects
+              (font
+                (size 1.27 1.27))))
+          (number "25"
+            (effects
+              (font
+                (size 1.27 1.27)))))
+        (pin bidirectional line
+          (at 12.7 -17.78 180)
+          (length 2.54)
+          (name "A7"
+            (effects
+              (font
+                (size 1.27 1.27))))
+          (number "26"
+            (effects
+              (font
+                (size 1.27 1.27)))))
+        (pin power_out line
+          (at 5.08 25.4 270)
+          (length 2.54)
+          (name "+5V"
+            (effects
+              (font
+                (size 1.27 1.27))))
+          (number "27"
+            (effects
+              (font
+                (size 1.27 1.27)))))
+        (pin input line
+          (at 12.7 12.7 180)
+          (length 2.54)
+          (name "~{RESET}"
+            (effects
+              (font
+                (size 1.27 1.27))))
+          (number "28"
+            (effects
+              (font
+                (size 1.27 1.27)))))
+        (pin passive line
+          (at 0 -25.4 90)
+          (length 2.54)
+          (hide yes)
+          (name "GND"
+            (effects
+              (font
+                (size 1.27 1.27))))
+          (number "29"
+            (effects
+              (font
+                (size 1.27 1.27)))))
+        (pin power_in line
+          (at -2.54 25.4 270)
+          (length 2.54)
+          (name "VIN"
+            (effects
+              (font
+                (size 1.27 1.27))))
+          (number "30"
+            (effects
+              (font
+                (size 1.27 1.27))))))
+      (embedded_fonts no))
+    (symbol "Carrier:C"
+      (pin_numbers
+        (hide yes))
+      (pin_names
+        (offset 0.254))
+      (exclude_from_sim no)
+      (in_bom yes)
+      (on_board yes)
+      (in_pos_files yes)
+      (duplicate_pin_numbers_are_jumpers no)
+      (property "Reference" "C"
+        (at 0.635 2.54 0)
+        (show_name no)
+        (do_not_autoplace no)
+        (effects
+          (font
+            (size 1.27 1.27))
+          (justify left)))
+      (property "Value" "C"
+        (at 0.635 -2.54 0)
+        (show_name no)
+        (do_not_autoplace no)
+        (effects
+          (font
+            (size 1.27 1.27))
+          (justify left)))
+      (property "Footprint" ""
+        (at 0.9652 -3.81 0)
+        (show_name no)
+        (do_not_autoplace no)
+        (hide yes)
+        (effects
+          (font
+            (size 1.27 1.27))))
+      (property "Datasheet" ""
+        (at 0 0 0)
+        (show_name no)
+        (do_not_autoplace no)
+        (hide yes)
+        (effects
+          (font
+            (size 1.27 1.27))))
+      (property "Description" "Unpolarized capacitor"
+        (at 0 0 0)
+        (show_name no)
+        (do_not_autoplace no)
+        (hide yes)
+        (effects
+          (font
+            (size 1.27 1.27))))
+      (property "ki_keywords" "cap capacitor"
+        (at 0 0 0)
+        (show_name no)
+        (do_not_autoplace no)
+        (hide yes)
+        (effects
+          (font
+            (size 1.27 1.27))))
+      (property "ki_fp_filters" "C_*"
+        (at 0 0 0)
+        (show_name no)
+        (do_not_autoplace no)
+        (hide yes)
+        (effects
+          (font
+            (size 1.27 1.27))))
+      (symbol "C_0_1"
+        (polyline
+          (pts
+            (xy -2.032 0.762)
+            (xy 2.032 0.762))
+          (stroke
+            (width 0.508)
+            (type default))
+          (fill
+            (type none)))
+        (polyline
+          (pts
+            (xy -2.032 -0.762)
+            (xy 2.032 -0.762))
+          (stroke
+            (width 0.508)
+            (type default))
+          (fill
+            (type none))))
+      (symbol "C_1_1"
+        (pin passive line
+          (at 0 3.81 270)
+          (length 2.794)
+          (name ""
+            (effects
+              (font
+                (size 1.27 1.27))))
+          (number "1"
+            (effects
+              (font
+                (size 1.27 1.27)))))
+        (pin passive line
+          (at 0 -3.81 90)
+          (length 2.794)
+          (name ""
+            (effects
+              (font
+                (size 1.27 1.27))))
+          (number "2"
+            (effects
+              (font
+                (size 1.27 1.27))))))
+      (embedded_fonts no))
+    (symbol "Carrier:74AHCT2G125"
+      (pin_names
+        (offset 1.016))
+      (exclude_from_sim no)
+      (in_bom yes)
+      (on_board yes)
+      (in_pos_files yes)
+      (duplicate_pin_numbers_are_jumpers no)
+      (property "ki_locked" ""
+        (at 0 0 0)
+        (show_name no)
+        (do_not_autoplace no)
+        (effects
+          (font
+            (size 1.27 1.27))))
+      (embedded_fonts no)
+      (property "Reference" "U"
+        (at 0 1.27 0)
+        (show_name no)
+        (do_not_autoplace no)
+        (effects
+          (font
+            (size 1.27 1.27))))
+      (property "Value" "74AHCT2G125DP"
+        (at 0 -1.27 0)
+        (show_name no)
+        (do_not_autoplace no)
+        (effects
+          (font
+            (size 1.27 1.27))))
+      (property "Footprint" "Carrier:TSSOP-8_3x3mm_P0.65mm"
+        (at 0 0 0)
+        (show_name no)
+        (do_not_autoplace no)
+        (hide yes)
+        (effects
+          (font
+            (size 1.27 1.27))))
+      (property "Datasheet" "https://assets.nexperia.com/documents/data-sheet/74AHC_AHCT2G125.pdf"
+        (at 0 0 0)
+        (show_name no)
+        (do_not_autoplace no)
+        (hide yes)
+        (effects
+          (font
+            (size 1.27 1.27))))
+      (property "Description" "Dual non-inverting TTL-input buffer, independent active-LOW enables; Nexperia SOT505-2 TSSOP8"
+        (at 0 0 0)
+        (show_name no)
+        (do_not_autoplace no)
+        (hide yes)
+        (effects
+          (font
+            (size 1.27 1.27))))
+      (property "ki_keywords" "buffer 3State"
+        (at 0 0 0)
+        (show_name no)
+        (do_not_autoplace no)
+        (hide yes)
+        (effects
+          (font
+            (size 1.27 1.27))))
+      (property "ki_fp_filters" "DIP*W7.62mm* SO14* SSOP?14* TSSOP?14* SOIC*3.9x8.7mm*P1.27mm*"
+        (at 0 0 0)
+        (show_name no)
+        (do_not_autoplace no)
+        (hide yes)
+        (effects
+          (font
+            (size 1.27 1.27))))
+      (symbol "74AHCT2G125_1_0"
+        (polyline
+          (pts
+            (xy -3.81 3.81)
+            (xy -3.81 -3.81)
+            (xy 3.81 0)
+            (xy -3.81 3.81))
+          (stroke
+            (width 0.254)
+            (type default))
+          (fill
+            (type background)))
+        (pin input inverted
+          (at 0 -6.35 90)
+          (length 4.445)
+          (name ""
+            (effects
+              (font
+                (size 1.27 1.27))))
+          (number "1"
+            (effects
+              (font
+                (size 1.27 1.27)))))
+        (pin input line
+          (at -7.62 0 0)
+          (length 3.81)
+          (name ""
+            (effects
+              (font
+                (size 1.27 1.27))))
+          (number "2"
+            (effects
+              (font
+                (size 1.27 1.27)))))
+        (pin tri_state line
+          (at 7.62 0 180)
+          (length 3.81)
+          (name ""
+            (effects
+              (font
+                (size 1.27 1.27))))
+          (number "6"
+            (effects
+              (font
+                (size 1.27 1.27))))))
+      (symbol "74AHCT2G125_2_0"
+        (polyline
+          (pts
+            (xy -3.81 3.81)
+            (xy -3.81 -3.81)
+            (xy 3.81 0)
+            (xy -3.81 3.81))
+          (stroke
+            (width 0.254)
+            (type default))
+          (fill
+            (type background)))
+        (pin input inverted
+          (at 0 -6.35 90)
+          (length 4.445)
+          (name ""
+            (effects
+              (font
+                (size 1.27 1.27))))
+          (number "7"
+            (effects
+              (font
+                (size 1.27 1.27)))))
+        (pin input line
+          (at -7.62 0 0)
+          (length 3.81)
+          (name ""
+            (effects
+              (font
+                (size 1.27 1.27))))
+          (number "5"
+            (effects
+              (font
+                (size 1.27 1.27)))))
+        (pin tri_state line
+          (at 7.62 0 180)
+          (length 3.81)
+          (name ""
+            (effects
+              (font
+                (size 1.27 1.27))))
+          (number "3"
+            (effects
+              (font
+                (size 1.27 1.27))))))
+      (symbol "74AHCT2G125_3_0"
+        (pin power_in line
+          (at 0 -12.7 90)
+          (length 5.08)
+          (name "GND"
+            (effects
+              (font
+                (size 1.27 1.27))))
+          (number "4"
+            (effects
+              (font
+                (size 1.27 1.27)))))
+        (pin power_in line
+          (at 0 12.7 270)
+          (length 5.08)
+          (name "VCC"
+            (effects
+              (font
+                (size 1.27 1.27))))
+          (number "8"
+            (effects
+              (font
+                (size 1.27 1.27))))))
+      (symbol "74AHCT2G125_3_1"
+        (rectangle
+          (start -5.08 7.62)
+          (end 5.08 -7.62)
+          (stroke
+            (width 0.254)
+            (type default))
+          (fill
+            (type background)))))
+    (symbol "Carrier:PowerFlag"
+      (power)
+      (pin_names
+        (offset 0))
+      (in_bom no)
+      (on_board no)
+      (property "Reference" "#FLG"
+        (at 0 0 0)
+        (effects
+          (font
+            (size 1 1))
+          (hide yes)))
+      (property "Value" "PWR_FLAG"
+        (at 0 0 0)
+        (effects
+          (font
+            (size 1 1))))
+      (symbol "PowerFlag_0_1"
+        (polyline
+          (pts
+            (xy 0 0)
+            (xy 0 2.54)
+            (xy -1.27 1.27)
+            (xy 1.27 1.27)
+            (xy 0 2.54))
+          (stroke
+            (width 0.254)
+            (type default))
+          (fill
+            (type none))))
+      (symbol "PowerFlag_1_1"
+        (pin power_out line
+          (at 0 0 90)
+          (length 0)
+          (name "pwr"
+            (effects
+              (font
+                (size 1 1))))
+          (number "1"
+            (effects
+              (font
+                (size 1 1))))))))
+  (text "NANO EVERY / SYSTEM"
+    (at 12.7 12.7 0)
+    (effects
+      (font
+        (size 2 2))
+      (justify left top))
+    (uuid "4f2e5274-2cfb-5b53-9cd4-7f49355846ec"))
+  (text "Stock Nano Every and ordinary Micro-USB data cable. USB end faces upper PCB edge.\nNano 5V header is an OUTPUT; carrier external power enters VIN only.\nA.9 is an unbuilt prototype. CAD checks do not establish power or timing acceptance."
+    (at 12.7 23 0)
+    (effects
+      (font
+        (size 1.016 1.016))
+      (justify left top))
+    (uuid "b891a14b-e57b-525c-a99d-9d6ba603220f"))
+  (wire
+    (pts
+      (xy 63.5 68.58)
+      (xy 58.42 68.58))
+    (stroke
+      (width 0)
+      (type default))
+    (uuid "a8d7bfc5-43e0-56d4-8334-359c89b5bafd"))
+  (global_label "NANO_TX5"
+    (shape bidirectional)
+    (at 58.42 68.58 0)
+    (effects
+      (font
+        (size 0.762 0.762))
+      (justify left))
+    (uuid "bc17b625-e9f9-564b-ac80-1db432eba492"))
+  (wire
+    (pts
+      (xy 63.5 71.12)
+      (xy 58.42 71.12))
+    (stroke
+      (width 0)
+      (type default))
+    (uuid "776eb624-33c7-5881-9abd-84faf22e3759"))
+  (global_label "NANO_RX5"
+    (shape bidirectional)
+    (at 58.42 71.12 0)
+    (effects
+      (font
+        (size 0.762 0.762))
+      (justify left))
+    (uuid "d4c3e800-30ec-5948-addf-6db54ad5d7fe"))
+  (no_connect
+    (at 88.9 73.66)
+    (uuid "18dc28ad-d9a0-5c70-9e99-0cdbcdd4ab49"))
+  (wire
+    (pts
+      (xy 76.2 114.3)
+      (xy 76.2 119.38))
+    (stroke
+      (width 0)
+      (type default))
+    (uuid "9979be18-1f7c-5d33-b49e-0a0abfaafb2b"))
+  (global_label "GND"
+    (shape bidirectional)
+    (at 76.2 119.38 90)
+    (effects
+      (font
+        (size 0.762 0.762))
+      (justify left))
+    (uuid "5841bd79-26e8-56eb-b4fa-022f9654dae8"))
+  (wire
+    (pts
+      (xy 63.5 76.2)
+      (xy 58.42 76.2))
+    (stroke
+      (width 0)
+      (type default))
+    (uuid "2d4b4b57-cfce-5933-a7cf-2f9cda12ffa0"))
+  (global_label "CLK_NANO"
+    (shape bidirectional)
+    (at 58.42 76.2 0)
+    (effects
+      (font
+        (size 0.762 0.762))
+      (justify left))
+    (uuid "1b3d4c5a-c10a-593b-8a55-7576032e9dae"))
+  (wire
+    (pts
+      (xy 63.5 78.74)
+      (xy 58.42 78.74))
+    (stroke
+      (width 0)
+      (type default))
+    (uuid "cb1b8d42-2184-56d0-969e-fc87687035a4"))
+  (global_label "EXT_PPS_PRESENT_N"
+    (shape bidirectional)
+    (at 58.42 78.74 0)
+    (effects
+      (font
+        (size 0.762 0.762))
+      (justify left))
+    (uuid "f2a64064-bd02-58cf-9f86-4203946c3eb9"))
+  (no_connect
+    (at 63.5 81.28)
+    (uuid "877b748a-5a1c-5d0a-a7ef-f17f946ed0dd"))
+  (no_connect
+    (at 63.5 83.82)
+    (uuid "8e11a20d-eca8-507b-86f9-278fc0807363"))
+  (no_connect
+    (at 63.5 86.36)
+    (uuid "6c674470-291c-5d10-b62a-bb2d60054cb1"))
+  (no_connect
+    (at 63.5 88.9)
+    (uuid "24ff48de-558e-539b-b478-89ac379a529e"))
+  (no_connect
+    (at 63.5 91.44)
+    (uuid "53d60961-63e5-5dce-a856-79f24ff8ac16"))
+  (wire
+    (pts
+      (xy 63.5 93.98)
+      (xy 58.42 93.98))
+    (stroke
+      (width 0)
+      (type default))
+    (uuid "b88384f9-fce9-525a-9166-20a94a3e8b35"))
+  (global_label "OPT_NANO"
+    (shape bidirectional)
+    (at 58.42 93.98 0)
+    (effects
+      (font
+        (size 0.762 0.762))
+      (justify left))
+    (uuid "9676ea0f-49f2-5828-a8f3-d76a4485317c"))
+  (no_connect
+    (at 63.5 96.52)
+    (uuid "d50e8d0a-d85a-5b3e-8b7e-20e885119dd4"))
+  (no_connect
+    (at 63.5 101.6)
+    (uuid "2e50c98d-63c3-5f2e-8deb-e69eb9b02438"))
+  (no_connect
+    (at 63.5 104.14)
+    (uuid "26ac3316-194c-5be7-9fa9-84a86677f2cb"))
+  (no_connect
+    (at 63.5 106.68)
+    (uuid "8c55cfc3-eaf6-5e0b-bd68-05dd063bbe8b"))
+  (wire
+    (pts
+      (xy 78.74 63.5)
+      (xy 78.74 58.42))
+    (stroke
+      (width 0)
+      (type default))
+    (uuid "e39ba48f-25f7-50b9-bc38-4aa33b76dfa1"))
+  (global_label "3V3_NANO"
+    (shape bidirectional)
+    (at 78.74 58.42 270)
+    (effects
+      (font
+        (size 0.762 0.762))
+      (justify left))
+    (uuid "99a90ea5-3841-5a24-8308-0e0ac51b8131"))
+  (no_connect
+    (at 88.9 83.82)
+    (uuid "296dccf0-d4ec-583a-9bb1-86ec8fca6af1"))
+  (no_connect
+    (at 88.9 88.9)
+    (uuid "53dd0615-e438-5b78-8c67-5055baddc85d"))
+  (no_connect
+    (at 88.9 91.44)
+    (uuid "927b3770-8905-5b89-8f64-4ece2d2b3df7"))
+  (no_connect
+    (at 88.9 93.98)
+    (uuid "06f6aef9-a599-5461-b338-122ef60fed65"))
+  (wire
+    (pts
+      (xy 88.9 96.52)
+      (xy 93.98 96.52))
+    (stroke
+      (width 0)
+      (type default))
+    (uuid "60f57a60-2d50-5aef-8a18-89da05414213"))
+  (global_label "PPS_NANO"
+    (shape bidirectional)
+    (at 93.98 96.52 180)
+    (effects
+      (font
+        (size 0.762 0.762))
+      (justify left))
+    (uuid "35e229d2-db58-5a72-b819-e778faf8472a"))
+  (no_connect
+    (at 88.9 99.06)
+    (uuid "68870386-620d-5727-aa50-9b88a494e8cd"))
+  (no_connect
+    (at 88.9 101.6)
+    (uuid "5f20039f-d01d-5714-8e0e-ede2d1d1fcd3"))
+  (no_connect
+    (at 88.9 104.14)
+    (uuid "8930984c-a01a-5d95-bfa9-d6a06217abbe"))
+  (no_connect
+    (at 88.9 106.68)
+    (uuid "4814d112-2683-57cc-994b-467916b624cf"))
+  (wire
+    (pts
+      (xy 81.28 63.5)
+      (xy 81.28 58.42))
+    (stroke
+      (width 0)
+      (type default))
+    (uuid "7be60cd0-dc85-5486-9393-a1c5b3f8f0f5"))
+  (global_label "5V_CAPTURE"
+    (shape bidirectional)
+    (at 81.28 58.42 270)
+    (effects
+      (font
+        (size 0.762 0.762))
+      (justify left))
+    (uuid "ac72d8ed-556c-5d54-82ee-3c674982701d"))
+  (no_connect
+    (at 88.9 76.2)
+    (uuid "7ff549c9-5fd0-5fe1-b201-ca9c7563f826"))
+  (wire
+    (pts
+      (xy 76.2 114.3)
+      (xy 76.2 119.38))
+    (stroke
+      (width 0)
+      (type default))
+    (uuid "e9592f64-a494-5690-9101-13b031bcc97c"))
+  (global_label "GND"
+    (shape bidirectional)
+    (at 76.2 119.38 90)
+    (effects
+      (font
+        (size 0.762 0.762))
+      (justify left))
+    (uuid "a2aaadfe-6594-52fd-b67b-fc2a31cb44a1"))
+  (wire
+    (pts
+      (xy 73.66 63.5)
+      (xy 73.66 58.42))
+    (stroke
+      (width 0)
+      (type default))
+    (uuid "10ed4585-f8b4-52c9-8df2-a61f36730b87"))
+  (global_label "NANO_VIN"
+    (shape bidirectional)
+    (at 73.66 58.42 270)
+    (effects
+      (font
+        (size 0.762 0.762))
+      (justify left))
+    (uuid "ade3bf1b-7f65-518a-b87d-07cbf5e405d5"))
+  (symbol
+    (lib_id "Carrier:Arduino_Nano_Every")
+    (at 76.2 88.9 0)
+    (unit 1)
+    (in_bom yes)
+    (on_board yes)
+    (dnp no)
+    (uuid "dee90178-ad20-5685-8146-502526f6ed68")
+    (property "Assembly" "Fit TWO female 1x15 sockets. Baseline customer Nano reuse; separately quote genuine Arduino ABX00033 with headers inserted into sockets, no direct module soldering."
+      (at 76.2 88.9 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (hide yes)))
+    (property "Manufacturer" "Samtec"
+      (at 76.2 88.9 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (hide yes)))
+    (property "MPN" "SSW-115-01-G-S"
+      (at 76.2 88.9 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (hide yes)))
+    (property "Footprint" "Carrier:Nano_Every_Sockets"
+      (at 76.2 88.9 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (hide yes)))
+    (property "Datasheet" "https://docs.arduino.cc/resources/schematics/ABX00028-schematics.pdf"
+      (at 76.2 88.9 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (hide yes)))
+    (property "Description" ""
+      (at 76.2 88.9 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (hide yes)))
+    (property "Reference" "A1"
+      (at 76.2 58.50000000000001 0)
+      (effects
+        (font
+          (size 0.9 0.9))))
+    (property "Value" "Arduino_Nano_Every"
+      (at 76.2 61.00000000000001 0)
+      (effects
+        (font
+          (size 0.9 0.9))))
+    (instances
+      (project "NanoEveryCarrier"
+        (path "/8572c726-1ea0-5ab8-b0a6-a548b9a05059"
+          (reference "A1")
+          (unit 1))))
+    (pin "1"
+      (uuid "0fd59ae9-e6dc-5c7b-9c2b-1027fefb847a"))
+    (pin "2"
+      (uuid "f9ad44cd-f294-5e48-87ae-393abe94c203"))
+    (pin "3"
+      (uuid "931e6ef8-7b19-50b2-81da-29d372f30a86"))
+    (pin "4"
+      (uuid "4bba8a8a-8328-5d69-9552-8540d4a1db49"))
+    (pin "5"
+      (uuid "d1bdf636-d82e-542c-8cf7-e04a70d78a70"))
+    (pin "6"
+      (uuid "f4077537-73c2-5a07-89be-2634b7300fbe"))
+    (pin "7"
+      (uuid "c4023d0c-4e27-5a1f-9a6c-b4bfd6159e77"))
+    (pin "8"
+      (uuid "46092fa4-2989-521e-b07c-7212c2a363a9"))
+    (pin "9"
+      (uuid "f07ffd66-440c-59b0-b9d9-3b7af947bbe9"))
+    (pin "10"
+      (uuid "26334124-3038-57de-b775-d1ba88cdd7ae"))
+    (pin "11"
+      (uuid "cbcab808-aeb5-54e0-bb81-93c3e579229a"))
+    (pin "12"
+      (uuid "f3c9dd59-8bf5-53c6-8277-012ad8c3c925"))
+    (pin "13"
+      (uuid "9084fdf3-173d-591d-81fc-4877e4ee6266"))
+    (pin "14"
+      (uuid "3c40e15f-d1b3-58f2-9077-3ca178fa6ef5"))
+    (pin "15"
+      (uuid "76ab26e8-7bb7-5fe5-b374-5706f4f2d17d"))
+    (pin "16"
+      (uuid "27366301-4529-5aa1-869b-fed464c0290e"))
+    (pin "17"
+      (uuid "d3ccd548-62ef-5ec1-9daf-cd58d5156f0e"))
+    (pin "18"
+      (uuid "1a694ce6-71b4-5988-b1f3-b2e2bf21f4f7"))
+    (pin "19"
+      (uuid "b6575df7-93de-558a-9eed-01741c6d2777"))
+    (pin "20"
+      (uuid "f70d93a7-d1b4-536f-818a-4ff38591e665"))
+    (pin "21"
+      (uuid "a0b5e6ae-06f6-5c82-8253-3f1259d382d0"))
+    (pin "22"
+      (uuid "54ec5d82-0c81-5859-ab63-b6aa9f57d361"))
+    (pin "23"
+      (uuid "0ae67d95-16d6-535c-9504-d59966a836de"))
+    (pin "24"
+      (uuid "1444bc94-6512-50b4-bb0b-45f9dde84009"))
+    (pin "25"
+      (uuid "07a4da85-7b5f-5242-b75a-d68c545dd585"))
+    (pin "26"
+      (uuid "a64948c2-d774-57dd-af88-e0f299f0eba6"))
+    (pin "27"
+      (uuid "c9e6d28a-d4b8-561a-8bc3-cbeb797a8390"))
+    (pin "28"
+      (uuid "d2d761bb-c58f-5883-9dea-1e4afe744e63"))
+    (pin "29"
+      (uuid "2102407e-1e6a-5693-99f3-50543e7c1027"))
+    (pin "30"
+      (uuid "7e0314fe-97fc-5ef7-b23a-f4268ffd1588")))
+  (wire
+    (pts
+      (xy 199.39 66.04)
+      (xy 194.31 66.04))
+    (stroke
+      (width 0)
+      (type default))
+    (uuid "ccf81310-e149-5b9e-8f93-0378037718da"))
+  (global_label "5V_CAPTURE"
+    (shape bidirectional)
+    (at 194.31 66.04 0)
+    (effects
+      (font
+        (size 0.762 0.762))
+      (justify left))
+    (uuid "f6ce9061-eb9c-5dec-915d-1cc14f23ff22"))
+  (wire
+    (pts
+      (xy 207.01 66.04)
+      (xy 212.09 66.04))
+    (stroke
+      (width 0)
+      (type default))
+    (uuid "cbf8614b-1def-5130-aa47-9d23af82a8c4"))
+  (global_label "GND"
+    (shape bidirectional)
+    (at 212.09 66.04 180)
+    (effects
+      (font
+        (size 0.762 0.762))
+      (justify left))
+    (uuid "39a1920a-8b48-534e-9744-d4d94effaa9d"))
+  (symbol
+    (lib_id "Carrier:C")
+    (at 203.2 66.04 90)
+    (unit 1)
+    (in_bom yes)
+    (on_board yes)
+    (dnp no)
+    (uuid "f3029770-4523-5112-9fae-32d7226b8d0c")
+    (property "Manufacturer" "Murata"
+      (at 203.2 66.04 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (hide yes)))
+    (property "MPN" "GRM21BR71H104KA01L"
+      (at 203.2 66.04 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (hide yes)))
+    (property "Assembly" "100 nF 50 V X7R 0805"
+      (at 203.2 66.04 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (hide yes)))
+    (property "Footprint" "Carrier:C_0805_2012Metric"
+      (at 203.2 66.04 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (hide yes)))
+    (property "Datasheet" ""
+      (at 203.2 66.04 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (hide yes)))
+    (property "Description" ""
+      (at 203.2 66.04 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (hide yes)))
+    (property "Reference" "C1"
+      (at 203.2 58.040000000000006 0)
+      (effects
+        (font
+          (size 0.9 0.9))))
+    (property "Value" "100n"
+      (at 203.2 60.540000000000006 0)
+      (effects
+        (font
+          (size 0.9 0.9))))
+    (instances
+      (project "NanoEveryCarrier"
+        (path "/8572c726-1ea0-5ab8-b0a6-a548b9a05059"
+          (reference "C1")
+          (unit 1))))
+    (pin "1"
+      (uuid "ff4cef44-3ea8-5b36-9ee1-b21336c37e98"))
+    (pin "2"
+      (uuid "c1b119c5-5b51-5c63-86e9-5252b9b44c0b")))
+  (wire
+    (pts
+      (xy 326.39 66.04)
+      (xy 321.31 66.04))
+    (stroke
+      (width 0)
+      (type default))
+    (uuid "53820346-6012-5311-8df5-45472c8ecd33"))
+  (global_label "5V_CAPTURE"
+    (shape bidirectional)
+    (at 321.31 66.04 0)
+    (effects
+      (font
+        (size 0.762 0.762))
+      (justify left))
+    (uuid "2f894ca8-bf88-515e-9007-a44f7951b932"))
+  (wire
+    (pts
+      (xy 334.01 66.04)
+      (xy 339.09 66.04))
+    (stroke
+      (width 0)
+      (type default))
+    (uuid "bdc46638-35f7-53aa-8e20-16c26aef7f8a"))
+  (global_label "GND"
+    (shape bidirectional)
+    (at 339.09 66.04 180)
+    (effects
+      (font
+        (size 0.762 0.762))
+      (justify left))
+    (uuid "70037e4e-aee9-5b22-85f7-00a53e5dd192"))
+  (symbol
+    (lib_id "Carrier:C")
+    (at 330.2 66.04 90)
+    (unit 1)
+    (in_bom yes)
+    (on_board yes)
+    (dnp no)
+    (uuid "e68bea9d-d6ad-5aa5-8113-6ed75d588e25")
+    (property "Manufacturer" "Murata"
+      (at 330.2 66.04 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (hide yes)))
+    (property "MPN" "GRM21BR71C105KA01L"
+      (at 330.2 66.04 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (hide yes)))
+    (property "Assembly" "1 uF 16 V X7R 0805"
+      (at 330.2 66.04 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (hide yes)))
+    (property "Footprint" "Carrier:C_0805_2012Metric"
+      (at 330.2 66.04 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (hide yes)))
+    (property "Datasheet" ""
+      (at 330.2 66.04 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (hide yes)))
+    (property "Description" ""
+      (at 330.2 66.04 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (hide yes)))
+    (property "Reference" "C2"
+      (at 330.2 58.040000000000006 0)
+      (effects
+        (font
+          (size 0.9 0.9))))
+    (property "Value" "1u"
+      (at 330.2 60.540000000000006 0)
+      (effects
+        (font
+          (size 0.9 0.9))))
+    (instances
+      (project "NanoEveryCarrier"
+        (path "/8572c726-1ea0-5ab8-b0a6-a548b9a05059"
+          (reference "C2")
+          (unit 1))))
+    (pin "1"
+      (uuid "dd8de321-a4a6-5e0e-b82f-aec1e0a5632f"))
+    (pin "2"
+      (uuid "ca71af2c-d809-5bbf-a8cc-311fef385d41")))
+  (wire
+    (pts
+      (xy 203.2 109.22)
+      (xy 203.2 114.3))
+    (stroke
+      (width 0)
+      (type default))
+    (uuid "72e740e1-dd96-50fe-8c46-9acc59f10817"))
+  (global_label "GND"
+    (shape bidirectional)
+    (at 203.2 114.3 90)
+    (effects
+      (font
+        (size 0.762 0.762))
+      (justify left))
+    (uuid "78178abd-f45d-506f-8150-002ea0ca55f3"))
+  (wire
+    (pts
+      (xy 203.2 83.82)
+      (xy 203.2 78.74))
+    (stroke
+      (width 0)
+      (type default))
+    (uuid "4926d233-691c-5718-b4b2-632d5f559938"))
+  (global_label "5V_CAPTURE"
+    (shape bidirectional)
+    (at 203.2 78.74 270)
+    (effects
+      (font
+        (size 0.762 0.762))
+      (justify left))
+    (uuid "927fae49-1b40-54f4-82cb-9c61e8c98d2d"))
+  (symbol
+    (lib_id "Carrier:74AHCT2G125")
+    (at 203.2 96.52 0)
+    (unit 3)
+    (in_bom yes)
+    (on_board yes)
+    (dnp no)
+    (uuid "ef04df5d-064a-5038-9a39-96c931434d4c")
+    (property "Manufacturer" "Nexperia"
+      (at 203.2 96.52 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (hide yes)))
+    (property "MPN" "74AHCT2G125DP,125"
+      (at 203.2 96.52 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (hide yes)))
+    (property "Assembly" "TSSOP8 SOT505-2; 0.65mm pitch. PPS and 16MHz clock only; both enables tied LOW. Optical uses U3 directly."
+      (at 203.2 96.52 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (hide yes)))
+    (property "Footprint" "Carrier:TSSOP-8_3x3mm_P0.65mm"
+      (at 203.2 96.52 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (hide yes)))
+    (property "Datasheet" "https://assets.nexperia.com/documents/data-sheet/74AHC_AHCT2G125.pdf"
+      (at 203.2 96.52 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (hide yes)))
+    (property "Description" ""
+      (at 203.2 96.52 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (hide yes)))
+    (property "Reference" "U1"
+      (at 203.2 78.82 0)
+      (effects
+        (font
+          (size 0.9 0.9))))
+    (property "Value" "74AHCT2G125DP"
+      (at 203.2 81.32 0)
+      (effects
+        (font
+          (size 0.9 0.9))))
+    (instances
+      (project "NanoEveryCarrier"
+        (path "/8572c726-1ea0-5ab8-b0a6-a548b9a05059"
+          (reference "U1")
+          (unit 3))))
+    (pin "4"
+      (uuid "09e46ee8-4243-55c5-9959-9985c8cccbef"))
+    (pin "8"
+      (uuid "7ec18ee3-4919-57ab-8f40-1bd41d6e20b0")))
+  (symbol
+    (lib_id "Carrier:PowerFlag")
+    (at 139.7 170.18 0)
+    (unit 1)
+    (in_bom no)
+    (on_board no)
+    (uuid "275811e9-804e-5353-ad28-6db13bf7c7ab")
+    (property "Reference" "#FLG1"
+      (at 139.7 170.18 0)
+      (effects
+        (font
+          (size 1.016 1.016))
+        (justify left)
+        (hide yes)))
+    (property "Value" "PWR_FLAG"
+      (at 139.7 165.1 0)
+      (effects
+        (font
+          (size 0.762 0.762))))
+    (instances
+      (project "NanoEveryCarrier"
+        (path "/8572c726-1ea0-5ab8-b0a6-a548b9a05059"
+          (reference "#FLG1")
+          (unit 1)))))
+  (global_label "GND"
+    (shape bidirectional)
+    (at 139.7 170.18 0)
+    (effects
+      (font
+        (size 0.762 0.762))
+      (justify left))
+    (uuid "6c857efa-7848-5b8f-838d-7f52936bda2d"))
+  (symbol
+    (lib_id "Carrier:PowerFlag")
+    (at 177.79999999999998 170.18 0)
+    (unit 1)
+    (in_bom no)
+    (on_board no)
+    (uuid "9c7acba2-5a97-5de0-82db-9e3779c2214d")
+    (property "Reference" "#FLG2"
+      (at 177.79999999999998 170.18 0)
+      (effects
+        (font
+          (size 1.016 1.016))
+        (justify left)
+        (hide yes)))
+    (property "Value" "PWR_FLAG"
+      (at 177.79999999999998 165.1 0)
+      (effects
+        (font
+          (size 0.762 0.762))))
+    (instances
+      (project "NanoEveryCarrier"
+        (path "/8572c726-1ea0-5ab8-b0a6-a548b9a05059"
+          (reference "#FLG2")
+          (unit 1)))))
+  (global_label "NANO_VIN"
+    (shape bidirectional)
+    (at 177.79999999999998 170.18 0)
+    (effects
+      (font
+        (size 0.762 0.762))
+      (justify left))
+    (uuid "ee9deb72-eb41-5775-8119-25a8275bf547"))
+  (symbol
+    (lib_id "Carrier:PowerFlag")
+    (at 215.89999999999998 170.18 0)
+    (unit 1)
+    (in_bom no)
+    (on_board no)
+    (uuid "f32d29b1-165d-52d9-a4d4-8e2ad24e07f7")
+    (property "Reference" "#FLG3"
+      (at 215.89999999999998 170.18 0)
+      (effects
+        (font
+          (size 1.016 1.016))
+        (justify left)
+        (hide yes)))
+    (property "Value" "PWR_FLAG"
+      (at 215.89999999999998 165.1 0)
+      (effects
+        (font
+          (size 0.762 0.762))))
+    (instances
+      (project "NanoEveryCarrier"
+        (path "/8572c726-1ea0-5ab8-b0a6-a548b9a05059"
+          (reference "#FLG3")
+          (unit 1)))))
+  (global_label "TCXO_LDO_IN"
+    (shape bidirectional)
+    (at 215.89999999999998 170.18 0)
+    (effects
+      (font
+        (size 0.762 0.762))
+      (justify left))
+    (uuid "46688079-df44-5772-9257-7955a0172725"))
+  (symbol
+    (lib_id "Carrier:PowerFlag")
+    (at 254.0 170.18 0)
+    (unit 1)
+    (in_bom no)
+    (on_board no)
+    (uuid "d124f610-4d3b-5f57-bf5b-8b1d00db3c8d")
+    (property "Reference" "#FLG4"
+      (at 254.0 170.18 0)
+      (effects
+        (font
+          (size 1.016 1.016))
+        (justify left)
+        (hide yes)))
+    (property "Value" "PWR_FLAG"
+      (at 254.0 165.1 0)
+      (effects
+        (font
+          (size 0.762 0.762))))
+    (instances
+      (project "NanoEveryCarrier"
+        (path "/8572c726-1ea0-5ab8-b0a6-a548b9a05059"
+          (reference "#FLG4")
+          (unit 1)))))
+  (global_label "USB_C_VBUS"
+    (shape bidirectional)
+    (at 254.0 170.18 0)
+    (effects
+      (font
+        (size 0.762 0.762))
+      (justify left))
+    (uuid "a04d2d53-0b91-5ad9-a5aa-d7740429818c"))
+  (symbol
+    (lib_id "Carrier:PowerFlag")
+    (at 292.1 170.18 0)
+    (unit 1)
+    (in_bom no)
+    (on_board no)
+    (uuid "a28ceffa-e89f-5fba-b8d3-730f15eca158")
+    (property "Reference" "#FLG5"
+      (at 292.1 170.18 0)
+      (effects
+        (font
+          (size 1.016 1.016))
+        (justify left)
+        (hide yes)))
+    (property "Value" "PWR_FLAG"
+      (at 292.1 165.1 0)
+      (effects
+        (font
+          (size 0.762 0.762))))
+    (instances
+      (project "NanoEveryCarrier"
+        (path "/8572c726-1ea0-5ab8-b0a6-a548b9a05059"
+          (reference "#FLG5")
+          (unit 1)))))
+  (global_label "BOOST_5V"
+    (shape bidirectional)
+    (at 292.1 170.18 0)
+    (effects
+      (font
+        (size 0.762 0.762))
+      (justify left))
+    (uuid "a50b02b3-3e30-5d90-be22-e12339b8b1a6"))
+  (symbol
+    (lib_id "Carrier:PowerFlag")
+    (at 330.2 170.18 0)
+    (unit 1)
+    (in_bom no)
+    (on_board no)
+    (uuid "d84fb842-62bd-5baa-8722-fe29c1fbac28")
+    (property "Reference" "#FLG6"
+      (at 330.2 170.18 0)
+      (effects
+        (font
+          (size 1.016 1.016))
+        (justify left)
+        (hide yes)))
+    (property "Value" "PWR_FLAG"
+      (at 330.2 165.1 0)
+      (effects
+        (font
+          (size 0.762 0.762))))
+    (instances
+      (project "NanoEveryCarrier"
+        (path "/8572c726-1ea0-5ab8-b0a6-a548b9a05059"
+          (reference "#FLG6")
+          (unit 1)))))
+  (global_label "TERM_5V_IN"
+    (shape bidirectional)
+    (at 330.2 170.18 0)
+    (effects
+      (font
+        (size 0.762 0.762))
+      (justify left))
+    (uuid "3a3a6f59-46f1-5d9b-9271-119c6a0b0713"))
+  (sheet
+    (at 141 190)
+    (size 115 10)
+    (stroke
+      (width 0.254)
+      (type default))
+    (fill
+      (color 0 0 0 0))
+    (uuid "43c986b3-d521-5c5f-acee-6fe5765e1f26")
+    (property "Sheetname" "TimingInputs"
+      (at 141 189 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (justify left)))
+    (property "Sheetfile" "TimingInputs.kicad_sch"
+      (at 141 201 0)
+      (effects
+        (font
+          (size 0.762 0.762))
+        (justify left))))
+  (sheet
+    (at 271 190)
+    (size 115 10)
+    (stroke
+      (width 0.254)
+      (type default))
+    (fill
+      (color 0 0 0 0))
+    (uuid "f0fd1eb2-bc0a-529c-a444-886b3ce5e6fa")
+    (property "Sheetname" "GPS_PPS"
+      (at 271 189 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (justify left)))
+    (property "Sheetfile" "GPS_PPS.kicad_sch"
+      (at 271 201 0)
+      (effects
+        (font
+          (size 0.762 0.762))
+        (justify left))))
+  (sheet
+    (at 141 203)
+    (size 115 10)
+    (stroke
+      (width 0.254)
+      (type default))
+    (fill
+      (color 0 0 0 0))
+    (uuid "7be95df0-cc28-5324-899a-e05cee8c1ae4")
+    (property "Sheetname" "JackInputs"
+      (at 141 202 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (justify left)))
+    (property "Sheetfile" "JackInputs.kicad_sch"
+      (at 141 214 0)
+      (effects
+        (font
+          (size 0.762 0.762))
+        (justify left))))
+  (sheet
+    (at 271 203)
+    (size 115 10)
+    (stroke
+      (width 0.254)
+      (type default))
+    (fill
+      (color 0 0 0 0))
+    (uuid "997cdaf2-08c0-547e-b400-ff87358fe5c0")
+    (property "Sheetname" "GNSSPower"
+      (at 271 202 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (justify left)))
+    (property "Sheetfile" "GNSSPower.kicad_sch"
+      (at 271 214 0)
+      (effects
+        (font
+          (size 0.762 0.762))
+        (justify left))))
+  (sheet
+    (at 141 216)
+    (size 115 10)
+    (stroke
+      (width 0.254)
+      (type default))
+    (fill
+      (color 0 0 0 0))
+    (uuid "c4987d4c-b1c7-54a6-aa7e-a133c0dbd3f7")
+    (property "Sheetname" "GNSS_UART"
+      (at 141 215 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (justify left)))
+    (property "Sheetfile" "GNSS_UART.kicad_sch"
+      (at 141 227 0)
+      (effects
+        (font
+          (size 0.762 0.762))
+        (justify left))))
+  (sheet
+    (at 271 216)
+    (size 115 10)
+    (stroke
+      (width 0.254)
+      (type default))
+    (fill
+      (color 0 0 0 0))
+    (uuid "06ae1b64-40ca-532b-81a0-ee6f7e7892eb")
+    (property "Sheetname" "USBPower"
+      (at 271 215 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (justify left)))
+    (property "Sheetfile" "USBPower.kicad_sch"
+      (at 271 227 0)
+      (effects
+        (font
+          (size 0.762 0.762))
+        (justify left))))
+  (sheet
+    (at 141 229)
+    (size 115 10)
+    (stroke
+      (width 0.254)
+      (type default))
+    (fill
+      (color 0 0 0 0))
+    (uuid "ce39543d-f6bb-5f8f-a452-4561bcaf1745")
+    (property "Sheetname" "PowerProtection"
+      (at 141 228 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (justify left)))
+    (property "Sheetfile" "PowerProtection.kicad_sch"
+      (at 141 240 0)
+      (effects
+        (font
+          (size 0.762 0.762))
+        (justify left))))
+  (sheet
+    (at 271 229)
+    (size 115 10)
+    (stroke
+      (width 0.254)
+      (type default))
+    (fill
+      (color 0 0 0 0))
+    (uuid "8786f15c-7c29-58a3-b421-d529a998b252")
+    (property "Sheetname" "BoostPower"
+      (at 271 228 0)
+      (effects
+        (font
+          (size 0.9 0.9))
+        (justify left)))
+    (property "Sheetfile" "BoostPower.kicad_sch"
+      (at 271 240 0)
+      (effects
+        (font
+          (size 0.762 0.762))
+        (justify left))))
+  (embedded_fonts no))

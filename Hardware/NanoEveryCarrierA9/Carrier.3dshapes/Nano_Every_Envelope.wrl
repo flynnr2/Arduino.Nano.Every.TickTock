@@ -1,0 +1,12 @@
+#VRML V2.0 utf8
+# Customer Nano Every module only. USB at D12/D13 end: local y=37.97. Male header stack height is illustrative.
+Transform { translation 7.62 -17.78 11.85 children [ Shape { appearance Appearance { material Material { diffuseColor 0.025 0.43 0.45 } } geometry Box { size 17.78 43.18 1.6 } } ] }
+Transform { translation 0 -17.78 9.78 children [ Shape { appearance Appearance { material Material { diffuseColor 0.06 0.065 0.07 } } geometry Box { size 2.54 38.1 2.54 } } ] }
+Transform { translation 15.24 -17.78 9.78 children [ Shape { appearance Appearance { material Material { diffuseColor 0.06 0.065 0.07 } } geometry Box { size 2.54 38.1 2.54 } } ] }
+Transform { translation 7.62 -37.97 12.9 children [ Shape { appearance Appearance { material Material { diffuseColor 0.62 0.64 0.68 } } geometry Box { size 8 5.5 0.5 } } ] }
+Transform { translation 7.62 -37.97 15.25 children [ Shape { appearance Appearance { material Material { diffuseColor 0.62 0.64 0.68 } } geometry Box { size 8 5.5 0.3 } } ] }
+Transform { translation 3.82 -37.97 14.1 children [ Shape { appearance Appearance { material Material { diffuseColor 0.62 0.64 0.68 } } geometry Box { size 0.4 5.5 2.3 } } ] }
+Transform { translation 11.42 -37.97 14.1 children [ Shape { appearance Appearance { material Material { diffuseColor 0.62 0.64 0.68 } } geometry Box { size 0.4 5.5 2.3 } } ] }
+Transform { translation 7.62 -35.37 14.1 children [ Shape { appearance Appearance { material Material { diffuseColor 0.62 0.64 0.68 } } geometry Box { size 7.4 0.3 2.3 } } ] }
+Transform { translation 7.62 -38.1 13.85 children [ Shape { appearance Appearance { material Material { diffuseColor 0.06 0.065 0.07 } } geometry Box { size 5.2 3.9 0.55 } } ] }
+Transform { translation 7.62 -16.5 13.15 children [ Shape { appearance Appearance { material Material { diffuseColor 0.06 0.065 0.07 } } geometry Box { size 6 6 1 } } ] }

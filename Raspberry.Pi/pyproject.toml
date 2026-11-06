@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pendulum-pi"
+version = "0.1.0"
+description = "Raspberry Pi receiver for Arduino Pendulum Timer"
+requires-python = ">=3.11"
+dependencies = ["pyserial>=3.5,<4", "Flask>=3.1,<4", "waitress>=3.0,<4"]
+
+[project.optional-dependencies]
+hardware = [
+  "gpiod>=2.2,<3; sys_platform == 'linux'",
+  "adafruit-extended-bus>=1.0.2,<2",
+  "adafruit-circuitpython-bmp280>=3.3.12,<4",
+  "adafruit-circuitpython-sht4x>=1.0.27,<2",
+  "adafruit-circuitpython-ssd1306>=2.12.24,<3",
+  "Pillow>=10,<13",
+]
+test = ["pytest>=8,<10"]
+
+[project.scripts]
+pendulum-pi = "pendulum_pi.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["pendulum_pi*"]
+
+[tool.setuptools.package-data]
+pendulum_pi = ["static/*", "LICENSE-Adafruit-GFX.txt"]

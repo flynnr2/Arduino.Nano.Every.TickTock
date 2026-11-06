@@ -1,0 +1,28 @@
+[Unit]
+Description=Durable Pendulum host health and reboot diagnostics
+After=local-fs.target
+
+[Service]
+Type=simple
+User=root
+Group=adm
+ExecStart=/usr/bin/python3 -I /usr/local/lib/pendulum-diagnostics/reboot_health.py
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=20
+Nice=19
+IOSchedulingClass=idle
+UMask=0027
+LogsDirectory=pendulum-health
+LogsDirectoryMode=0750
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_UNIX AF_INET
+
+[Install]
+WantedBy=multi-user.target

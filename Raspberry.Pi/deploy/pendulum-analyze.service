@@ -1,0 +1,28 @@
+[Unit]
+Description=Arduino Pendulum Timer saved capture analysis and history
+After=systemd-tmpfiles-setup.service
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=pendulum
+Group=pendulum
+WorkingDirectory=/var/lib/pendulum
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/opt/pendulum/venv/bin/python -m pendulum_pi analyze --config /var/lib/pendulum/config.json
+Restart=on-failure
+RestartSec=3
+Nice=10
+TimeoutStopSec=15
+KillMode=control-group
+WatchdogSec=60
+NotifyAccess=main
+UMask=0027
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/pendulum /run/pendulum
+
+[Install]
+WantedBy=multi-user.target

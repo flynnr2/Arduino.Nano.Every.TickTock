@@ -1,0 +1,30 @@
+[Unit]
+Description=Pendulum recording compression, verified archive and retention
+After=systemd-tmpfiles-setup.service network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=pendulum
+Group=pendulum
+WorkingDirectory=/var/lib/pendulum
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/opt/pendulum/venv/bin/python -m pendulum_pi storage --config /var/lib/pendulum/config.json
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=60
+KillMode=control-group
+Nice=10
+IOSchedulingClass=idle
+UMask=0027
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/pendulum /run/pendulum
+LogRateLimitIntervalSec=30s
+LogRateLimitBurst=100
+
+[Install]
+WantedBy=multi-user.target

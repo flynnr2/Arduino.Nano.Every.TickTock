@@ -1,0 +1,65 @@
+References,Quantity,Value,Manufacturer,MPN,Footprint,Populate,Assembly notes
+A1,2,Arduino_Nano_Every,Samtec,SSW-115-01-G-S,Carrier:Nano_Every_Sockets,FIT,"TWO socket strips; Nano not included in PCB parts. Fit TWO female 1x15 sockets. Baseline customer Nano reuse; separately quote genuine Arduino ABX00033 with headers inserted into sockets, no direct module soldering."
+"C1, C3, C5, C7, C11, C14, C15, C17, C20, C23, C29",11,100n,Murata,GRM21BR71H104KA01L,Carrier:C_0805_2012Metric,FIT,100 nF 50 V X7R 0805; Local U3 bypass; 50V X7R.; 100nF UART translator bypass; place at U5 supply pin and local ground return.; Ceramic; effective capacitance must meet regulator requirements
+"C2, C6, C8, C9, C10, C12, C13, C18, C19, C31, C33",11,1u,Murata,GRM21BR71C105KA01L,Carrier:C_0805_2012Metric,FIT,"1 uF 16 V X7R 0805; 1uF GNSS switch input bypass, 16V X7R; place close to U4.; 1uF GNSS switch output bypass, 16V X7R; receiver supplies local bulk decoupling.; U2 input bypass; 16V X7R.; U2 output bypass; 16V X7R.; Ceramic; effective capacitance must meet regulator requirements; GNSS regulator local bypass. X7R/X5R;C34 effective capacitance must exceed0.5uF after bias,tolerance and temperature."
+"C4, C21, C34",3,4.7u,Murata,GRM21BR71C475KA73L,Carrier:C_0805_2012Metric,FIT,"4.7 uF 16 V X7R 0805; Ceramic; effective capacitance must meet regulator requirements; GNSS regulator local bypass. X7R/X5R;C34 effective capacitance must exceed0.5uF after bias,tolerance and temperature."
+"C16, C27",2,10u,Murata,GRM21BR61C106KE15L,Carrier:C_0805_2012Metric,FIT,Ceramic; effective capacitance must meet regulator requirements
+"C22, C26",2,1u,Murata,GRM21BR71H105KA12L,Carrier:C_0805_2012Metric,FIT,1uF 50V X7R; input-side overvoltage withstand.
+"C24, C25",2,1n,Murata,GRM21B5C1H102JA01L,Carrier:C_0805_2012Metric,FIT,Ceramic; effective capacitance must meet regulator requirements
+C28,1,3.3n,Murata,GRM21B5C1H332JA01L,Carrier:C_0805_2012Metric,FIT,Ceramic; effective capacitance must meet regulator requirements
+"C30, C32",2,22u,Murata,GRM31CR71C226KE15L,Carrier:C_1206_3216Metric,FIT,Ceramic; effective capacitance must meet regulator requirements
+D1,1,TPD2E2U06DCKR,Texas Instruments,TPD2E2U06DCKR,Carrier:SOT-323_SC-70,FIT,Two low-capacitance ESD channels at jack rings; not a DC overvoltage limiter.
+D2,1,SS24,Vishay,SS24-E3/61T,Carrier:D_SMA,FIT,
+D3,1,SS14,Vishay,SS14-E3/61T,Carrier:D_SMA,FIT,
+J1,1,PENDULUM / SCREW,Wurth Elektronik,691210910005,Carrier:Wurth_691210910005,FIT,
+J2,1,GNSS MONITOR,Samtec,TSW-103-07-G-S,Carrier:PinHeader_1x03_P2.54mm_Vertical,FIT,
+J3,1,OPTO TRS,Same Sky,SJ1-3535NG,Carrier:Jack_3.5mm_CUI_SJ1-3535NG_Horizontal_CircularHoles,FIT,Tip +5V output; ring optical; sleeve GND. RN selects J1 when unplugged.
+J4,1,EXT PPS / DETECT,Kycon,STX-3100-9N,Carrier:Jack_3.5mm_Kycon_STX-3100-9N,FIT,"Isolated DPDT: empty 7-6 (GNSS), inserted 7-8 (ring); 10-11 grounds detect on insertion. 9 NC. No substitution with SJ1-3535NG."
+J5,1,GNSS / SELECTED VCC,Samtec,TSW-105-07-G-S,Carrier:PinHeader_1x05_P2.54mm_Vertical,FIT,J5/1 is selected GNSS VCC from JP2. Default3.3V; fitJP2 2-3 for5V only for a qualified receiver. J5 signals remain nominal3.3V.
+J6,1,USB-C / 5V POWER,GCT,USB4125-GF-A-0190,Carrier:USB_C_Receptacle_GCT_USB4125-xx-x-0190_6P_TopMnt_Horizontal,FIT,1.90mm shell stakes for1.6mm PCB. Power-only6P; no data pins. Do not substitute1.00mm stake variant.
+J7,1,OPTIONAL 5V INPUT,Phoenix Contact,1715721,"Carrier:TerminalBlock_Phoenix_MKDS-1,5-2-5.08_1x02_P5.08mm_Horizontal",OPTIONAL / DNP,"Optional connector, NOT fitted by default. Protection circuit remains fitted."
+JP1,1,EXT VIN ENABLE,Samtec,TSW-102-07-G-S,Carrier:PinHeader_1x02_P2.54mm_Vertical,FIT,Fit shunt: boosted external supply to Nano VIN. Remove to disconnect external VIN feed; Nano USB can still power the carrier.
+JP2,1,GNSS VCC / 3V3-5V,Samtec,TSW-103-07-G-S,Carrier:PinHeader_1x03_P2.54mm_Vertical,FIT,ONE shunt only:1-2=3.3V DEFAULT;2-3=5V;removed disconnectsJ5 power. Power off all attached equipment and discharge before moving. Never bridge all3. Remove before independently powering receiver.
+JP3,1,OPTO POWER,Samtec,TSW-102-07-G-S,Carrier:PinHeader_1x02_P2.54mm_Vertical,FIT,Fit shunt: jack J3 tip power. Remove for independently powered accessory.
+JP4,1,PPS POWER,Samtec,TSW-102-07-G-S,Carrier:PinHeader_1x02_P2.54mm_Vertical,FIT,Fit shunt: jack J4 tip power. Remove for independently powered accessory.
+JP5,1,OPT PULLUP,Samtec,TSW-102-07-G-S,Carrier:PinHeader_1x02_P2.54mm_Vertical,FIT,Fit shunt: optical 10k pull-up to 5V. Fitted for installed OPB912; remove for a qualified push-pull or separately pulled-up source.
+JP6,1,REF PULLUP,Samtec,TSW-102-07-G-S,Carrier:PinHeader_1x02_P2.54mm_Vertical,FIT,Fit shunt: external PPS 10k pull-up to 5V. Leave OPEN by default; fit only for a qualified open-collector source without its own pull-up.
+JP7,1,LED RESISTOR BYPASS,Samtec,TSW-102-07-G-S,Carrier:PinHeader_1x02_P2.54mm_Vertical,FIT,FIT for existing external resistor-equipped lead. OPEN uses onboard R3 150 ohm for bare LED. Never fit bypass with a bare LED.
+JP8,1,NANO UART ENABLE,Samtec,TSW-103-07-G-S,Carrier:PinHeader_1x03_P2.54mm_Vertical,FIT,JP8 1-2: Nano GNSS UART enabled (default). JP8 2-3: U5 disabled for receiver USB servicing. Change with all equipment powered off.
+JP9,1,PPS source,Samtec,TSW-103-07-G-S,Carrier:PinHeader_1x03_P2.54mm_Vertical,FIT,Fit one shunt 2-3: buffered PPS. 1-2 direct is an optional measured comparison.
+JP10,1,Buffer input,Samtec,TSW-103-07-G-S,Carrier:PinHeader_1x03_P2.54mm_Vertical,FIT,Fit one shunt 2-3: buffered PPS. Move JP9 and JP10 together with power off.
+JP11,1,PPS BIAS,Samtec,TSW-102-07-G-S,Carrier:PinHeader_1x02_P2.54mm_Vertical,FIT,Leave OPEN by default. Fit only for a verified pull-down-tolerant source or no-source idle test.
+L1,1,4.7uH / 2.5A,Wurth Elektronik,7447785004,Carrier:Wurth_7447785004,FIT,
+R1,1,22R,Yageo,RC0805FR-0722RL,Carrier:R_0805_2012Metric,FIT,"1%, 0805"
+R2,1,33R,Yageo,RC1206FR-0733RL,Carrier:R_1206_3216Metric_Pad1.30x1.75mm_HandSolder,FIT,"33 ohm 1%, 0.25 W; 1206 with extended solder pads; tune damping on bench"
+R3,1,150R,Yageo,RC1206FR-07150RL,Carrier:R_1206_3216Metric,FIT,"150 ohm 1%, 0.25W LED limit. JP7 OPEN: bare LED. JP7 FITTED: bypass only for external resistor-equipped lead; fitted default for existing 145.5 ohm lead."
+R4,1,0R,Yageo,RC1206JR-070RL,Carrier:R_1206_3216Metric_Pad1.30x1.75mm_HandSolder,FIT,0 ohm; 1206 with extended solder pads; optional optical damping position
+"R5, R14, R16, R21",4,10k,Yageo,RC0805FR-0710KL,Carrier:R_0805_2012Metric,FIT,"10k PPS bias through JP11 only; JP11 open by default for boot-shared GNSS outputs.; J4 isolated detection pull-up; 10k to Nano 5V, independent of JP4.; 1%, 0805"
+"R6, R8",2,100R,Yageo,RC1206FR-07100RL,Carrier:R_1206_3216Metric_Pad1.30x1.75mm_HandSolder,FIT,Optical series input protection; 1206 extended pads.; Selected PPS series input protection; 1206 extended pads; no pull-up.
+R7,1,10k,Yageo,RC1206FR-0710KL,Carrier:R_1206_3216Metric_Pad1.30x1.75mm_HandSolder,FIT,Optical pull-up to 5V; supports open-collector optical outputs; sensor must tolerate pull-up.
+R9,1,232k,Yageo,RC0805FR-07232KL,Carrier:R_0805_2012Metric,FIT,1% current-limit resistor; place close to U2 ILIM/GND.
+R10,1,88.7k,Yageo,RC0805FR-0788K7L,Carrier:R_0805_2012Metric,FIT,88.7k 1% GNSS limit: 299mA nominal; 262-342mA published bounds. Target receiver/antenna <=200mA.
+"R11, R12, R19, R20",4,47k,Yageo,RC0805FR-0747KL,Carrier:R_0805_2012Metric,FIT,"47k idle pull-up on 5V Nano UART only.; 1%, 0805"
+"R13, R24, R27, R29, R31",5,100k,Yageo,RC0805FR-07100KL,Carrier:R_0805_2012Metric,FIT,"100k OE pull-down; translator disabled with JP8 shunt removed.; 1%, 0805"
+R15,1,1k,Yageo,RC0805FR-071KL,Carrier:R_0805_2012Metric,FIT,"1k series protection between J4 detect and Nano D3. Firmware input, no internal pull-up required."
+R17,1,100R,Yageo,RC0805FR-07100RL,Carrier:R_0805_2012Metric,FIT,"1%, 0805"
+R18,1,2.2k,Yageo,RC1206FR-072K2L,Carrier:R_1206_3216Metric_Pad1.30x1.75mm_HandSolder,FIT,"2.2k 1% 0.25W, VBUS sensing/discharge series resistor; <10mA even at20V."
+R22,1,15k,Yageo,RC0805FR-0715KL,Carrier:R_0805_2012Metric,FIT,"1%, 0805"
+"R23, R28",2,357k,Yageo,RC0805FR-07357KL,Carrier:R_0805_2012Metric,FIT,"1%, 0805"
+"R25, R30",2,3.32k,Yageo,RC0805FR-073K32L,Carrier:R_0805_2012Metric,FIT,"1%, 0805"
+R26,1,274k,Yageo,RC0805FR-07274KL,Carrier:R_0805_2012Metric,FIT,"1%, 0805"
+R32,1,18.2k,Yageo,RC0805FR-0718K2L,Carrier:R_0805_2012Metric,FIT,"1%, 0805"
+R33,1,13k,Yageo,RC0805FR-0713KL,Carrier:R_0805_2012Metric,FIT,"1%, 0805"
+U1,1,74AHCT2G125DP,Nexperia,"74AHCT2G125DP,125",Carrier:TSSOP-8_3x3mm_P0.65mm,FIT,TSSOP8 SOT505-2; 0.65mm pitch. PPS and 16MHz clock only; both enables tied LOW. Optical uses U3 directly.
+U3,1,74AHCT1G17GV,Nexperia,74AHCT1G17GVH,Carrier:SOT-23-5,FIT,Optical Schmitt buffer directly through R4 to Nano D9. GPS PPS does not pass through U3.
+"U2, U4",2,TPS2553DBVR,Texas Instruments,TPS2553DBVR,Carrier:SOT-23-6,FIT,Dedicated GNSS current-limited 5V branch; R10 sets about 300mA nominal; /FAULT unused.; Shared current-limited 5V supply for J3/J4; R9 sets limit; /FAULT unused.
+U5,1,TXU0202DCUR,Texas Instruments,TXU0202DCUR,Carrier:TI_DCU0008A_VSSOP-8_2.3x2mm_P0.5mm,FIT,"UART-only dual-supply translator; VCCA 5V, VCCB 3.3V. Pins 1/8 GNSS side; pins 4/5 Nano side; no PPS routing through U5."
+U6,1,74AHCT1G17GVH,Nexperia,74AHCT1G17GVH,Carrier:SOT-23-5,FIT,
+U7,1,TPS7A2033PDBVR,Texas Instruments,TPS7A2033PDBVR,Carrier:SOT-23-5,FIT,
+U8,1,STUSB4500LQTR,STMicroelectronics,STUSB4500LQTR,Carrier:QFN-24-1EP_4x4mm_P0.5mm_EP2.6x2.6mm,FIT,Standalone 5V sink. Factory-default NVM; no programming. CC1DB/CC2DB joined to CC1/CC2.
+U9,1,TPS70933DBVR,Texas Instruments,TPS70933DBVR,Carrier:SOT-23-5,FIT,TPS709 EN intentionally floating: internal enable source. Do not connect EN to raw VBUS.
+U10,1,SN74LVC1G02DBVR,Texas Instruments,SN74LVC1G02DBVR,Carrier:SOT-23-5,FIT,
+"U11, U12",2,TPS259470ARPWR,Texas Instruments,TPS259470ARPWR,Carrier:TI_RPW0010A,FIT,Active current limiting; auto-retry; reverse-current blocking. ITIMER open: no extra blanking.
+U13,1,TPS61085PWR,Texas Instruments,TPS61085PWR,Carrier:TSSOP-8_4.4x3mm_P0.65mm,FIT,1.2MHz fixed. 8.04V nominal. Compensation is TI conservative starting network; bench stability check required.
+U14,1,TLV1117LV33DCYR,Texas Instruments,TLV1117LV33DCYR,Carrier:SOT-223-3_TabPin2,FIT,Pin1GND;pin2ANDtabGNSS_3V3;pin3GNSS_5V_LIMITED. Solid output-tab copper spread;never connect tab toGND.200mA GNSS+antenna allowance requires thermal acceptance. Unprotected OUT-to-IN body diode: no external receiver power withJP2 fitted.
+X1,1,ECS-TXO-5032-160-TR,ECS,ECS-TXO-5032-160-TR,Carrier:ECS_TXO_5032,FIT,"16 MHz, 3.3 V; pin 1 NC"

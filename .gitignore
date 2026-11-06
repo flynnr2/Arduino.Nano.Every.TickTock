@@ -1,0 +1,90 @@
+#######################################
+# Scratch dirs
+#######################################
+Data/
+analysis_real/
+analysis_test/
+Docs/datasheets/
+Docs/research
+output/
+tmp/
+
+#######################################
+# OS junk
+#######################################
+.DS_Store
+Docs/.DS_Store
+Docs/datasheets/.DS_Store
+Nano.Every/.DS_Store
+.AppleDouble
+.LSOverride
+__MACOSX/
+Icon?
+._*
+.Spotlight-V100
+.Trashes
+
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+#######################################
+# Editor / IDE
+#######################################
+.vscode/
+*.code-workspace
+Nano.Every/build
+
+.idea/
+*.iml
+*.ipr
+*.iws
+
+*.swp
+*.swo
+*~
+*.tmp
+*.log
+
+#######################################
+# Arduino / local build outputs
+# (only matters if you configure builds to land in the repo)
+#######################################
+build/
+out/
+dist/
+
+*.elf
+*.hex
+*.bin
+*.map
+
+#######################################
+# PlatformIO (only if you use it)
+#######################################
+.pio/
+.pioenvs/
+.piolibdeps/
+
+#######################################
+# Other stuff
+#######################################
+
+secrets.h
+*.env
+
+compile_commands.json
+.clangd/
+.cache/
+.venv/
+.pytest_cache/
+*.egg-info/
+__pycache__/
+
+# Pi receiver settings contain an administrator token; recordings are local data.
+/Raspberry.Pi/config.json
+/Raspberry.Pi/data/
+/Raspberry.Pi/runtime/
+/Raspberry.Pi/demo-config.json
+/Raspberry.Pi/demo-data/
+/Raspberry.Pi/demo-runtime/

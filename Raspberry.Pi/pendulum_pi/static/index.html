@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pendulum observatory</title><link rel="stylesheet" href="/static/app.css">
+  <script src="/static/correlation.js" defer></script>
+  <script src="/static/charts.js" defer></script>
+  <script src="/static/phase.js" defer></script>
+  <script src="/static/motion.js" defer></script>
+  <script src="/static/app.js" defer></script>
+</head>
+<body>
+<header><div><p class="eyebrow">ARDUINO PENDULUM TIMER · RASPBERRY PI</p><h1>Pendulum observatory</h1></div><span id="health" class="badge">Connecting…</span></header>
+<main>
+  <p id="source-notice" class="source-notice" hidden></p>
+  <p id="notice" role="status" aria-live="polite">Waiting for the acquisition service.</p>
+  <section class="status-strip" aria-label="Capture and recording status">
+    <div><span class="status-label">Recording</span><strong id="recording">—</strong><span id="session">No session</span></div>
+    <div><span class="status-label">Capture freshness</span><strong id="freshness">Waiting</strong><span id="capture-age">No accepted measurement yet</span></div>
+    <div><span class="status-label">Measurement timebase</span><strong id="timebase">Unknown</strong><span id="timebase-note">Nano PPS calibration</span></div>
+  </section>
+  <section class="panel overview" aria-label="Live clock performance">
+    <div class="section-heading"><div><p class="eyebrow">LIVE CLOCK PERFORMANCE</p><h2>300-swing mean</h2><p id="target-note" class="muted">Choose a target full period in configuration to show gain or loss.</p></div><label class="compact-control">Rate units<select id="rate-unit"><option value="day">Seconds / day</option><option value="hour">Seconds / hour</option></select></label></div>
+    <div class="period-grid performance-grid">
+      <article class="period-card window"><div class="section-heading"><h3>300-swing mean</h3><span id="window-learning" class="estimate-state">Waiting</span></div><p class="reading" id="window-period">—</p><p class="clock-rate" id="window-bpm" aria-label="300-swing mean, beats per minute">— BPM</p><p class="clock-rate" id="window-rate">Unavailable</p><p id="window-period-note" class="muted">Swing mean calibrated by PPS dual EWMA</p></article>
+    </div>
+    <p class="caption">BPM counts tick, tock and both blocked intervals together as one full swing. The 300-swing mean averages accepted full-swing durations, each calibrated using the established PPS dual EWMA. It is provisional until 300 fresh complete swings accumulate. After a short restart, eligible calibrated samples from a recent checkpoint can prime the mean; restored samples are replaced by fresh swings and are labelled provisional. Positive rate means gaining against the selected target. The dashboard, OLED and publisher use the same server-calculated period, BPM and rate.</p>
+  </section>
+  <section class="panel" aria-label="Breakbeam centring and timing symmetry">
+    <h2>Breakbeam centring &amp; timing symmetry</h2>
+    <p class="muted">Interval means use the same 300-swing window and PPS calibration as the period above. Tick and tock here are the beam-open intervals; tick_block and tock_block are the blocked intervals.</p>
+    <div class="period-grid symmetry-grid">
+      <article class="period-card window">
+        <h3>300-swing interval means</h3><p id="window-symmetry-state" class="muted">Waiting for interval estimates</p>
+        <div class="table-scroll"><table>
+          <caption class="muted">Average durations and signed differences in microseconds (µs)</caption>
+          <thead><tr><th scope="col">Interval</th><th scope="col">Open</th><th scope="col">Blocked</th></tr></thead>
+          <tbody>
+            <tr><th scope="row">Tick</th><td id="window-tick">—</td><td id="window-tick-block">—</td></tr>
+            <tr><th scope="row">Tock</th><td id="window-tock">—</td><td id="window-tock-block">—</td></tr>
+            <tr><th scope="row">Tick − tock</th><td id="window-tick-delta">—</td><td id="window-block-delta">—</td></tr>
+          </tbody>
+        </table></div>
+        <dl>
+          <dt>Centring proxy: open-time imbalance</dt><dd id="window-open-imbalance">—</dd>
+          <dt>Block-duration mismatch</dt><dd id="window-block-imbalance">—</dd>
+          <dt>Half-cycle difference (open + blocked)</dt><dd id="window-half-delta">—</dd>
+        </dl>
+      </article>
+
+    </div>
+    <p class="caption">Positive differences mean the tick interval is longer; negative means the tock interval is longer. Open-time imbalance is 100 × (tick − tock) / full beat. Block-duration mismatch is 100 × (tick_block − tock_block) / mean block duration. Both use the averaged durations.</p>
+    <p class="caption">Use open-time imbalance as a centring guide: zero means equal open times. Block mismatch separately shows unequal beam-crossing durations. These are timing diagnostics, not a calibrated sensor offset or proof of correct centring; motion asymmetry and beam/flag geometry can also affect them. The sign does not identify a physical left or right adjustment.</p>
+  </section>
+  <section class="panel motion-panel" aria-label="Optical passage velocity and estimated amplitude">
+    <div class="section-heading"><div><p class="eyebrow">OPTICAL PASSAGE ESTIMATES</p><h2>Velocity &amp; estimated amplitude</h2><p class="muted">Speed at the sensor and estimated centre-to-peak swing angle, with separate tick and tock readings.</p></div><span id="motion-state" class="badge">Waiting</span></div>
+    <div class="table-scroll"><table class="motion-table"><thead><tr><th scope="col">Passage</th><th scope="col">Latest velocity</th><th scope="col">Latest semi-amplitude</th><th scope="col">Mean velocity</th><th scope="col">Mean semi-amplitude</th></tr></thead><tbody>
+      <tr><th scope="row">Tick</th><td id="motion-tick-velocity">—</td><td id="motion-tick-amplitude">—</td><td id="motion-tick-mean-velocity">—</td><td id="motion-tick-mean-amplitude">—</td></tr>
+      <tr><th scope="row">Tock</th><td id="motion-tock-velocity">—</td><td id="motion-tock-amplitude">—</td><td id="motion-tock-mean-velocity">—</td><td id="motion-tock-mean-amplitude">—</td></tr>
+    </tbody></table></div>
+    <p id="motion-mean-note" class="caption">Waiting for calibrated crossings.</p>
+    <div class="section-heading motion-cycle-heading"><div><h3>30-second impulse cycle</h3><p id="motion-cycle-note" class="muted" role="status">Waiting for a complete 15-swing cycle.</p></div><label class="compact-control">Cycle measure<select id="motion-cycle-metric"><option value="velocity_mm_s">Velocity · mm/s</option><option value="amplitude_deg">Estimated amplitude · °</option></select></label></div>
+    <div class="phase-legend"><span class="phase-tick">Tick</span><span class="phase-tock">Tock</span></div>
+    <svg id="motion-cycle-chart" viewBox="0 0 900 280" role="group" aria-label="Median velocity or amplitude across 30 alternating passage phases" aria-describedby="motion-cycle-note motion-method"></svg>
+    <p id="motion-cycle-cursor" class="chart-cursor" aria-live="polite">Hover, tap or focus a point to inspect its phase and median.</p>
+    <details><summary>Estimates &amp; assumptions</summary><p id="motion-method" class="caption">Velocity is the speed magnitude at the sensor, estimated as 3.79 mm divided by each blocked duration. Angular semi-amplitude is velocity × measured full period / (2π × 1,242 mm), converted to degrees. This assumes approximately harmonic motion and a sensing region near bottom dead centre. Amplitude is centre to peak; peak-to-peak is twice this angle. The optical switching distance is provisional, so absolute velocity and amplitude are uncalibrated. Impulse acceleration can mix incoming and outgoing motion. Tick/tock does not identify physical left/right travel.</p>
+    <p class="caption">The cycle uses medians from up to 20 complete 15-swing cycles, retaining separate directions. Phase zero follows the swing sequence; it is not a measured impulse time. A dashed marker identifies the largest positive median speed increase between like-direction passages, when at least three complete cycles are available. It is a candidate impulse-related feature, not a force or contact measurement. The phase axis is nominal cycle time, approximately one second per half phase. Gaps and calibration interruptions restart the motion window.</p></details>
+  </section>
+  <section class="metrics environment-cards" aria-label="Current environment">
+    <article><h2>Temperature</h2><p class="reading" id="temperature">—</p><p id="environment-note">Sensor state unknown</p></article>
+    <article><h2>Pressure</h2><p class="reading" id="pressure">—</p><p>Environmental context</p></article>
+    <article><h2>Air density</h2><p class="reading" id="density">—</p><p id="density-note">CIPM-2007 · CO₂ assumed 400 ppm</p></article>
+    <article><h2>Humidity</h2><p class="reading" id="humidity">—</p><p>Relative humidity</p></article>
+  </section>
+  <section class="panel trends" aria-label="Persistent measurement history">
+    <div class="section-heading"><div><p class="eyebrow">RECORDED DISPLAY HISTORY</p><h2>Timing, motion &amp; environment</h2><p class="muted">Sampled estimates persist while this page is closed. Recording pauses and measurement boundaries remain gaps.</p></div><span id="history-live" class="badge">Live range</span></div>
+    <div class="chart-toolbar">
+      <div class="range-buttons" role="group" aria-label="History range"><button type="button" data-range="900" aria-pressed="true">Recent</button><button type="button" data-range="3600" aria-pressed="false">1 hour</button><button type="button" data-range="43200" aria-pressed="false">12 hours</button><button type="button" data-range="86400" aria-pressed="false">24 hours</button><button type="button" data-range="604800" aria-pressed="false">7 days</button><button type="button" id="history-clean">Clean period · from 1 Nov, 13:00 GMT</button><button type="button" id="custom-toggle" aria-expanded="false">Custom</button></div>
+      <label>Show<select id="chart-metric"><option value="rate">Gain / loss</option><option value="period">Full period</option></select></label>
+      <label>Time axis<select id="chart-axis"><option value="host">Pi observation time</option><option value="elapsed">Session elapsed time</option></select></label>
+      <label>Session<select id="history-session"><option value="">All retained sessions</option></select></label>
+      <label class="startup-control"><input id="show-startup-estimates" type="checkbox">Show startup estimates</label>
+    </div>
+    <form id="history-custom" class="custom-range" hidden><label>Start (local time)<input id="history-start" type="datetime-local" required></label><label>End (local time)<input id="history-end" type="datetime-local" required></label><button type="submit">Apply range</button></form>
+    <div class="chart-actions"><div class="legend"><span class="legend-window">Swing mean</span><span id="history-learning-note">Startup estimates hidden · dashed: PPS holdover</span></div><div><button id="zoom-in" type="button">Zoom in</button><button id="reset-zoom" type="button">Reset zoom</button><button id="return-live" type="button">Return to live</button></div></div>
+    <p id="history-state" class="muted" role="status">Loading retained observations…</p>
+    <div id="history-charts" class="chart-stack"><div class="chart-row"><div class="chart-label"><strong id="timing-chart-title">Gain / loss</strong><span id="timing-chart-unit">seconds/day</span></div><canvas id="timing-chart" role="img" aria-label="Recorded swing mean timing estimates over time"></canvas></div><div class="chart-row"><div class="chart-label"><strong>Passage velocity · 300-swing means</strong><span>mm/s</span></div><div class="motion-history-legend phase-legend"><span class="phase-tick">Tick</span><span class="phase-tock">Tock</span></div><canvas id="velocity-chart" role="img" aria-label="Tick and tock velocity over the selected time range"></canvas></div><div class="chart-row"><div class="chart-label"><strong>Estimated semi-amplitude · 300-swing means</strong><span>°</span></div><div class="motion-history-legend phase-legend"><span class="phase-tick">Tick</span><span class="phase-tock">Tock</span></div><canvas id="amplitude-chart" role="img" aria-label="Tick and tock amplitude over the selected time range"></canvas></div><div class="chart-row"><div class="chart-label"><strong>Temperature</strong><span>°C</span></div><canvas id="temperature-chart" role="img" aria-label="Temperature over the same time range"></canvas></div><div class="chart-row"><div class="chart-label"><strong>Pressure</strong><span>hPa</span></div><canvas id="pressure-chart" role="img" aria-label="Pressure over the same time range"></canvas></div><div class="chart-row"><div class="chart-label"><strong>Air density · CIPM-2007 / previous formula</strong><span>kg/m³ · green / dashed orange</span></div><canvas id="density-chart" role="img" aria-label="CIPM-2007 and previous air density over the same time range"></canvas></div><div class="chart-row"><div class="chart-label"><strong>Humidity</strong><span>% RH</span></div><canvas id="humidity-chart" role="img" aria-label="Humidity over the same time range"></canvas></div></div>
+    <p class="caption">Motion history averages the individual crossing estimates over 300 fresh swings. Earlier history without motion estimates remains empty. Tick is blue; tock is orange.</p>
+    <div id="chart-cursor" class="chart-cursor" aria-live="off">Move across a chart to inspect aligned readings. Drag across a chart to zoom.</div>
+    <p id="history-provenance" class="caption">Axis: Pi observation time, not exact Nano event UTC. Environmental association does not establish causation.</p>
+    <section id="environmental-relationships" class="correlation-panel" aria-label="Environmental relationships with pendulum period">
+      <div class="section-heading"><div><p class="eyebrow">ENVIRONMENTAL RELATIONSHIPS</p><h2>How does the period relate to its surroundings?</h2><p class="muted">Temperature, humidity and pressure, individually and together. Uses the range and session selected above, with environmental averages over each swing mean’s measured duration.</p></div></div>
+      <label>Measurement segment<select id="correlation-segment" disabled><option value="">Waiting for history</option></select></label>
+      <p class="caption">Each uninterrupted segment is analysed separately. Initially selects the segment with the most paired averages.</p>
+      <p id="correlation-state" class="muted" role="status">Waiting for the selected history range.</p>
+      <p id="environment-period-reference" class="caption"></p>
+      <div class="environment-grid">
+        <article class="environment-card"><h3>Temperature</h3>
+          <p class="environment-metric"><strong id="environment-temperature-slope">—</strong><span> individual slope</span></p>
+          <p id="environment-temperature-summary" class="caption">Waiting for paired averages.</p>
+          <canvas id="environment-temperature-chart" role="img" aria-label="Period versus temperature, coloured by time" aria-describedby="environment-temperature-summary correlation-state"></canvas>
+          <p id="environment-temperature-ci" class="caption">95% interval unavailable</p>
+        </article>
+        <article class="environment-card"><h3>Humidity</h3>
+          <p class="environment-metric"><strong id="environment-humidity-slope">—</strong><span> individual slope</span></p>
+          <p id="environment-humidity-summary" class="caption">Waiting for paired averages.</p>
+          <canvas id="environment-humidity-chart" role="img" aria-label="Period versus humidity, coloured by time" aria-describedby="environment-humidity-summary correlation-state"></canvas>
+          <p id="environment-humidity-ci" class="caption">95% interval unavailable</p>
+        </article>
+        <article class="environment-card"><h3>Pressure</h3>
+          <p class="environment-metric"><strong id="environment-pressure-slope">—</strong><span> individual slope</span></p>
+          <p id="environment-pressure-summary" class="caption">Waiting for paired averages.</p>
+          <canvas id="environment-pressure-chart" role="img" aria-label="Period versus pressure, coloured by time" aria-describedby="environment-pressure-summary correlation-state"></canvas>
+          <p id="environment-pressure-ci" class="caption">95% interval unavailable</p>
+        </article>
+      </div>
+      <article class="environment-card"><h3>Air density · CIPM-2007</h3>
+        <p id="density-comparison" class="muted">Waiting for complete density averages.</p>
+        <canvas id="environment-density-chart" role="img" aria-label="Period versus CIPM-2007 air density"></canvas>
+        <p id="density-slope" class="caption"></p>
+      </article>
+      <div class="correlation-time-key"><span id="correlation-earlier">Earlier</span><span class="correlation-gradient" aria-hidden="true"></span><span id="correlation-later">Later</span></div>
+      <p id="correlation-cursor" class="chart-cursor">Move over a point to inspect its paired average.</p>
+      <h3>All three together</h3>
+      <p class="muted">Adjusted slopes describe each variable's relationship with period while including the other two in the same linear model.</p>
+      <p id="environment-model-state" class="muted" role="status">Waiting for a combined fit.</p>
+      <div class="environment-table-wrap"><table class="environment-table"><caption>Adjusted period change and approximate 95% intervals</caption><thead><tr><th>Variable</th><th>Adjusted slope</th><th>95% interval</th><th>Standard error</th></tr></thead><tbody>
+          <tr><th scope="row">Temperature</th><td id="environment-temperature-adjusted">—</td><td id="environment-temperature-adjusted-ci">Unavailable</td><td id="environment-temperature-se">—</td></tr>
+          <tr><th scope="row">Humidity</th><td id="environment-humidity-adjusted">—</td><td id="environment-humidity-adjusted-ci">Unavailable</td><td id="environment-humidity-se">—</td></tr>
+          <tr><th scope="row">Pressure</th><td id="environment-pressure-adjusted">—</td><td id="environment-pressure-adjusted-ci">Unavailable</td><td id="environment-pressure-se">—</td></tr>
+      </tbody></table></div>
+      <div class="correlation-stats">
+        <div><span class="status-label">Combined R²</span><strong id="environment-r2">—</strong></div>
+        <div><span class="status-label">Residual RMS</span><strong id="environment-rms">—</strong></div>
+        <div><span class="status-label">RMS reduction vs temperature alone</span><strong id="environment-improvement">—</strong></div>
+        <div><span class="status-label">Paired averages</span><strong id="correlation-count">0</strong></div>
+      </div>
+      <div class="environment-timeline"><h3>Recorded and fitted period</h3><p class="caption">Recorded: green · fitted: dashed orange. Fit describes this selected history; it is not a forecast.</p><canvas id="environment-fit-chart" role="img" aria-label="Recorded and jointly fitted period over time" aria-describedby="correlation-state environment-model-state"></canvas>
+      <h3>What the model leaves unexplained</h3><canvas id="environment-residual-chart" role="img" aria-label="Period residuals in microseconds over time" aria-describedby="environment-model-state"></canvas></div>
+      <details class="correlation-inference-details"><summary>Method &amp; statistics</summary>
+        <dl><dt>Adjusted R²</dt><dd id="environment-adjusted-r2">—</dd><dt>Predictor condition number</dt><dd id="environment-condition">—</dd><dt>Time-dependence window</dt><dd id="correlation-window">—</dd><dt>Minimum paired averages for uncertainty</dt><dd id="correlation-minimum">—</dd></dl>
+        <p id="correlation-uncertainty-state" class="muted"></p>
+        <p class="caption">Environmental means use fresh history observations over the measured duration of the corresponding 300-swing mean. A window requires coverage to within 30 seconds of its start and no sampling gap exceeding 30 seconds. Learning observations can supply that environmental history; period must have completed learning. All fits use the same complete paired bucket averages with equal weight. Empty buckets stay empty; measurement boundaries remain separate.</p>
+        <p class="caption">Approximate 95% intervals use Newey–West to account for autocorrelation and unequal error variance. They require consecutive time buckets, at least 30 averages and five dependence windows. The dependence window spans at least the longest measured swing window in that segment. Intervals assume a stable linear relationship and dependence fading within that window; slower drift and shared calibration may add dependence.</p>
+        <p class="caption">Predictors are centred and scaled before fitting. Adjusted slopes are withheld when the scaled predictor condition number exceeds 30 or the model is rank deficient. That threshold is a display policy; correlated variables can prevent their separate contributions being identified even when the fitted period follows the observations closely.</p>
+        <p class="caption">R² and RMS describe the fitted history. Adding predictors can improve these values without improving prediction elsewhere. Association does not establish cause; no response delay or environmental compensation is applied. Refreshes every 30 seconds in a live range.</p>
+      </details>
+      <h3>Density models on the same observations</h3>
+      <p class="muted">Compare density alone, temperature plus density, and the three measured quantities. Density replaces pressure and humidity in the two-variable model.</p>
+      <label>Model<select id="density-model"><option value="temperature_density">Temperature + CIPM-2007 density</option><option value="density">CIPM-2007 density</option><option value="sensors">Temperature + humidity + pressure</option><option value="temperature_legacy_density">Temperature + previous density</option><option value="legacy_density">Previous density</option></select></label>
+      <p id="density-model-state" class="muted"></p>
+      <div class="environment-table-wrap"><table class="environment-table"><caption>Descriptive fit comparison · identical paired averages</caption><thead><tr><th>Model</th><th>R²</th><th>Residual RMS (µs)</th><th>Averages</th></tr></thead><tbody id="density-model-comparison"></tbody></table></div>
+      <p id="density-model-coefficients" class="caption"></p>
+      <div class="environment-timeline"><h3>Recorded and fitted period · selected density model</h3><canvas id="density-fit-chart" role="img" aria-label="Recorded and fitted period for the selected density model"></canvas><h3>Selected model residuals</h3><canvas id="density-residual-chart" role="img" aria-label="Period residuals for the selected density model"></canvas></div>
+      <p class="caption">CIPM-2007 uses absolute local pressure, SHT41 temperature and humidity, and assumed CO₂ of 400 ppm. Values outside 15–27 °C, 600–1100 hPa or 0–100% RH are unavailable. Density is calculated before averaging. Fits describe selected history; they are not forecasts or measured compensation coefficients.</p>
+      <p id="density-clean-period" class="caption"></p>
+      <p id="correlation-details" class="caption"></p>
+    </section>
+    <details><summary>History health &amp; boundaries</summary><dl id="history-health"></dl><p id="history-boundaries" class="muted">Waiting for history status.</p></details>
+  </section>
+
+  <section id="swing-phase" class="panel phase-panel" aria-label="PPS-calibrated swing phase medians">
+    <div class="section-heading"><div><p class="eyebrow">PPS-CALIBRATED · MEDIAN PATTERNS</p><h2>Swing phase</h2><p class="muted">The repeating pattern across 15 full swings and 30 alternating half swings.</p></div><div class="phase-actions"><span id="phase-badge" class="badge">Waiting</span><button id="phase-refresh" type="button">Refresh</button></div></div>
+    <p id="phase-state" class="muted" role="status">Loading recorded swing analysis…</p>
+    <div class="phase-grid">
+      <article class="phase-card"><div class="section-heading"><h3>Full swing</h3><span class="phase-bin-count">15 phase bins</span></div><div class="phase-legend">Median full-swing duration</div>
+        <svg id="phase-full" viewBox="0 0 420 400" role="group" aria-label="15-bin full swing median phase chart" aria-describedby="phase-full-reference"></svg>
+        <p id="phase-full-reference" class="caption">Waiting for measurements.</p>
+        <details><summary>Inspect 15 phase bins</summary><div class="table-scroll"><table><thead><tr><th>Phase</th><th>Side</th><th>Median (s)</th><th>Δ (µs)</th><th>Eligible</th><th>Excluded</th></tr></thead><tbody id="phase-full-rows"></tbody></table></div></details>
+      </article>
+      <article class="phase-card"><div class="section-heading"><h3>Half swing</h3><span class="phase-bin-count">30 phase bins</span></div><div class="phase-legend"><span class="phase-tick">Tick · even bins</span><span class="phase-tock">Tock · odd bins</span></div>
+        <svg id="phase-half" viewBox="0 0 420 400" role="group" aria-label="30-bin half swing median phase chart" aria-describedby="phase-half-reference"></svg>
+        <p id="phase-half-reference" class="caption">Waiting for measurements.</p>
+        <details><summary>Inspect 30 phase bins</summary><div class="table-scroll"><table><thead><tr><th>Phase</th><th>Side</th><th>Median (s)</th><th>Δ (µs)</th><th>Eligible</th><th>Excluded</th></tr></thead><tbody id="phase-half-rows"></tbody></table></div></details>
+      </article>
+    </div>
+    <p id="phase-cursor" class="chart-cursor" aria-live="polite">Hover, tap or focus a bar to inspect its median and sample count.</p>
+    <p class="caption">Bars outward from the grey zero ring mean longer durations; inward means shorter. Full swings use one pooled median reference. Half swings use separate tick and tock references, so their normal duration difference does not dominate the pattern. × marks an empty or excluded bin.</p>
+    <details><summary>Coverage &amp; phase conventions</summary><p id="phase-coverage" class="caption"></p>
+    <p class="caption">Phase follows the swing sequence, not row position; missing swings leave their bins intact. Phase zero is a sequence convention, not an identified impulse. Only the latest capture epoch is shown. Calibration uses the analysis package’s 61-second PPS fit; recent estimates can settle as more PPS arrives. Refreshes once a minute.</p></details>
+  </section>
+  <div class="two-column">
+    <section class="panel"><h2>Acquisition health</h2><details><summary>Capture, storage and transport details</summary><dl id="counters"></dl></details><details><summary>Latest swing, PPS and display readings</summary><div id="latest"></div></details></section>
+    <details class="panel disclosure" id="panel-environment-peripherals"><summary>Environment &amp; peripherals</summary><div class="disclosure-body"><dl id="environment"></dl><p class="muted">Measurements retain the Nano’s event timestamps. Pi restarts create visible collection gaps.</p></div></details>
+  </div>
+  <details class="panel disclosure" id="panel-time-reference-health"><summary>Time-reference health</summary><div class="disclosure-body"><div class="section-heading"><div><p class="muted">Pi UTC synchronisation and Nano tick calibration are separate references. This status does not map captured events to exact UTC seconds.</p></div></div><div class="two-column"><div><h3>Pi UTC reference</h3><p id="utc-summary">Unknown — no verified source available</p><dl id="time-health"></dl><h3>GPS receiver</h3><p id="gps-summary">Waiting for gpsd</p><dl id="gps-health"></dl><p class="caption">Receiver fix and satellite counts describe GPS reception. Chrony above shows whether GPS/PPS is actually disciplining the Pi clock.</p></div><div><h3>Nano PPS calibration</h3><p class="reading small-reading" id="rate">—</p><p id="pps-note" class="muted">Waiting for calibration status</p><p id="pps-window-mean" class="muted">300-swing PPS mean: —</p></div></div></div></details>
+  <details class="panel disclosure" id="panel-storage-archive"><summary>Storage &amp; archive</summary><div class="disclosure-body"><p id="archive-notice" role="status">Waiting for storage status.</p><dl id="storage-status"></dl></div></details>
+  <details class="panel disclosure" id="panel-download-a-time-range"><summary>Download a time range</summary><div class="disclosure-body"><p class="muted">Choose host-recorded UTC dates; the end date is exclusive. Downloads contain whole overlapping closed sets, so they may extend beyond these dates. Active recordings are excluded. These dates are not verified event UTC.</p>
+    <form id="export-form"><div class="form-grid"><label>Start date (UTC)<input id="export-start" type="date" required></label><label>End date (UTC, exclusive)<input id="export-end" type="date" required></label><label>Contents<select id="export-kind"><option value="measurements">Full-resolution measurements</option><option value="summary">One-minute summaries</option><option value="full">All retained measurements and diagnostics</option></select></label></div><button type="submit">Estimate download</button><p id="export-result" role="status"></p><a id="export-download" hidden>Download package</a></form>
+    <details><summary>Closed recording sets</summary><p class="muted">Each package preserves set boundaries and includes manifests and an index identifying missing or expired files. Check the archive for data no longer retained here.</p><button id="refresh-catalogue" type="button">Refresh sets</button><div class="table-scroll"><table><thead><tr><th>Set</th><th>Host UTC coverage</th><th>Retained size</th><th>Archive</th></tr></thead><tbody id="catalogue"></tbody></table></div><button type="button" id="more-catalogue" hidden>Load more sets</button><p id="catalogue-error" role="status"></p></details>
+  </div></details>
+  <details class="panel disclosure" id="panel-recorded-files"><summary>Recorded files</summary><div class="disclosure-body"><div class="section-heading"><div><p class="muted">Downloads are a snapshot of complete lines when the request starts. Acquisition continues.</p></div><button type="button" id="refresh-files">Refresh</button></div>
+    <nav id="file-path" aria-label="Log folders"></nav><div class="table-scroll"><table><thead><tr><th>Name</th><th>Size</th><th>Last changed</th><th></th></tr></thead><tbody id="files"></tbody></table></div><button type="button" id="more-files" hidden>Load more</button><p id="files-error" role="status"></p>
+  </div></details>
+  <details class="panel disclosure" id="panel-configuration"><summary>Configuration</summary><div class="disclosure-body"><p id="admin-state" class="muted">Monitoring and downloads are read-only. Changes require an administrator token.</p>
+    <label class="token-label">Administrator token <input id="token" type="password" autocomplete="off" spellcheck="false" placeholder="Kept only in this page’s memory"></label>
+    <form id="settings-form"><div id="settings" class="form-grid"></div><button type="submit">Save live settings</button><p id="settings-result" role="status"></p></form>
+    <details><summary>Hardware and service settings (restart required)</summary><dl id="hardware"></dl><p class="muted">Edit the configuration file on the Pi and restart the services to change these settings.</p></details>
+  </div></details>
+  <details class="panel disclosure" id="panel-nano-configuration"><summary>Nano configuration</summary><div class="disclosure-body"><p class="muted">Read a parameter before changing it. Set commands change the running Nano configuration; check its response. Sending a command does not mean it was accepted.</p>
+    <form id="command-form"><div class="command-fields"><label>Action<select id="action"><option value="get">Get parameter</option><option value="set">Set parameter</option><option value="emit meta">Request metadata</option><option value="emit startup">Request startup information</option><option value="repair eeprom">Repair EEPROM redundancy</option></select></label><label id="parameter-label">Parameter<input id="parameter" placeholder="e.g. ppsFastShift" maxlength="64" pattern="[A-Za-z][A-Za-z0-9_]*"></label><label id="value-label" hidden>Value<input id="value" inputmode="numeric" pattern="[0-9]+" placeholder="Unsigned integer"></label></div><button type="submit">Send to Nano</button><p id="command-result" role="status" aria-live="polite"></p></form>
+  </div></details>
+</main><footer>Local observatory · live readings every second · history view refreshes every five seconds · gaps remain visible</footer>
+</body></html>

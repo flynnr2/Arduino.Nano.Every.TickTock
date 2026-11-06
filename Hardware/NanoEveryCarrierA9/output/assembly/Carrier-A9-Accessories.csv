@@ -1,0 +1,10 @@
+Item,Quantity,Default,Specification
+Nano Every,1,OPTIONAL,Genuine Arduino ABX00033 with headers; reuse customer stock Nano by default. No firmware programming.
+W2 GNSS harness,1,INCLUDE,"Five standard stock150-200mm end-to-end female-to-male2.54mm hobby jumper leads;0.64mm square-post compatible,26AWG power/GND preferred. Female ends at J5;male ends separate for customer receiver mapping. Label1 selectedVCC,2 GND,3 PPS,4 receiverTX,5 receiverRX. Verify continuity and no shorts. No bespoke crimp harness."
+W1 monitor harness,1,OPTIONAL,"Three 150mm female-to-female 2.54mm jumper leads, labelled GND/PPS/receiver TX. Monitor only, no TX driver."
+2.54mm shunts,8,FIT,JP1/3/5/7 bridged; JP2 1-2 selects3.3V; JP8 1-2; JP9 and JP10 2-3.
+Spare 2.54mm shunts,3,INCLUDE,Park one on JP11 pin2 only; supply two loose. JP4/6/11 electrically open.
+170-point breadboard,1,OPTIONAL,Adhesive-backed; customer may supply. Receiver and antenna mechanically supported separately.
+USB-C 5V supply/cable,1,CUSTOMER,"Compliant regulated 5V USB-C supply advertising1.5A or3A, e.g. suitable Pi USB-C supply. No USB-A adapter requirement."
+Micro-USB data cable,1,CUSTOMER,Ordinary unmodified USB data cable to stock Nano Every.
+GNSS receiver and antenna,1,CUSTOMER,"Chosen module-specific pin map, JP2-selected3.3V default or5V supply; nominal3.3V signals, <=200mA including active antenna."

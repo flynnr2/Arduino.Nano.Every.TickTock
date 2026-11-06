@@ -1,0 +1,12 @@
+# Preserve released CAD and manufacturing files byte-for-byte so their
+# checksums match the release manifest and downloadable archives.
+NanoEveryCarrier/** -text
+
+# Keep generated documents, archives, images and vendor 3D models out of diffs.
+*.pdf binary
+*.zip binary
+*.png binary
+*.step binary
+
+# BOM exports use CRLF line endings.
+*.csv whitespace=cr-at-eol
